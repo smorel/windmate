@@ -122,9 +122,15 @@ const WindmateDeparture = (() => {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${minute}`;
   }
 
-  function resolveDepartureWindowPlan(grid, plan) {
-    const start = grid?.dataset?.departureWindowStart;
-    const end = grid?.dataset?.departureWindowEnd;
+  function resolveDepartureWindowPlan(plan, windowSource) {
+    const start =
+      windowSource?.start ??
+      windowSource?.dataset?.departureWindowStart ??
+      windowSource?.departureWindowStart;
+    const end =
+      windowSource?.end ??
+      windowSource?.dataset?.departureWindowEnd ??
+      windowSource?.departureWindowEnd;
     if (!start || !end || !plan) return plan;
 
     const rigMinutes = plan.rigMinutes ?? 20;
@@ -294,7 +300,7 @@ const WindmateDeparture = (() => {
     }
 
     const hourTimes = (grid.dataset.matrixHourTimes ?? '').split('|').filter(Boolean);
-    const windowPlan = resolveDepartureWindowPlan(grid, plan);
+    const windowPlan = resolveDepartureWindowPlan(plan, grid);
     const indices = findWindowIndices(hourTimes, windowPlan);
     if (!indices) {
       clearDepartureStroke(card, departureKey);
@@ -445,7 +451,7 @@ const WindmateDeparture = (() => {
       if (!slot) continue;
       const verdict = sessionVerdictBySpot?.get(data.spotId);
       const grid = card?.querySelector(`[data-matrix-grid="${data.spotId}"]`);
-      const plan = resolveDepartureWindowPlan(grid, data.plan);
+      const plan = resolveDepartureWindowPlan(data.plan, grid);
       slot.innerHTML = renderLine({ ...data, plan }, verdict);
       if (plan) {
         trackDepartureStroke(container, card, data.spotId, plan, 'matrix');
@@ -454,7 +460,14 @@ const WindmateDeparture = (() => {
     }
   }
 
-  async function loadForWatchlist(container, sessions, lat, lng, verdictForSession) {
+  async function loadForWatchlist(
+    container,
+    sessions,
+    lat,
+    lng,
+    verdictForSession,
+    resolveSessionWindow
+  ) {
     if (!container || !sessions?.length || lat == null || lng == null) return;
 
     untrackContainer(container);
@@ -479,8 +492,10 @@ const WindmateDeparture = (() => {
       const slot = card?.querySelector(`[data-departure-for="${key}"]`);
       if (!slot) continue;
       const verdict = verdictForSession?.(session);
-      slot.innerHTML = renderLine(data, verdict);
-      if (data?.plan) {
+      const windowTimes = resolveSessionWindow?.(session);
+      const plan = windowTimes ? resolveDepartureWindowPlan(data?.plan, windowTimes) : data?.plan;
+      slot.innerHTML = renderLine(plan ? { ...data, plan } : data, verdict);
+      if (plan) {
         card.querySelector(`[data-departure-group="${key}"]`)?.classList.add('has-departure-line');
       }
     }
@@ -489,6 +504,7 @@ const WindmateDeparture = (() => {
   return {
     fetchPlan,
     renderLine,
+    resolveDepartureWindowPlan,
     loadForMatrix,
     loadForWatchlist,
     applyDepartureStroke,

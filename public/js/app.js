@@ -331,6 +331,7 @@ function applyRankOrderToMatrix() {
   const payload = { ...rideabilityData, preferences: prefs };
   renderMatePicks(payload);
   renderRideabilityMatrix(payload, observationsData);
+  refreshWatchlistDepartures();
 }
 
 function getMinRideableWindowHours(prefs) {
@@ -807,13 +808,7 @@ async function refreshDashboard({ silent = false } = {}) {
       observationsBySpot: obsBySpot,
       prefs: matrixPrefs,
     });
-    WindmateDeparture.loadForWatchlist(
-      els.watchlistStrip,
-      WindmateWatchlist.getSessions(),
-      userLocation.lat,
-      userLocation.lng,
-      (session) => WindmateWatchlist.resolveVerdict(session)
-    );
+    refreshWatchlistDepartures();
     const warningsBySpot = new Map(
       rideabilityData.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
     );
@@ -958,6 +953,41 @@ function getSpotDayData(entry, dateStr) {
     if (day) return day;
   }
   return (entry.days ?? []).find((d) => d.date === dateStr) ?? null;
+}
+
+function resolveDepartureWindowForSession(session) {
+  if (!rideabilityData || session.sport !== rideabilityData.preferences.sport) return null;
+
+  const entry = rideabilityData.spots.find((row) => row.spot.id === session.spot_id);
+  if (!entry) return null;
+
+  const dayHours = getSpotDayData(entry, session.session_date)?.hours ?? [];
+  if (!dayHours.length) return null;
+
+  const pick = WindmateSessionRank.pickBestQualifyingWindow(
+    entry,
+    session.session_date,
+    prefsForRanking(rideabilityData.preferences),
+    dayHours
+  );
+  if (!pick) return null;
+
+  return {
+    start: pick.run.start,
+    end: WindmateDeparture.exclusiveEndAfterRun(pick.run.end),
+  };
+}
+
+function refreshWatchlistDepartures() {
+  if (!els.watchlistStrip || userLocation.lat == null || userLocation.lng == null) return;
+  WindmateDeparture.loadForWatchlist(
+    els.watchlistStrip,
+    WindmateWatchlist.getSessions(),
+    userLocation.lat,
+    userLocation.lng,
+    (session) => WindmateWatchlist.resolveVerdict(session),
+    resolveDepartureWindowForSession
+  );
 }
 
 function getModelDayHours(entry, modelId, dateStr) {

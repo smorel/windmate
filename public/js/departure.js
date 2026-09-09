@@ -97,12 +97,68 @@ const WindmateDeparture = (() => {
     return escapeHtml(value).replace(/'/g, '&#39;');
   }
 
+  function hourTimeKey(time) {
+    return WindmateRideableWindow.hourTimeKey(time);
+  }
+
+  function exclusiveEndAfterRun(runEndKey) {
+    const key = hourTimeKey(runEndKey);
+    const match = key.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+    if (!match) return key;
+
+    let year = parseInt(match[1], 10);
+    let month = parseInt(match[2], 10);
+    let day = parseInt(match[3], 10);
+    let hour = parseInt(match[4], 10) + 1;
+    const minute = match[5];
+    if (hour >= 24) {
+      hour = 0;
+      const next = new Date(year, month - 1, day + 1);
+      year = next.getFullYear();
+      month = next.getMonth() + 1;
+      day = next.getDate();
+    }
+
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${minute}`;
+  }
+
+  function resolveDepartureWindowPlan(grid, plan) {
+    const start = grid?.dataset?.departureWindowStart;
+    const end = grid?.dataset?.departureWindowEnd;
+    if (!start || !end || !plan) return plan;
+
+    const rigMinutes = plan.rigMinutes ?? 20;
+    const bufferMinutes = plan.bufferMinutes ?? 5;
+    const arriveAtSpot = WindmateForecastTime.subtractForecastMinutes(start, rigMinutes);
+    const leaveBy = WindmateForecastTime.subtractForecastMinutes(
+      WindmateForecastTime.subtractForecastMinutes(arriveAtSpot, plan.driveMinutes ?? 0),
+      bufferMinutes
+    );
+    const onWaterStart = start.length > 16 ? start : `${start}:00`;
+    const onWaterEnd = end.length > 16 ? end : `${end}:00`;
+
+    return {
+      ...plan,
+      onWaterStart,
+      onWaterEnd,
+      onWaterStartLabel: WindmateForecastTime.formatForecastClock(start),
+      onWaterEndLabel: WindmateForecastTime.formatForecastClock(end),
+      arriveAtSpot: `${arriveAtSpot}:00`,
+      arriveAtSpotLabel: WindmateForecastTime.formatForecastClock(arriveAtSpot),
+      readyAtShore: `${arriveAtSpot}:00`,
+      leaveBy: `${leaveBy}:00`,
+      leaveByLabel: WindmateForecastTime.formatForecastClock(leaveBy),
+      rideableHours: plan.sessionWindowHours ?? plan.rideableHours,
+    };
+  }
+
   function findWindowIndices(hourTimes, plan) {
-    const start = plan.onWaterStart.slice(0, 16);
-    const end = plan.onWaterEnd.slice(0, 16);
+    const start = hourTimeKey(plan.onWaterStart);
+    const end = hourTimeKey(plan.onWaterEnd);
     let startIdx = -1;
     let endIdx = -1;
-    hourTimes.forEach((key, index) => {
+    hourTimes.forEach((time, index) => {
+      const key = hourTimeKey(time);
       if (key >= start && key < end) {
         if (startIdx < 0) startIdx = index;
         endIdx = index;
@@ -238,7 +294,8 @@ const WindmateDeparture = (() => {
     }
 
     const hourTimes = (grid.dataset.matrixHourTimes ?? '').split('|').filter(Boolean);
-    const indices = findWindowIndices(hourTimes, plan);
+    const windowPlan = resolveDepartureWindowPlan(grid, plan);
+    const indices = findWindowIndices(hourTimes, windowPlan);
     if (!indices) {
       clearDepartureStroke(card, departureKey);
       return;
@@ -387,10 +444,12 @@ const WindmateDeparture = (() => {
       const slot = card?.querySelector(`[data-departure-for="${data.spotId}"]`);
       if (!slot) continue;
       const verdict = sessionVerdictBySpot?.get(data.spotId);
-      slot.innerHTML = renderLine(data, verdict);
-      if (data.plan) {
-        trackDepartureStroke(container, card, data.spotId, data.plan, 'matrix');
-        scheduleDepartureStroke(card, data.spotId, data.plan, 'matrix');
+      const grid = card?.querySelector(`[data-matrix-grid="${data.spotId}"]`);
+      const plan = resolveDepartureWindowPlan(grid, data.plan);
+      slot.innerHTML = renderLine({ ...data, plan }, verdict);
+      if (plan) {
+        trackDepartureStroke(container, card, data.spotId, plan, 'matrix');
+        scheduleDepartureStroke(card, data.spotId, plan, 'matrix');
       }
     }
   }
@@ -435,5 +494,6 @@ const WindmateDeparture = (() => {
     applyDepartureStroke,
     refreshAllDepartureStrokes,
     watchDepartureKey,
+    exclusiveEndAfterRun,
   };
 })();

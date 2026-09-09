@@ -90,6 +90,7 @@ const WindmateCopy = {
     longestWindow: 'Longest window',
     closest: 'Closest',
     bestWind: 'Best wind',
+    bestGust: 'Best gusts',
     idealDirection: 'Ideal direction',
     bestWaves: 'Best waves',
   },
@@ -101,6 +102,7 @@ const WindmateCopy = {
     bestWindow: { label: 'Longest window', hint: 'Longest uninterrupted stretch of good hours' },
     proximity: { label: 'Distance', hint: 'Closer spots rank higher' },
     wind: { label: 'Wind strength', hint: 'Peak wind during good hours' },
+    gust: { label: 'Gust strength', hint: 'Peak gusts during good hours' },
     onshore: { label: 'Ideal direction', hint: 'Share of good hours with wind from ideal directions' },
     waveMatch: { label: 'Wave / chop', hint: 'Flatter chop scores higher (by sport default)' },
     planned: 'Coming later: water quality, water level',
@@ -117,7 +119,7 @@ const WindmateCopy = {
     waveRow: 'Wave',
     scoreRow: 'Score',
     scoreRowHint:
-      'Departure window score for a qualifying session starting this hour (higher = better)',
+      'Departure window score from wind, gust, direction, and waves — each normalized to the best rideable hour that day',
   },
 
   direction: {

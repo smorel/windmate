@@ -5,6 +5,8 @@ const {
   enumerateConsensusRuns,
   enumerateMinLengthWindows,
   buildConsensusHours,
+  weightsForDepartureWindow,
+  scoreWindowRun,
 } = require('../src/services/sessionRank');
 const {
   resolveDepartureStatus,
@@ -96,7 +98,71 @@ describe('enumerateConsensusRuns', () => {
   });
 });
 
+describe('departure window metrics', () => {
+  it('scores higher gusts higher when still rideable', () => {
+    const hours = [
+      hour('2026-09-12T08:00', { windSpeed: 14, gusts: 20 }),
+      hour('2026-09-12T09:00', { windSpeed: 14, gusts: 20 }),
+      hour('2026-09-12T13:00', { windSpeed: 14, gusts: 35 }),
+      hour('2026-09-12T14:00', { windSpeed: 14, gusts: 35 }),
+    ];
+    const prefs = { min_rideable_window_hours: 2, max_gust_knots: 38, rank_criteria_order: ['wind', 'gust'] };
+    const weights = weightsForDepartureWindow(prefs.rank_criteria_order);
+    const runLow = {
+      start: '2026-09-12T08:00',
+      end: '2026-09-12T09:00',
+      length: 2,
+      hours: hours.slice(0, 2),
+    };
+    const runHigh = {
+      start: '2026-09-12T13:00',
+      end: '2026-09-12T14:00',
+      length: 2,
+      hours: hours.slice(2, 4),
+    };
+    const low = scoreWindowRun(runLow, hours, prefs, 4, 2, weights);
+    const high = scoreWindowRun(runHigh, hours, prefs, 4, 2, weights);
+    assert.ok(high.metrics.gust > low.metrics.gust);
+    assert.ok(high.metrics.wind === low.metrics.wind);
+  });
+});
+
+describe('weightsForDepartureWindow', () => {
+  it('gives gust the same weight as wind', () => {
+    const weights = weightsForDepartureWindow(['wind', 'onshore', 'waveMatch']);
+    assert.ok(weights.gust > 0);
+    assert.equal(weights.wind, weights.gust);
+  });
+});
+
 describe('pickBestQualifyingWindow', () => {
+  it('picks the globally highest-scoring departure window on the display timeline', () => {
+    const shared = { gusts: 28, waveHeightM: 0.4 };
+    const hours = [
+      hour('2026-09-12T08:00', { windSpeed: 12, ...shared }),
+      hour('2026-09-12T09:00', { windSpeed: 12, ...shared }),
+      hour('2026-09-12T10:00', { windSpeed: 12, ...shared }),
+      hour('2026-09-12T11:00', { windSpeed: 12, ...shared }),
+      hour('2026-09-12T12:00', { windSpeed: 12, ...shared }),
+      hour('2026-09-12T13:00', { windSpeed: 12, ...shared }),
+      hour('2026-09-12T14:00', { windSpeed: 22, ...shared }),
+      hour('2026-09-12T15:00', { windSpeed: 22, ...shared }),
+      hour('2026-09-12T16:00', { windSpeed: 22, ...shared }),
+      hour('2026-09-12T17:00', { windSpeed: 22, ...shared }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 30,
+      rank_criteria_order: ['wind', 'gust', 'onshore', 'waveMatch'],
+    };
+    const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs, hours);
+    const peakWind = Math.max(...pick.run.hours.map((h) => h.windSpeed));
+    assert.equal(peakWind, 22);
+    assert.ok(pick.run.start >= '2026-09-12T13:00');
+    assert.ok(pick.run.start < '2026-09-12T16:00');
+  });
+
   it('prefers onshore afternoon block when onshore ranks above wind', () => {
     const hours = [
       hour('2026-09-12T08:00', { windSpeed: 24, windExposure: 'offshore', idealWind: false }),
@@ -119,11 +185,12 @@ describe('pickBestQualifyingWindow', () => {
   });
 
   it('picks highest-scoring min-length slice inside a longer block', () => {
+    const shared = { gusts: 28, waveHeightM: 0.4 };
     const hours = [
-      hour('2026-09-12T14:00', { windSpeed: 8 }),
-      hour('2026-09-12T15:00', { windSpeed: 22 }),
-      hour('2026-09-12T16:00', { windSpeed: 18 }),
-      hour('2026-09-12T17:00', { windSpeed: 8 }),
+      hour('2026-09-12T14:00', { windSpeed: 8, ...shared }),
+      hour('2026-09-12T15:00', { windSpeed: 22, ...shared }),
+      hour('2026-09-12T16:00', { windSpeed: 18, ...shared }),
+      hour('2026-09-12T17:00', { windSpeed: 8, ...shared }),
     ];
     const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
     const prefs = {
@@ -151,13 +218,37 @@ describe('pickBestQualifyingWindow', () => {
     assert.equal(pick.run.start, '2026-09-12T14:00');
   });
 
+  it('ignores spot-ranking criteria like longest window when scoring departure windows', () => {
+    const shared = { gusts: 28, waveHeightM: 0.4 };
+    const shortBlock = [
+      hour('2026-09-12T08:00', { windSpeed: 10, ...shared }),
+      hour('2026-09-12T09:00', { windSpeed: 10, ...shared }),
+    ];
+    const longBlock = [
+      hour('2026-09-12T14:00', { windSpeed: 24, ...shared }),
+      hour('2026-09-12T15:00', { windSpeed: 24, ...shared }),
+      hour('2026-09-12T16:00', { windSpeed: 24, ...shared }),
+      hour('2026-09-12T17:00', { windSpeed: 24, ...shared }),
+    ];
+    const hours = [...shortBlock, hour('2026-09-12T10:00', { rideable: false }), ...longBlock];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 30,
+      rank_criteria_order: ['bestWindow', 'rideability', 'wind'],
+    };
+    const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs);
+    assert.equal(pick.run.start, '2026-09-12T14:00');
+  });
+
   it('slides to earliest top-scoring window before conditions fade', () => {
+    const shared = { gusts: 28, waveHeightM: 0.4 };
     const hours = [
-      hour('2026-09-12T11:00'),
-      hour('2026-09-12T12:00'),
-      hour('2026-09-12T13:00'),
-      hour('2026-09-12T14:00', { windSpeed: 14 }),
-      hour('2026-09-12T15:00', { windSpeed: 12 }),
+      hour('2026-09-12T11:00', { windSpeed: 16, ...shared }),
+      hour('2026-09-12T12:00', { windSpeed: 16, ...shared }),
+      hour('2026-09-12T13:00', { windSpeed: 16, ...shared }),
+      hour('2026-09-12T14:00', { windSpeed: 14, ...shared }),
+      hour('2026-09-12T15:00', { windSpeed: 12, ...shared }),
     ];
     const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
     const prefs = {
@@ -169,12 +260,33 @@ describe('pickBestQualifyingWindow', () => {
     assert.equal(pick.run.start, '2026-09-12T11:00');
   });
 
-  it('prefers higher score over later start when scores differ', () => {
+  it('maximizes the sum of per-hour score-row values across the session window', () => {
+    const shared = { gusts: 28, waveHeightM: 0.4 };
     const hours = [
-      hour('2026-09-12T14:00', { windSpeed: 24 }),
-      hour('2026-09-12T15:00', { windSpeed: 20 }),
-      hour('2026-09-12T16:00', { windSpeed: 18 }),
-      hour('2026-09-12T17:00', { windSpeed: 16 }),
+      hour('2026-09-12T12:00', { windSpeed: 20, ...shared }),
+      hour('2026-09-12T13:00', { windSpeed: 20, ...shared }),
+      hour('2026-09-12T14:00', { windSpeed: 22, ...shared }),
+      hour('2026-09-12T15:00', { windSpeed: 22, ...shared }),
+      hour('2026-09-12T16:00', { windSpeed: 18, ...shared }),
+      hour('2026-09-12T17:00', { windSpeed: 14, ...shared }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 30,
+      rank_criteria_order: ['wind', 'onshore'],
+    };
+    const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs, hours);
+    assert.equal(pick.run.start, '2026-09-12T13:00');
+  });
+
+  it('prefers higher score over later start when scores differ', () => {
+    const shared = { gusts: 28, waveHeightM: 0.4 };
+    const hours = [
+      hour('2026-09-12T14:00', { windSpeed: 24, ...shared }),
+      hour('2026-09-12T15:00', { windSpeed: 20, ...shared }),
+      hour('2026-09-12T16:00', { windSpeed: 18, ...shared }),
+      hour('2026-09-12T17:00', { windSpeed: 16, ...shared }),
     ];
     const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
     const prefs = {

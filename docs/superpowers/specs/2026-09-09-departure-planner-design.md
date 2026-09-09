@@ -51,9 +51,11 @@ Reuse existing window logic (`src/utils/rideableWindow.js`, consensus across mod
 | `waveMatch` | Wave band match averaged over run hours |
 | `proximity` | **Omitted** — same spot; does not discriminate between windows |
 
-Apply user `rank_criteria_order` weights (`weightsFromOrder` — top criterion = highest weight). **Highest `windowScore` wins.**
+Apply user `rank_criteria_order` weights (`weightsFromOrder` — top criterion = highest weight). Each candidate min-length window gets a `windowScore`; the matrix score row shows that value per start hour (trailing hours reuse the window ending there).
 
-**Tie-break:** later start (minimize waiting on the beach) when scores within **0.02**.
+**Window pick:** among all min-length windows, choose the one that **maximizes the sum** of per-hour score-row values across its hours (not just the single highest `windowScore`).
+
+**Tie-break:** earliest start when sums are equal.
 
 The winning run is the **target window** for leave-time calculation. This is **not** "pick the windiest block" unless `wind` is your top-ranked criterion.
 
@@ -262,7 +264,7 @@ Response:
 
 - [ ] 3 h window, min 2 h, 50 min drive → `leave_by` = start − 50 − rig − buffer
 - [ ] Window shorter than `min_rideable_window_hours` → `no_window`
-- [ ] Two windows → higher `windowScore` per `rank_criteria_order`; tie → later start
+- [ ] Two windows → higher sum of per-hour score-row values; tie → earliest start
 - [ ] User with `wind` last in order → afternoon onshore block beats morning windy offshore block
 - [ ] No `GOOGLE_MAPS_API_KEY` → haversine estimate + `driveSource: haversine`
 - [ ] Cache hit avoids second Google call for same 15 min bucket

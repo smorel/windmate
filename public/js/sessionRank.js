@@ -5,15 +5,19 @@ const WindmateSessionRank = (() => {
     'bestWindow',
     'proximity',
     'wind',
+    'gust',
     'onshore',
     'waveMatch',
   ];
+
+  const DEPARTURE_WINDOW_CRITERIA = ['wind', 'gust', 'onshore', 'waveMatch'];
 
   const REASON_LABELS = {
     rideability: () => WindmateCopy.rank.mostGoodHours,
     bestWindow: () => WindmateCopy.rank.longestWindow,
     proximity: () => WindmateCopy.rank.closest,
     wind: () => WindmateCopy.rank.bestWind,
+    gust: () => WindmateCopy.rank.bestGust,
     onshore: () => WindmateCopy.rank.idealDirection,
     waveMatch: () => WindmateCopy.rank.bestWaves,
   };
@@ -36,7 +40,13 @@ const WindmateSessionRank = (() => {
       result.push(key);
     }
     for (const key of DEFAULT_ORDER) {
-      if (!seen.has(key)) result.push(key);
+      if (seen.has(key)) continue;
+      if (key === 'gust' && seen.has('wind')) {
+        result.splice(result.indexOf('wind') + 1, 0, key);
+      } else {
+        result.push(key);
+      }
+      seen.add(key);
     }
     return result;
   }
@@ -49,6 +59,48 @@ const WindmateSessionRank = (() => {
     const weights = {};
     normalized.forEach((key, i) => {
       weights[key] = (n - i) / rawSum;
+    });
+    return weights;
+  }
+
+  /** Departure windows score on conditions only — not spot-ranking factors like good hours or longest window. */
+  function departureWindowOrder(userOrder) {
+    const normalized = normalizeOrder(userOrder);
+    let filtered = normalized.filter((key) => DEPARTURE_WINDOW_CRITERIA.includes(key));
+    if (!filtered.length) return [...DEPARTURE_WINDOW_CRITERIA];
+
+    if (!filtered.includes('gust')) {
+      const windIndex = filtered.indexOf('wind');
+      filtered.splice(windIndex >= 0 ? windIndex + 1 : 0, 0, 'gust');
+    }
+
+    for (const key of DEPARTURE_WINDOW_CRITERIA) {
+      if (!filtered.includes(key)) filtered.push(key);
+    }
+
+    return filtered;
+  }
+
+  function weightsForDepartureWindow(userOrder) {
+    const order = departureWindowOrder(userOrder);
+    const tiers = [];
+
+    for (const key of order) {
+      if (key === 'gust') continue;
+      if (key === 'wind') {
+        tiers.push(['wind', 'gust']);
+        continue;
+      }
+      tiers.push([key]);
+    }
+
+    const n = tiers.length;
+    const rawSum = (n * (n + 1)) / 2;
+    const weights = {};
+    tiers.forEach((keys, tierIndex) => {
+      const tierWeight = (n - tierIndex) / rawSum;
+      const share = tierWeight / keys.length;
+      for (const key of keys) weights[key] = share;
     });
     return weights;
   }
@@ -110,6 +162,9 @@ const WindmateSessionRank = (() => {
     const maxRideableWind = rideableHours.length
       ? Math.max(...rideableHours.map((h) => h.windSpeed ?? 0))
       : 0;
+    const maxRideableGust = rideableHours.length
+      ? Math.max(...rideableHours.map((h) => h.gusts ?? h.windSpeed ?? 0))
+      : 0;
     const maxDirectionWind = directionOkViable.length
       ? Math.max(...directionOkViable.map((h) => h.windSpeed ?? 0))
       : 0;
@@ -121,6 +176,7 @@ const WindmateSessionRank = (() => {
       hours,
       rideableCount,
       maxRideableWind,
+      maxRideableGust,
       maxDirectionWind,
       maxWind,
       windowLen: rideableCount,
@@ -131,7 +187,7 @@ const WindmateSessionRank = (() => {
     };
   }
 
-  function buildFactors(metrics, maxDistance, windNorm, wavePreference, hasIdealDirections) {
+  function buildFactors(metrics, maxDistance, windNorm, gustNorm, wavePreference, hasIdealDirections) {
     const rideableHours = metrics.hours.filter((h) => h.rideable);
     const dist = metrics.distance_km ?? 0;
 
@@ -142,12 +198,14 @@ const WindmateSessionRank = (() => {
         : 0;
 
     const peakWind = hasIdealDirections ? metrics.maxDirectionWind : metrics.maxRideableWind || metrics.maxWind;
+    const peakGust = metrics.maxRideableGust ?? 0;
 
     return {
       rideability: metrics.rideableCount / 24,
       bestWindow: metrics.windowLen / 24,
       proximity: maxDistance > 0 ? 1 - dist / maxDistance : 1,
       wind: windNorm > 0 ? peakWind / windNorm : 0,
+      gust: gustNorm > 0 ? peakGust / gustNorm : 0,
       onshore,
       waveMatch: estimateWaveMatch(rideableHours, wavePreference),
     };
@@ -193,12 +251,14 @@ const WindmateSessionRank = (() => {
     }));
 
     const maxRideableWind = Math.max(...metricsList.map((m) => m.maxRideableWind), 0);
+    const maxRideableGust = Math.max(...metricsList.map((m) => m.maxRideableGust), 0);
     const maxDirectionWind = Math.max(...metricsList.map((m) => m.maxDirectionWind), 0);
     const globalMaxWind = Math.max(...metricsList.map((m) => m.maxWind), 1);
     const windNorm = maxDirectionWind > 0 ? maxDirectionWind : maxRideableWind > 0 ? maxRideableWind : globalMaxWind;
+    const gustNorm = maxRideableGust > 0 ? maxRideableGust : 1;
 
     const ranked = metricsList.map((m) => {
-      const factors = buildFactors(m, maxDistance, windNorm, wavePreference, m.hasIdealDirections);
+      const factors = buildFactors(m, maxDistance, windNorm, gustNorm, wavePreference, m.hasIdealDirections);
       return {
         entry: m.entry,
         factors,
@@ -310,6 +370,21 @@ const WindmateSessionRank = (() => {
     return dayHours.some((h) => h.idealWind != null);
   }
 
+  function dayWindGustNorms(dayHours) {
+    const rideable = (dayHours ?? []).filter((h) => h.rideable);
+    const dayMaxWind = rideable.length
+      ? Math.max(...rideable.map((h) => h.windSpeed ?? 0))
+      : 1;
+    const dayMaxGust = rideable.length
+      ? Math.max(...rideable.map((h) => h.gusts ?? h.windSpeed ?? 0))
+      : dayMaxWind;
+
+    return {
+      windNorm: Math.max(dayMaxWind, 1),
+      gustNorm: Math.max(dayMaxGust, 1),
+    };
+  }
+
   function computeWindowRunMetrics(runHours, dayHours, prefs, longestBlockLength, minWindowHours) {
     const viableHours = runHours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
     const directionAligned = (h) =>
@@ -320,13 +395,18 @@ const WindmateSessionRank = (() => {
     const maxRideableWind = runHours.length
       ? Math.max(...runHours.map((h) => h.windSpeed ?? 0))
       : 0;
+    const maxGust = runHours.length
+      ? Math.max(...runHours.map((h) => h.gusts ?? h.windSpeed ?? 0))
+      : 0;
+    const { windNorm, gustNorm } = dayWindGustNorms(dayHours);
     const wavePreference = wavePreferenceFromPrefs(prefs);
     const normLength = Math.max(longestBlockLength, minWindowHours, 1);
 
     return {
       rideability: 1,
       bestWindow: minWindowHours / normLength,
-      wind: Math.min(1, maxRideableWind / Math.max(prefs.max_gust_knots, 1)),
+      wind: Math.min(1, maxRideableWind / windNorm),
+      gust: Math.min(1, maxGust / gustNorm),
       onshore:
         viableHours.length > 0
           ? onshoreHours / viableHours.length
@@ -371,45 +451,48 @@ const WindmateSessionRank = (() => {
     return candidate.run.start < current.run.start;
   }
 
-  function pickBestInBlock(scored) {
+  function pickBestDepartureWindow(scored, byStartTime) {
     if (!scored.length) return null;
 
-    const displayMax = Math.max(...scored.map((item) => displayWindowScore(item.rawScore)));
-    const atPeak = scored.filter((item) => displayWindowScore(item.rawScore) === displayMax);
-    if (atPeak.length) {
-      return [...atPeak].sort((a, b) => a.run.start.localeCompare(b.run.start))[0];
-    }
-
-    return [...scored].sort((a, b) => {
-      if (b.rawScore !== a.rawScore) return b.rawScore - a.rawScore;
-      return a.run.start.localeCompare(b.run.start);
-    })[0];
-  }
-
-  function pickBestQualifyingWindow(entry, dateStr, prefs) {
-    const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
-    const consensusHours = buildConsensusHours(entry, dateStr);
-    const blocks = enumerateRunsFromHours(consensusHours, minWindowHours);
-    if (!blocks.length) return null;
-
-    const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
-    const order = normalizeOrder(prefs?.rank_criteria_order);
-    const weights = weightsFromOrder(order);
-
     let best = null;
-    for (const block of blocks) {
-      const windows = enumerateMinLengthWindows(block.hours, minWindowHours);
-      const scored = windows.map((run) =>
-        scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights)
-      );
-      const pick = pickBestInBlock(scored);
-      if (!pick) continue;
-      if (isBetterWindowPick(pick, best)) {
-        best = pick;
+    let bestSum = -Infinity;
+
+    for (const item of scored) {
+      const sum = item.run.hours.reduce((total, hour) => {
+        const hourScored = byStartTime.get(hourTimeKey(hour.time));
+        return total + (hourScored ? displayWindowScore(hourScored.windowScore) : 0);
+      }, 0);
+
+      if (
+        !best ||
+        sum > bestSum ||
+        (sum === bestSum && item.run.start.localeCompare(best.run.start) < 0)
+      ) {
+        best = item;
+        bestSum = sum;
       }
     }
 
+    return best;
+  }
+
+  function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours) {
+    const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
+    const consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
+    const windows = enumerateMinLengthWindows(consensusHours, minWindowHours);
+    if (!windows.length) return null;
+
+    const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
+    const weights = weightsForDepartureWindow(prefs?.rank_criteria_order);
+
+    const scored = windows.map((run) =>
+      scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights)
+    );
+    const byStartTime = new Map(scored.map((item) => [item.run.start, item]));
+    fillTrailingHourScores(byStartTime, consensusHours, minWindowHours);
+    const best = pickBestDepartureWindow(scored, byStartTime);
     if (!best) return null;
+
     return {
       run: best.run,
       windowScore: best.windowScore,
@@ -446,12 +529,10 @@ const WindmateSessionRank = (() => {
     const consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
     const windows = enumerateMinLengthWindows(consensusHours, minWindowHours);
     const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
-    const order = normalizeOrder(prefs?.rank_criteria_order);
-    const weights = weightsFromOrder(order);
-    const byStartTime = new Map();
-
-    for (const run of windows) {
-      const scored = scoreWindowRun(
+    const order = departureWindowOrder(prefs?.rank_criteria_order);
+    const weights = weightsForDepartureWindow(prefs?.rank_criteria_order);
+    const scored = windows.map((run) => {
+      const item = scoreWindowRun(
         run,
         consensusHours,
         prefs,
@@ -459,12 +540,22 @@ const WindmateSessionRank = (() => {
         minWindowHours,
         weights
       );
-      byStartTime.set(run.start, { ...scored, weights });
-    }
+      return { ...item, weights };
+    });
+    const byStartTime = new Map(scored.map((item) => [item.run.start, item]));
 
     fillTrailingHourScores(byStartTime, consensusHours, minWindowHours);
 
-    const bestPick = pickBestQualifyingWindow(entry, dateStr, prefs);
+    const best = pickBestDepartureWindow(scored, byStartTime);
+    const bestPick = best
+      ? {
+          run: best.run,
+          windowScore: best.windowScore,
+          metrics: best.metrics,
+          sessionWindowHours: minWindowHours,
+          weights,
+        }
+      : null;
 
     return {
       byStartTime,
@@ -482,6 +573,8 @@ const WindmateSessionRank = (() => {
     renderBanners,
     normalizeOrder,
     weightsFromOrder,
+    departureWindowOrder,
+    weightsForDepartureWindow,
     pickBestQualifyingWindow,
     scoreWindowsByStartHour,
     DEFAULT_ORDER,

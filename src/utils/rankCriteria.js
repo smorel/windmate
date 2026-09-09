@@ -3,6 +3,7 @@ const DEFAULT_RANK_CRITERIA_ORDER = [
   'bestWindow',
   'proximity',
   'wind',
+  'gust',
   'onshore',
   'waveMatch',
 ];
@@ -36,7 +37,13 @@ function parseRankCriteriaOrder(value) {
   }
 
   for (const key of DEFAULT_RANK_CRITERIA_ORDER) {
-    if (!seen.has(key)) order.push(key);
+    if (seen.has(key)) continue;
+    if (key === 'gust' && seen.has('wind')) {
+      order.splice(order.indexOf('wind') + 1, 0, key);
+    } else {
+      order.push(key);
+    }
+    seen.add(key);
   }
 
   return order;

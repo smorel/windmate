@@ -12,9 +12,12 @@ const DEFAULT_ORDER = [
   'bestWindow',
   'proximity',
   'wind',
+  'gust',
   'onshore',
   'waveMatch',
 ];
+
+const DEPARTURE_WINDOW_CRITERIA = ['wind', 'gust', 'onshore', 'waveMatch'];
 
 function normalizeOrder(order) {
   const seen = new Set();
@@ -25,7 +28,13 @@ function normalizeOrder(order) {
     result.push(key);
   }
   for (const key of DEFAULT_ORDER) {
-    if (!seen.has(key)) result.push(key);
+    if (seen.has(key)) continue;
+    if (key === 'gust' && seen.has('wind')) {
+      result.splice(result.indexOf('wind') + 1, 0, key);
+    } else {
+      result.push(key);
+    }
+    seen.add(key);
   }
   return result;
 }
@@ -37,6 +46,47 @@ function weightsFromOrder(order) {
   const weights = {};
   normalized.forEach((key, i) => {
     weights[key] = (n - i) / rawSum;
+  });
+  return weights;
+}
+
+function departureWindowOrder(userOrder) {
+  const normalized = normalizeOrder(userOrder);
+  let filtered = normalized.filter((key) => DEPARTURE_WINDOW_CRITERIA.includes(key));
+  if (!filtered.length) return [...DEPARTURE_WINDOW_CRITERIA];
+
+  if (!filtered.includes('gust')) {
+    const windIndex = filtered.indexOf('wind');
+    filtered.splice(windIndex >= 0 ? windIndex + 1 : 0, 0, 'gust');
+  }
+
+  for (const key of DEPARTURE_WINDOW_CRITERIA) {
+    if (!filtered.includes(key)) filtered.push(key);
+  }
+
+  return filtered;
+}
+
+function weightsForDepartureWindow(userOrder) {
+  const order = departureWindowOrder(userOrder);
+  const tiers = [];
+
+  for (const key of order) {
+    if (key === 'gust') continue;
+    if (key === 'wind') {
+      tiers.push(['wind', 'gust']);
+      continue;
+    }
+    tiers.push([key]);
+  }
+
+  const n = tiers.length;
+  const rawSum = (n * (n + 1)) / 2;
+  const weights = {};
+  tiers.forEach((keys, tierIndex) => {
+    const tierWeight = (n - tierIndex) / rawSum;
+    const share = tierWeight / keys.length;
+    for (const key of keys) weights[key] = share;
   });
   return weights;
 }
@@ -157,6 +207,9 @@ function computeRawMetrics(entry, dateStr, prefs, radiusKm) {
   const maxRideableWind = rideableHours.length
     ? Math.max(...rideableHours.map((h) => h.windSpeed ?? 0))
     : 0;
+  const maxRideableGust = rideableHours.length
+    ? Math.max(...rideableHours.map((h) => h.gusts ?? h.windSpeed ?? 0))
+    : 0;
   const maxDirectionWind = directionOkViable.length
     ? Math.max(...directionOkViable.map((h) => h.windSpeed ?? 0))
     : 0;
@@ -175,6 +228,7 @@ function computeRawMetrics(entry, dateStr, prefs, radiusKm) {
     bestWindow: Math.min(1, rideableCount / 8),
     proximity: Math.max(0, 1 - dist / Math.max(radiusKm ?? 50, 1)),
     wind: Math.min(1, maxRideableWind / Math.max(prefs.max_gust_knots, 1)),
+    gust: Math.min(1, maxRideableGust / Math.max(prefs.max_gust_knots, 1)),
     onshore:
       viableHours.length > 0
         ? onshoreHours / viableHours.length
@@ -203,6 +257,7 @@ const WINDOW_REASON_LABELS = {
   rideability: 'Most good hours',
   bestWindow: 'Longest window',
   wind: 'Best wind',
+  gust: 'Best gusts',
   onshore: 'Ideal direction',
   waveMatch: 'Best waves',
 };
@@ -273,6 +328,21 @@ function enumerateConsensusRuns(entry, dateStr, minWindowHours) {
   return enumerateRunsFromHours(consensusHours, minWindowHours);
 }
 
+function dayWindGustNorms(dayHours) {
+  const rideable = (dayHours ?? []).filter((h) => h.rideable);
+  const dayMaxWind = rideable.length
+    ? Math.max(...rideable.map((h) => h.windSpeed ?? 0))
+    : 1;
+  const dayMaxGust = rideable.length
+    ? Math.max(...rideable.map((h) => h.gusts ?? h.windSpeed ?? 0))
+    : dayMaxWind;
+
+  return {
+    windNorm: Math.max(dayMaxWind, 1),
+    gustNorm: Math.max(dayMaxGust, 1),
+  };
+}
+
 function computeWindowRunMetrics(runHours, dayHours, prefs, longestBlockLength, minWindowHours) {
   const viableHours = runHours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
   const directionAligned = (h) =>
@@ -283,13 +353,18 @@ function computeWindowRunMetrics(runHours, dayHours, prefs, longestBlockLength, 
   const maxRideableWind = runHours.length
     ? Math.max(...runHours.map((h) => h.windSpeed ?? 0))
     : 0;
+  const maxGust = runHours.length
+    ? Math.max(...runHours.map((h) => h.gusts ?? h.windSpeed ?? 0))
+    : 0;
+  const { windNorm, gustNorm } = dayWindGustNorms(dayHours);
   const wavePreference = wavePreferenceFromPrefs(prefs);
   const normLength = Math.max(longestBlockLength, minWindowHours, 1);
 
   return {
     rideability: 1,
     bestWindow: minWindowHours / normLength,
-    wind: Math.min(1, maxRideableWind / Math.max(prefs.max_gust_knots, 1)),
+    wind: Math.min(1, maxRideableWind / windNorm),
+    gust: Math.min(1, maxGust / gustNorm),
     onshore:
       viableHours.length > 0
         ? onshoreHours / viableHours.length
@@ -350,46 +425,72 @@ function isBetterWindowPick(candidate, current) {
   return candidate.run.start < current.run.start;
 }
 
-/** Earliest min-length window at the block's top displayed score (matches matrix 0.61 plateau). */
-function pickBestInBlock(scored) {
-  if (!scored.length) return null;
+function fillTrailingHourScores(byStartTime, consensusHours, minWindowHours) {
+  const blocks = enumerateRunsFromHours(consensusHours, minWindowHours);
+  const tailCount = Math.max(0, minWindowHours - 1);
 
-  const displayMax = Math.max(...scored.map((item) => displayWindowScore(item.rawScore)));
-  const atPeak = scored.filter((item) => displayWindowScore(item.rawScore) === displayMax);
-  if (atPeak.length) {
-    return [...atPeak].sort((a, b) => a.run.start.localeCompare(b.run.start))[0];
+  for (const block of blocks) {
+    const hours = block.hours;
+    for (let t = 0; t < tailCount; t += 1) {
+      const index = hours.length - 1 - t;
+      if (index < 0) break;
+
+      const endKey = hourTimeKey(hours[index].time);
+      if (byStartTime.has(endKey)) continue;
+
+      const startIndex = index - minWindowHours + 1;
+      if (startIndex < 0) continue;
+
+      const startKey = hourTimeKey(hours[startIndex].time);
+      const scored = byStartTime.get(startKey);
+      if (scored) byStartTime.set(endKey, scored);
+    }
   }
-
-  return [...scored].sort((a, b) => {
-    if (b.rawScore !== a.rawScore) return b.rawScore - a.rawScore;
-    return a.run.start.localeCompare(b.run.start);
-  })[0];
 }
 
-function pickBestQualifyingWindow(entry, dateStr, prefs) {
-  const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
-  const consensusHours = buildConsensusHours(entry, dateStr);
-  const blocks = enumerateRunsFromHours(consensusHours, minWindowHours);
-  if (!blocks.length) return null;
-
-  const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
-  const order = parseRankCriteriaOrder(prefs.rank_criteria_order);
-  const weights = weightsFromOrder(order);
+function pickBestDepartureWindow(scored, byStartTime) {
+  if (!scored.length) return null;
 
   let best = null;
-  for (const block of blocks) {
-    const windows = enumerateMinLengthWindows(block.hours, minWindowHours);
-    const scored = windows.map((run) =>
-      scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights)
-    );
-    const pick = pickBestInBlock(scored);
-    if (!pick) continue;
-    if (isBetterWindowPick(pick, best)) {
-      best = pick;
+  let bestSum = -Infinity;
+
+  for (const item of scored) {
+    const sum = item.run.hours.reduce((total, hour) => {
+      const hourScored = byStartTime.get(hourTimeKey(hour.time));
+      return total + (hourScored ? displayWindowScore(hourScored.windowScore) : 0);
+    }, 0);
+
+    if (
+      !best ||
+      sum > bestSum ||
+      (sum === bestSum && item.run.start.localeCompare(best.run.start) < 0)
+    ) {
+      best = item;
+      bestSum = sum;
     }
   }
 
+  return best;
+}
+
+function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours) {
+  const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
+  const consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
+  const windows = enumerateMinLengthWindows(consensusHours, minWindowHours);
+  if (!windows.length) return null;
+
+  const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
+  const order = departureWindowOrder(prefs.rank_criteria_order);
+  const weights = weightsForDepartureWindow(prefs.rank_criteria_order);
+
+  const scored = windows.map((run) =>
+    scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights)
+  );
+  const byStartTime = new Map(scored.map((item) => [item.run.start, item]));
+  fillTrailingHourScores(byStartTime, consensusHours, minWindowHours);
+  const best = pickBestDepartureWindow(scored, byStartTime);
   if (!best) return null;
+
   return {
     run: best.run,
     windowScore: best.windowScore,
@@ -407,8 +508,12 @@ module.exports = {
   getDayHours,
   getModelDayHours,
   weightsFromOrder,
+  departureWindowOrder,
+  weightsForDepartureWindow,
   enumerateConsensusRuns,
   enumerateMinLengthWindows,
   buildConsensusHours,
   pickBestQualifyingWindow,
+  scoreWindowRun,
+  computeWindowRunMetrics,
 };

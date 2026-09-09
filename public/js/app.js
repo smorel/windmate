@@ -1640,7 +1640,7 @@ function renderCriterionRow(timelineHours, alignedModels, criterion, label, wind
 }
 
 function windowScoreCriterionLabel(key) {
-  return WindmateCopy.rankCriteria[key]?.label ?? key;
+  return WindmateCopy.rankCriteria[key]?.label ?? WindmateCopy.matrix[key + 'Row'] ?? key;
 }
 
 function formatWindowScoreTooltip(scored, sessionWindowHours, order, weights) {
@@ -1653,7 +1653,6 @@ function formatWindowScoreTooltip(scored, sessionWindowHours, order, weights) {
   ];
 
   for (const key of order) {
-    if (key === 'proximity') continue;
     const value = scored.metrics[key] ?? 0;
     const weight = weights[key] ?? 0;
     const contribution = value * weight;
@@ -1828,6 +1827,16 @@ function renderRideabilityMatrix(data, observations) {
       );
 
       const matrixPrefs = prefsForRanking(data.preferences);
+      const departurePick = WindmateSessionRank.pickBestQualifyingWindow(
+        entry,
+        selectedDayDate,
+        matrixPrefs,
+        dayHours
+      );
+      const departureWindowStart = departurePick?.run.start ?? '';
+      const departureWindowEnd = departurePick
+        ? WindmateDeparture.exclusiveEndAfterRun(departurePick.run.end)
+        : '';
       const scoreRow = renderWindowScoreRow(dayHours, entry, selectedDayDate, matrixPrefs);
       const matrixRows = `${directionRow}${criterionRows}${scoreRow}`;
       const dayLabel = viewingToday
@@ -1892,7 +1901,9 @@ function renderRideabilityMatrix(data, observations) {
                 <div
                   class="matrix-grid-wrap"
                   data-matrix-grid="${spot.id}"
-                  data-matrix-hour-times="${dayHours.map((h) => h.time.slice(0, 16)).join('|')}"
+                  data-matrix-hour-times="${dayHours.map((h) => WindmateRideableWindow.hourTimeKey(h.time)).join('|')}"
+                  data-departure-window-start="${departureWindowStart}"
+                  data-departure-window-end="${departureWindowEnd}"
                 >
                   ${renderMatrixTimeAxis(dayHours)}
                   ${matrixRows}

@@ -45,12 +45,12 @@ const SPORT_DISPLAY_NAMES = {
 };
 
 const DEFAULT_RANK_ORDER_BY_SPORT = {
-  wingfoiling: ['proximity', 'rideability', 'bestWindow', 'wind', 'onshore', 'waveMatch'],
-  parawing: ['proximity', 'rideability', 'bestWindow', 'wind', 'onshore', 'waveMatch'],
-  kitefoiling: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'waveMatch'],
-  kitesurfing: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'waveMatch'],
-  windsurfing: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'waveMatch'],
-  sailing: ['wind', 'bestWindow', 'waveMatch', 'rideability', 'proximity', 'onshore'],
+  wingfoiling: ['proximity', 'rideability', 'bestWindow', 'wind', 'gust', 'onshore', 'waveMatch'],
+  parawing: ['proximity', 'rideability', 'bestWindow', 'wind', 'gust', 'onshore', 'waveMatch'],
+  kitefoiling: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'gust', 'waveMatch'],
+  kitesurfing: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'gust', 'waveMatch'],
+  windsurfing: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'gust', 'waveMatch'],
+  sailing: ['wind', 'gust', 'bestWindow', 'waveMatch', 'rideability', 'proximity', 'onshore'],
 };
 
 const DEFAULT_ALERT_SCHEDULE = {

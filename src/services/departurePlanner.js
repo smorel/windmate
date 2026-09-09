@@ -1,4 +1,4 @@
-const { pickBestQualifyingWindow, buildConsensusHours } = require('./sessionRank');
+const { pickBestQualifyingWindow, buildConsensusHours, getDayHours } = require('./sessionRank');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 const { computeSessionWarnings } = require('./weatherHazards');
 const { getDriveDuration, haversineDriveMinutes, buildMapsUrl } = require('./travelTime');
@@ -70,7 +70,9 @@ function remainingWindowHours(onWaterEnd) {
 }
 
 async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs }) {
-  const windowPick = pickBestQualifyingWindow(rideEntry, dateStr, prefs);
+  const timelineHours = getDayHours(rideEntry, dateStr);
+  const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours);
+  const windowPick = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
   if (!windowPick) {
     return {
       status: 'no_window',
@@ -80,7 +82,6 @@ async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs 
 
   const { run, windowScore, topReasons, sessionWindowHours } = windowPick;
   const minWindowHours = sessionWindowHours ?? parseMinRideableWindowHours(prefs.min_rideable_window_hours);
-  const dayHours = buildConsensusHours(rideEntry, dateStr);
   const { onWaterEnd, rideableHours } = trimWindowEndForHazards(dayHours, run, prefs);
 
   if (rideableHours < minWindowHours) {

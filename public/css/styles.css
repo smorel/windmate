@@ -123,6 +123,7 @@
 
 .hour-block-segments {
   display: flex;
+  flex-direction: column;
   gap: 1px;
   height: 100%;
   border-radius: 2px;
@@ -131,7 +132,7 @@
 
 .hour-block-seg {
   flex: 1;
-  min-width: 0;
+  min-height: 0;
 }
 
 .hour-block-seg--empty {
@@ -275,7 +276,7 @@
 .matrix-ride-legend-swatch--rideable {
   border: 1px solid transparent;
   background: linear-gradient(
-    to right,
+    to bottom,
     #60a059 0 24%,
     #9eb851 24% 49%,
     #60a059 49% 74%,
@@ -287,7 +288,7 @@
   border: 1px solid transparent;
   opacity: 0.5;
   background: linear-gradient(
-    to right,
+    to bottom,
     #60a059 0 24%,
     #9eb851 24% 49%,
     #60a059 49% 74%,
@@ -304,7 +305,7 @@
       rgba(248, 113, 113, 0.55) 3px 4px
     ),
     linear-gradient(
-      to right,
+      to bottom,
       #60a059 0 24%,
       #9eb851 24% 49%,
       #60a059 49% 74%,

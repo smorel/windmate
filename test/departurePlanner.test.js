@@ -4,6 +4,7 @@ const {
   pickBestQualifyingWindow,
   enumerateConsensusRuns,
   enumerateMinLengthWindows,
+  buildConsensusHours,
 } = require('../src/services/sessionRank');
 const {
   resolveDepartureStatus,
@@ -40,6 +41,40 @@ describe('enumerateMinLengthWindows', () => {
     assert.equal(windows[0].start, '2026-09-12T14:00');
     assert.equal(windows[2].start, '2026-09-12T16:00');
     assert.equal(windows[0].length, 2);
+  });
+});
+
+describe('buildConsensusHours', () => {
+  it('aligns consensus to the display timeline, ignoring extra model-only slots', () => {
+    const primaryHours = [
+      hour('2026-09-12T08:00'),
+      hour('2026-09-12T09:00'),
+      hour('2026-09-12T10:00'),
+      hour('2026-09-12T11:00'),
+    ];
+    const hrdpsHours = [
+      hour('2026-09-12T08:00'),
+      hour('2026-09-12T08:30', { rideable: false }),
+      hour('2026-09-12T09:00'),
+      hour('2026-09-12T10:00'),
+      hour('2026-09-12T11:00'),
+    ];
+    const entry = {
+      primaryModel: 'gfs',
+      models: {
+        gfs: { days: [{ date: '2026-09-12', hours: primaryHours }] },
+        hrdps: { days: [{ date: '2026-09-12', hours: hrdpsHours }] },
+      },
+    };
+
+    const consensus = buildConsensusHours(entry, '2026-09-12', primaryHours);
+    assert.equal(consensus.length, 4);
+    assert.equal(consensus.every((slot) => slot.rideable), true);
+
+    const windows = enumerateMinLengthWindows(consensus, 2);
+    assert.equal(windows.length, 3);
+    assert.equal(windows[0].start, '2026-09-12T08:00');
+    assert.equal(windows[2].start, '2026-09-12T10:00');
   });
 });
 
@@ -83,7 +118,7 @@ describe('pickBestQualifyingWindow', () => {
     assert.equal(pick.sessionWindowHours, 2);
   });
 
-  it('picks best min-length slice inside a longer block when wind ranks first', () => {
+  it('picks highest-scoring min-length slice inside a longer block', () => {
     const hours = [
       hour('2026-09-12T14:00', { windSpeed: 8 }),
       hour('2026-09-12T15:00', { windSpeed: 22 }),
@@ -97,10 +132,10 @@ describe('pickBestQualifyingWindow', () => {
       rank_criteria_order: ['wind', 'onshore'],
     };
     const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs);
-    assert.equal(pick.run.start, '2026-09-12T15:00');
+    assert.equal(pick.run.start, '2026-09-12T14:00');
   });
 
-  it('ties within 0.02 to later start', () => {
+  it('ties equal scores to earliest start in a contiguous block', () => {
     const hours = [
       hour('2026-09-12T14:00'),
       hour('2026-09-12T15:00'),
@@ -113,7 +148,42 @@ describe('pickBestQualifyingWindow', () => {
       rank_criteria_order: ['bestWindow'],
     };
     const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs);
-    assert.equal(pick.run.start, '2026-09-12T15:00');
+    assert.equal(pick.run.start, '2026-09-12T14:00');
+  });
+
+  it('slides to earliest top-scoring window before conditions fade', () => {
+    const hours = [
+      hour('2026-09-12T11:00'),
+      hour('2026-09-12T12:00'),
+      hour('2026-09-12T13:00'),
+      hour('2026-09-12T14:00', { windSpeed: 14 }),
+      hour('2026-09-12T15:00', { windSpeed: 12 }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 30,
+      rank_criteria_order: ['wind', 'onshore'],
+    };
+    const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs);
+    assert.equal(pick.run.start, '2026-09-12T11:00');
+  });
+
+  it('prefers higher score over later start when scores differ', () => {
+    const hours = [
+      hour('2026-09-12T14:00', { windSpeed: 24 }),
+      hour('2026-09-12T15:00', { windSpeed: 20 }),
+      hour('2026-09-12T16:00', { windSpeed: 18 }),
+      hour('2026-09-12T17:00', { windSpeed: 16 }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 30,
+      rank_criteria_order: ['wind', 'onshore'],
+    };
+    const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs);
+    assert.equal(pick.run.start, '2026-09-12T14:00');
   });
 });
 

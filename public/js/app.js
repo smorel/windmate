@@ -1564,7 +1564,8 @@ function renderDirectionRow(hours) {
       const exposureLabel = WindmateCopy.direction.exposure[exposure] ?? exposure;
       const hourLabel = hour.time.slice(11, 16);
       const title = `${hourLabel} ${hour.direction} · ${exposureLabel}`;
-      return `<div class="matrix-direction matrix-direction--${exposure}" title="${title}"><span>${hour.direction}</span></div>`;
+      const tip = escapeHtml(title);
+      return `<div class="matrix-direction matrix-direction--${exposure}"><span>${hour.direction}</span><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
     })
     .join('');
 
@@ -1634,6 +1635,106 @@ function renderCriterionRow(timelineHours, alignedModels, criterion, label, wind
       <div class="matrix-hour-track flex-1">
         <div class="matrix-rain-overlay" aria-hidden="true">${rainOverlay}</div>
         <div class="matrix-hour-blocks">${blocks}</div>
+      </div>
+    </div>`;
+}
+
+function windowScoreCriterionLabel(key) {
+  return WindmateCopy.rankCriteria[key]?.label ?? key;
+}
+
+function formatWindowScoreTooltip(scored, sessionWindowHours, order, weights) {
+  const startLabel = scored.run.start.slice(11, 16);
+  const endHour = scored.run.end.slice(11, 16);
+  const lines = [
+    `Window score ${scored.windowScore.toFixed(2)}`,
+    `${startLabel}–${endHour} (${sessionWindowHours} h)`,
+    '',
+  ];
+
+  for (const key of order) {
+    if (key === 'proximity') continue;
+    const value = scored.metrics[key] ?? 0;
+    const weight = weights[key] ?? 0;
+    const contribution = value * weight;
+    const pct = `${(weight * 100).toFixed(0)}%`;
+    lines.push(
+      `${windowScoreCriterionLabel(key)}: ${value.toFixed(2)} × ${pct} = ${contribution.toFixed(2)}`
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function matrixScoreDisplayValue(windowScore) {
+  return Number(windowScore.toFixed(2));
+}
+
+function renderWindowScoreRow(timelineHours, entry, dateStr, prefs) {
+  if (!timelineHours?.length) return '';
+
+  const { byStartTime, sessionWindowHours, weights, order } = WindmateSessionRank.scoreWindowsByStartHour(
+    entry,
+    dateStr,
+    prefs,
+    timelineHours
+  );
+  const scoredValues = [...byStartTime.values()];
+  const topDisplayScore = scoredValues.length
+    ? Math.max(...scoredValues.map((scored) => matrixScoreDisplayValue(scored.windowScore)))
+    : null;
+
+  const blocks = timelineHours
+    .map((hour) => {
+      const key = WindmateRideableWindow.hourTimeKey(hour.time);
+      const scored = byStartTime.get(key);
+      if (!scored) {
+        return '<div class="matrix-score-cell" aria-hidden="true"></div>';
+      }
+
+      const displayScore = matrixScoreDisplayValue(scored.windowScore);
+      const isTopScore = topDisplayScore != null && displayScore === topDisplayScore;
+      const cls = isTopScore ? 'matrix-score-cell matrix-score-cell--top' : 'matrix-score-cell';
+      const tip = escapeHtml(formatWindowScoreTooltip(scored, sessionWindowHours, order, weights));
+      return `<div class="${cls}"><span>${displayScore.toFixed(2)}</span><span class="matrix-score-cell-tip" role="tooltip">${tip}</span></div>`;
+    })
+    .join('');
+
+  const label = WindmateCopy.matrix.scoreRow;
+  const hint = WindmateCopy.matrix.scoreRowHint;
+
+  return `
+    <div class="matrix-row matrix-row--score flex items-center gap-2 mb-1">
+      <span class="text-[10px] text-slate-500 w-24 shrink-0 truncate" title="${escapeHtml(hint)}">${label}</span>
+      <div class="matrix-hour-track flex-1">
+        <div class="matrix-score-blocks">${blocks}</div>
+      </div>
+    </div>`;
+}
+
+function matrixHourOfDay(time) {
+  return parseInt(String(time).replace(' ', 'T').slice(11, 13), 10);
+}
+
+function renderMatrixTimeAxis(timelineHours) {
+  if (!timelineHours?.length) return '';
+
+  const markers = new Set([0, 6, 12, 18, 23]);
+  const cells = timelineHours
+    .map((hour) => {
+      const hourOfDay = matrixHourOfDay(hour.time);
+      if (!markers.has(hourOfDay)) {
+        return '<span class="matrix-time-cell" aria-hidden="true"></span>';
+      }
+      return `<span class="matrix-time-cell">${hourOfDay}</span>`;
+    })
+    .join('');
+
+  return `
+    <div class="matrix-time-axis flex items-center gap-2 mb-1" aria-hidden="true">
+      <span class="w-24 shrink-0"></span>
+      <div class="matrix-hour-track flex-1">
+        <div class="matrix-time-blocks">${cells}</div>
       </div>
     </div>`;
 }
@@ -1726,7 +1827,9 @@ function renderRideabilityMatrix(data, observations) {
         windowMaps
       );
 
-      const matrixRows = `${directionRow}${criterionRows}`;
+      const matrixPrefs = prefsForRanking(data.preferences);
+      const scoreRow = renderWindowScoreRow(dayHours, entry, selectedDayDate, matrixPrefs);
+      const matrixRows = `${directionRow}${criterionRows}${scoreRow}`;
       const dayLabel = viewingToday
         ? WindmateCopy.horizon.todayShort
         : formatDayLabel(selectedDayDate);
@@ -1791,12 +1894,8 @@ function renderRideabilityMatrix(data, observations) {
                   data-matrix-grid="${spot.id}"
                   data-matrix-hour-times="${dayHours.map((h) => h.time.slice(0, 16)).join('|')}"
                 >
+                  ${renderMatrixTimeAxis(dayHours)}
                   ${matrixRows}
-                  <div class="flex justify-between mt-2 ml-28 text-[10px] text-slate-500">
-                    <span>00:00</span>
-                    <span>12:00</span>
-                    <span>23:00</span>
-                  </div>
                 </div>
               </div>
               ${spotMap ? `<div class="matrix-panel-map">${spotMap}</div>` : ''}

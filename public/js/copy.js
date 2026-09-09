@@ -115,6 +115,9 @@ const WindmateCopy = {
     windRow: 'Wind',
     gustRow: 'Gust',
     waveRow: 'Wave',
+    scoreRow: 'Score',
+    scoreRowHint:
+      'Departure window score for a qualifying session starting this hour (higher = better)',
   },
 
   direction: {

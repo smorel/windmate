@@ -160,9 +160,7 @@ const WindmateDeparture = (() => {
       `M ${mLeft + r} ${my}`,
       `H ${mRight - r}`,
       `Q ${mRight} ${my} ${mRight} ${my + r}`,
-      `V ${mBottom - r}`,
-      `Q ${mRight} ${mBottom} ${mRight - r} ${mBottom}`,
-      `L ${mRight} ${mBottom}`,
+      `V ${mBottom}`,
       `L ${mRight} ${by}`,
     ];
 
@@ -180,7 +178,6 @@ const WindmateDeparture = (() => {
       `Q ${bLeft} ${by} ${bInnerLeft} ${by}`,
       `L ${mLeft} ${by}`,
       `L ${mLeft} ${mBottom}`,
-      `Q ${mLeft} ${mBottom} ${mLeft} ${mBottom - r}`,
       `V ${my + r}`,
       `Q ${mLeft} ${my} ${mLeft + r} ${my}`,
       'Z'

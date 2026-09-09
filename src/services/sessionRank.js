@@ -2,6 +2,7 @@ const {
   parseMinRideableWindowHours,
   longestRideableWindow,
   longestRideableWindowSpan,
+  hourTimeKey,
 } = require('../utils/rideableWindow');
 const { parseRankCriteriaOrder } = require('../utils/rankCriteria');
 const { SPORT_WAVE_DEFAULTS } = require('../utils/sports');
@@ -207,8 +208,8 @@ const WINDOW_REASON_LABELS = {
 };
 
 function buildRunFromHours(hours) {
-  const start = hours[0].time.slice(0, 16);
-  const end = hours[hours.length - 1].time.slice(0, 16);
+  const start = hourTimeKey(hours[0].time);
+  const end = hourTimeKey(hours[hours.length - 1].time);
   return { start, end, length: hours.length, hours };
 }
 
@@ -244,28 +245,25 @@ function longestRideableBlockLength(hours, minWindowHours) {
   return Math.max(...enumerateRunsFromHours(hours, minWindowHours).map((run) => run.length), 0);
 }
 
-function buildConsensusHours(entry, dateStr) {
+function buildConsensusHours(entry, dateStr, timelineHours) {
+  const timeline = timelineHours ?? getDayHours(entry, dateStr);
   const modelEntries = Object.entries(entry.models ?? {}).filter(([, model]) => !model.error);
-  if (!modelEntries.length) {
-    return getDayHours(entry, dateStr);
+  if (!modelEntries.length || !timeline.length) {
+    return timeline;
   }
 
-  const timelines = modelEntries.map(([, model]) => {
+  const indexed = modelEntries.map(([, model]) => {
     const day = model.days?.find((d) => d.date === dateStr);
-    return day?.hours ?? [];
+    const hours = day?.hours ?? [];
+    const byKey = new Map();
+    for (const hour of hours) byKey.set(hourTimeKey(hour.time), hour);
+    return byKey;
   });
-  const timeKeys = [
-    ...new Set(timelines.flatMap((hours) => hours.map((h) => h.time.slice(0, 16)))),
-  ].sort();
 
-  return timeKeys.map((key) => {
-    const sample =
-      timelines.map((hours) => hours.find((h) => h.time.slice(0, 16) === key)).find(Boolean) ??
-      { time: key };
-    const allRideable = timelines.every((hours) => {
-      const hour = hours.find((h) => h.time.slice(0, 16) === key);
-      return hour?.rideable === true;
-    });
+  return timeline.map((slot) => {
+    const key = hourTimeKey(slot.time);
+    const allRideable = indexed.every((byKey) => byKey.get(key)?.rideable === true);
+    const sample = indexed.map((byKey) => byKey.get(key)).find(Boolean) ?? slot;
     return { ...sample, time: key, rideable: allRideable };
   });
 }
@@ -318,41 +316,80 @@ function topReasonsForWindowMetrics(metrics, order) {
   return reasons;
 }
 
+function scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights) {
+  const metrics = computeWindowRunMetrics(
+    run.hours,
+    consensusHours,
+    prefs,
+    longestBlockLength,
+    minWindowHours
+  );
+  let score = 0;
+  for (const key of Object.keys(weights)) {
+    if (key === 'proximity') continue;
+    score += (metrics[key] ?? 0) * weights[key];
+  }
+  return {
+    run,
+    rawScore: score,
+    windowScore: Math.round(score * 1000) / 1000,
+    metrics,
+  };
+}
+
+function displayWindowScore(rawScore) {
+  return Math.round(rawScore * 100) / 100;
+}
+
+function isBetterWindowPick(candidate, current) {
+  if (!current) return true;
+  const displayC = displayWindowScore(candidate.rawScore);
+  const displayCur = displayWindowScore(current.rawScore);
+  if (displayC !== displayCur) return displayC > displayCur;
+  if (candidate.rawScore !== current.rawScore) return candidate.rawScore > current.rawScore;
+  return candidate.run.start < current.run.start;
+}
+
+/** Earliest min-length window at the block's top displayed score (matches matrix 0.61 plateau). */
+function pickBestInBlock(scored) {
+  if (!scored.length) return null;
+
+  const displayMax = Math.max(...scored.map((item) => displayWindowScore(item.rawScore)));
+  const atPeak = scored.filter((item) => displayWindowScore(item.rawScore) === displayMax);
+  if (atPeak.length) {
+    return [...atPeak].sort((a, b) => a.run.start.localeCompare(b.run.start))[0];
+  }
+
+  return [...scored].sort((a, b) => {
+    if (b.rawScore !== a.rawScore) return b.rawScore - a.rawScore;
+    return a.run.start.localeCompare(b.run.start);
+  })[0];
+}
+
 function pickBestQualifyingWindow(entry, dateStr, prefs) {
   const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
   const consensusHours = buildConsensusHours(entry, dateStr);
-  const windows = enumerateMinLengthWindows(consensusHours, minWindowHours);
-  if (!windows.length) return null;
+  const blocks = enumerateRunsFromHours(consensusHours, minWindowHours);
+  if (!blocks.length) return null;
 
   const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
   const order = parseRankCriteriaOrder(prefs.rank_criteria_order);
   const weights = weightsFromOrder(order);
 
-  const scored = windows.map((run) => {
-    const metrics = computeWindowRunMetrics(
-      run.hours,
-      consensusHours,
-      prefs,
-      longestBlockLength,
-      minWindowHours
+  let best = null;
+  for (const block of blocks) {
+    const windows = enumerateMinLengthWindows(block.hours, minWindowHours);
+    const scored = windows.map((run) =>
+      scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights)
     );
-    let score = 0;
-    for (const key of Object.keys(weights)) {
-      if (key === 'proximity') continue;
-      score += (metrics[key] ?? 0) * weights[key];
+    const pick = pickBestInBlock(scored);
+    if (!pick) continue;
+    if (isBetterWindowPick(pick, best)) {
+      best = pick;
     }
-    return {
-      run,
-      windowScore: Math.round(score * 1000) / 1000,
-      metrics,
-    };
-  });
+  }
 
-  scored.sort((a, b) => b.windowScore - a.windowScore);
-  const topScore = scored[0].windowScore;
-  const tied = scored.filter((item) => Math.abs(item.windowScore - topScore) <= 0.02);
-  tied.sort((a, b) => b.run.start.localeCompare(a.run.start));
-  const best = tied[0];
+  if (!best) return null;
   return {
     run: best.run,
     windowScore: best.windowScore,

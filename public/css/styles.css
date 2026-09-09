@@ -3,6 +3,9 @@
   --blur-day-5: blur(1px);
   --blur-day-6: blur(1.5px);
   --blur-day-7: blur(2px);
+  --z-horizon-sticky: 20;
+  --z-matrix-card-tooltip: 25;
+  --z-matrix-tooltip: 40;
 }
 
 .horizon-day-4 { filter: var(--blur-day-4); opacity: 0.92; }
@@ -13,7 +16,7 @@
 .horizon-planner-sticky {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: var(--z-horizon-sticky);
   margin-left: -1rem;
   margin-right: -1rem;
   padding: 0.5rem 1rem 0.75rem;
@@ -97,7 +100,8 @@
   overflow: visible;
 }
 
-.hour-block-tip {
+.hour-block-tip,
+.matrix-score-cell-tip {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 6px);
@@ -116,7 +120,7 @@
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
-  z-index: 30;
+  z-index: var(--z-matrix-tooltip);
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
   transition: opacity 0.12s ease, visibility 0.12s ease;
 }
@@ -187,6 +191,67 @@
   border-color: rgba(251, 191, 36, 0.45);
 }
 
+.matrix-score-blocks {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.matrix-score-cell {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  font-size: 9px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+  border: 1px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+.matrix-score-cell:hover,
+.matrix-score-cell:focus-visible {
+  z-index: 5;
+}
+
+.matrix-score-cell span:first-child {
+  pointer-events: none;
+}
+
+.matrix-score-cell--top {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.matrix-score-cell:hover .matrix-score-cell-tip,
+.matrix-score-cell:focus-visible .matrix-score-cell-tip {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Matrix tooltips render above the sticky horizon planner */
+#rideability-matrix > [data-spot-id]:has(
+  .hour-block:hover,
+  .hour-block:focus-visible,
+  .matrix-direction:hover,
+  .matrix-direction:focus-visible,
+  .matrix-score-cell:hover,
+  .matrix-score-cell:focus-visible
+) {
+  position: relative;
+  z-index: var(--z-matrix-card-tooltip);
+}
+
+.matrix-row--score {
+  margin-top: 0.15rem;
+  padding-top: 0.15rem;
+  border-top: 1px dashed rgba(51, 65, 85, 0.55);
+}
+
 .matrix-direction-blocks {
   display: flex;
   gap: 0.125rem;
@@ -200,10 +265,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   font-size: 8px;
   font-weight: 600;
   letter-spacing: -0.02em;
   border: 1px solid transparent;
+}
+
+.matrix-direction:hover,
+.matrix-direction:focus-visible {
+  z-index: 5;
+}
+
+.matrix-direction:hover .hour-block-tip,
+.matrix-direction:focus-visible .hour-block-tip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .matrix-direction--onshore {
@@ -1045,6 +1122,24 @@ body.modal-open {
 
 .matrix-grid-wrap {
   position: relative;
+}
+
+.matrix-time-axis {
+  user-select: none;
+}
+
+.matrix-time-blocks {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.matrix-time-cell {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1;
+  color: #64748b;
 }
 
 .departure-plan-group {

@@ -15,7 +15,7 @@ The Horizon Planner and rideability matrix today sort mainly by rideable hours o
 
 > "Thursday I want flat water, no offshore, and I'm foiling — don't send me to Beauharnois if the Ottawa River spot is closer, flat, and onshore. Also Oka had a cyanobacteria bloom last week; don't rank it #1 if there's still an advisory. And Verdun needs enough water depth for my 85 cm mast."
 
-> "Saturday I'm kiting. Verdun has the wind but the river's high and the beach is tiny — rigging is a nightmare when the water's up the bank. Rank a wider beach like Oka higher even if wind's a touch lighter."
+> "Saturday I'm kiting. Verdun might score on wind but the river's high and the beach is tiny — rigging is a nightmare when the water's up the bank. Rank a wider beach like Oka higher for my criteria even if the forecast is a bit weaker there."
 
 > "Sunday I'm wingfoiling. Saint-Timothée has the wind but the water's a bit low — I can walk out and paddle before I lift, it's just a pain. Lac Saint-Louis is shallower too but no long algae mats this week. Rank the cleaner, easier launch higher even if wind's similar."
 
@@ -299,7 +299,7 @@ Computed for each spot for a given **session date** (today or planner day). Used
 | Factor | Weight | Range | Notes |
 |---|---|---|---|
 | **Rideability** | 0.35 | 0–1 | Fraction of day's hours that are rideable (wind + weather + temp + offshore gate) |
-| **Best window quality** | 0.20 | 0–1 | Duration × avg wind in best contiguous window, normalized |
+| **Best window quality** | 0.20 | 0–1 | Longest qualifying contiguous window (`min_rideable_window_hours`); used in day score and to compare runs — see [Window selection](#window-selection-departure-planner) |
 | **Proximity** | 0.15 | 0–1 | `1 − (distance_km / radius_km)` clamped |
 | **Wave match** | 0.10 | 0–1 | From [Wave bands](#wave-bands) |
 | **Onshore / direction** | 0.10 | 0–1 | Share of rideable hours onshore; bonus if matches `ideal_directions` |
@@ -308,7 +308,11 @@ Computed for each spot for a given **session date** (today or planner day). Used
 | **Access** | 0.05 | 0–1 | From [spot intel](./2026-09-09-spot-local-intel-design.md#access-roads-and-site-closure); closed = hard block |
 | **Parking** | 0.03 | 0–1 | Session-day lot state; closed = strong penalty |
 
-Weights are defaults; stored in code constants (`SESSION_RANK_WEIGHTS`) for tuning.
+Weights are defaults; **user `rank_criteria_order` overrides** via linear decay (same as client `sessionRank.js`). Stored in code constants (`SESSION_RANK_WEIGHTS`) only until server ranking ships.
+
+### Window selection (departure planner)
+
+When a spot has **multiple** qualifying consecutive windows on one day, the [Departure Planner](./2026-09-09-departure-planner-design.md) picks the target window by scoring each run with the **same criteria and user weights** as session rank (factors computed over run hours only; `proximity` omitted). "Best window" means **best for your ordering** — e.g. onshore + flat afternoon over a longer but offshore morning block if that is what your criteria favor.
 
 ### Formula (conceptual)
 
@@ -390,7 +394,7 @@ Best for you today: Lac Saint-Louis (#1) — 14–18 kt, flat, 12 km, onshore al
 When #1 has quality/level warning:
 
 ```
-Best wind is Beauharnois, but Lac Saint-Louis (#1 for you) is closer, flat launch, and no long algae.
+Beauharnois might have more puff, but Lac Saint-Louis (#1 for your criteria) is closer, flat launch, and no long algae.
 ```
 
 ### Tooltips

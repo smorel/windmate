@@ -19,7 +19,7 @@ When intel says avoid a spot, Windmate should **rank it lower** and explain why 
 
 ## User story
 
-> "Thursday looks windy at Oka and Hudson. Oka has a bloom advisory and the main lot is paid — I need to know if it's even open before May long weekend. Hudson's access road floods every spring; someone always posts on Facebook when you can't get through. I'd rather Windmate tells me Hudson is a no-go and ranks Verdun higher even if wind is a bit lighter."
+> "Thursday Oka and Hudson both look rideable. Oka has a bloom advisory and the main lot is paid — I need to know if it's even open before May long weekend. Hudson's access road floods every spring; someone always posts on Facebook when you can't get through. I'd rather Windmate tells me Hudson is a no-go and ranks Verdun higher for my setup."
 
 ## Problem space (beyond wind/waves)
 
@@ -216,7 +216,7 @@ Wingfoilers often care about **session quality**, not just safety. Two common in
 
 These are **soft penalties** — the spot may still be worth it if wind is clearly best. Mate copy should explain the tradeoff:
 
-- "Wind's good at Saint-Timothée but there's long algae — Lac Saint-Louis is cleaner if you're ok with less puff."
+- "Saint-Timothée ranks ok on wind but there's long algae — Lac Saint-Louis is cleaner for your setup today."
 - "Bit shallow at the beach mate — you'll be walking out before you lift."
 
 Parser keywords (FR/EN): `algues`, `algae`, `weeds`, `herbiers`, `walk`, `marche`, `shallow`, `peu profond`, `foil`, `mast`.

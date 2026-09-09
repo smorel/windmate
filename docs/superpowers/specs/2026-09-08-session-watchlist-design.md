@@ -100,6 +100,7 @@ For each watched session where `session_date === today`:
 2. **Live strip** — same as rideability matrix
 3. **Today's curve** — expanded by default (not collapsed)
 4. **Best window reminder** — from forecast, crossed out or struck when `no_go`
+5. **Leave-by time** — on session day, [Departure Planner](./2026-09-09-departure-planner-design.md) line: drive + rig → when to leave home
 
 ### Webcam block (v2)
 

@@ -152,6 +152,7 @@ docs/superpowers/specs/   # Design specs + STATUS.md
 2. Session watchlist (spot + date)
 3. Offshore / water quality / water level in ranking
 4. **Spot local intel** — social feed, live cams, parking & access, water hazards; rank lower when a spot is a bad bet ([spec](docs/superpowers/specs/2026-09-09-spot-local-intel-design.md))
+5. **Departure planner** — leave-by time from home using min consecutive hours, your **ranking criteria order** (not raw wind), and Google Maps drive duration ([spec](docs/superpowers/specs/2026-09-09-departure-planner-design.md))
 
 Design specs live under `docs/superpowers/specs/`:
 
@@ -162,6 +163,7 @@ Design specs live under `docs/superpowers/specs/`:
 | [session-ranking-design](docs/superpowers/specs/2026-09-08-session-ranking-design.md) | Composite spot score |
 | [session-watchlist-design](docs/superpowers/specs/2026-09-08-session-watchlist-design.md) | Planned sessions + cams |
 | [spot-local-intel-design](docs/superpowers/specs/2026-09-09-spot-local-intel-design.md) | Social, parking, access, water |
+| [departure-planner-design](docs/superpowers/specs/2026-09-09-departure-planner-design.md) | When to leave home for the best window |
 
 ## License
 

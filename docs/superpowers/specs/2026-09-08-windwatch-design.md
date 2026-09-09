@@ -17,6 +17,7 @@ These drive product decisions beyond the MVP checklist:
 4. **Ground-truth enrichment (later)** — webcam feeds at the spot and community chatter (social posts, photos, videos, local reports) would strongly improve confidence before leaving home.
 5. **Session spot ranking** — rank spots for a given day using wind **plus** user preferences (avoid offshore, flat vs small vs big waves), proximity, **water quality** (health advisories and **long algae** nuisance for wingfoil), and **water level** — shallow launch / walk-out appeal for foil; **kite launch room** when high on a tight beach — not rideable hours alone.
 6. **Local intel beyond forecast** — parking (free vs paid, open on session day), road/site access (seasonal floods, municipal closures), and broader **water conditions** (debris, launch flooding, ice) should **lower rank with a clear explanation**, sourced from official city/park pages and social signals when available.
+7. **Leave-home timing** — for a chosen day, combine the best qualifying rideable window (`min_rideable_window_hours` + **`rank_criteria_order`**), **traffic-aware drive time** (Google Maps), and rigging buffer so the spot card shows **when to leave** to be on the water when conditions match your setup — not hours early.
 
 ## Scope
 
@@ -44,6 +45,7 @@ See dedicated specs for detail:
 - [Session Watchlist & Ground Truth](./2026-09-08-session-watchlist-design.md) — pin planned sessions in the planner, session-day go/no-go, webcams, community signals
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — offshore/wave prefs, water quality, water level, composite score per day
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — social feed, live cams, water hazards, parking, seasonal access; rank lower + explain
+- [Departure Planner](./2026-09-09-departure-planner-design.md) — leave-by time from home using rideable window + Google Maps drive duration
 - Reddit/Google forum scraper + Gemini structured parsing (community condition reports)
 - Spot webcams (Windy Webcams API or per-spot URLs)
 
@@ -53,6 +55,7 @@ See dedicated specs for detail:
 - [Session Watchlist & Ground Truth](./2026-09-08-session-watchlist-design.md) — watched sessions, planner prominence, session-day validation
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — rank spots per session day by wind, prefs, distance, water quality, level
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — parking, access, social/official ground truth, ranking penalties
+- [Departure Planner](./2026-09-09-departure-planner-design.md) — when to leave home for the best window
 
 ## Architecture
 

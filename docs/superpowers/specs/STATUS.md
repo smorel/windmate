@@ -15,6 +15,7 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 | [session-ranking-design](./2026-09-08-session-ranking-design.md) | **~40%** — client rank + banners; server + env factors missing |
 | [session-watchlist-design](./2026-09-08-session-watchlist-design.md) | **~5%** — favorites only; no spot+date watchlist |
 | [spot-local-intel-design](./2026-09-09-spot-local-intel-design.md) | **0%** — spec only (social, parking, access, water hazards) |
+| [departure-planner-design](./2026-09-09-departure-planner-design.md) | **0%** — spec only (leave-by + Google Maps drive) |
 
 **Also shipped (not in original MVP):** settings modal, auto-save prefs, spot search, favorites (incl. out-of-radius), customizable radius, Beaufort matrix colors, 3-band wind/gust/wave blocks, session warning time fix.
 
@@ -165,6 +166,30 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | **8** | Webcams + community signals | Watchlist v2 | Priority #4 ground truth |
 | **9** | Spot local intel v1 (manual cache, parking/access metadata, rank penalties) | [Local Intel](./2026-09-09-spot-local-intel-design.md) | Priority #6 — don't drive to closed lot/flooded road |
 | **10** | Official + social ingestion, Gemini parser | Local Intel v2–v3 | Richer feed; corroborated access/water signals |
+| **11** | Departure planner v1 (leave-by, Google Maps, spot card) | [Departure Planner](./2026-09-09-departure-planner-design.md) | Priority #7 — leave time for min hours + best window per `rank_criteria_order` |
+
+---
+
+## 6. Departure Planner — `2026-09-09-departure-planner-design.md`
+
+### ✅ Done
+
+- *(none)*
+
+### 🟡 Partial
+
+- **`min_rideable_window_hours`** — in DB, settings, window marking (`rideableWindow.js`)
+- **Best window display** — matrix consensus windows; no leave-by line yet
+- **User lat/lng** — browser GPS / manual coords; no persisted `home_*` prefs
+
+### ❌ Not done
+
+- `GET /api/departure`, `travel_time_cache`
+- Google Maps Routes / Distance Matrix integration
+- `rig_minutes`, `home_lat/lng` prefs + settings UI
+- Spot card "Leave by …" line
+- Session-day `leave_now` / `in_window` states
+- Haversine drive fallback + mate copy
 
 ---
 
@@ -208,3 +233,5 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | Server `sessionRank` | ❌ |
 | Webcams / community | ❌ |
 | Spot local intel (parking, access, social) | ❌ |
+| Departure planner (leave-by + drive time) | ❌ |
+| Min consecutive hours (settings) | ✅ |

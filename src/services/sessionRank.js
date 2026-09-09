@@ -198,6 +198,170 @@ function computeSessionScore(entry, dateStr, prefs, radiusKm) {
   return { score: Math.round(score * 1000) / 1000, metrics };
 }
 
+const WINDOW_REASON_LABELS = {
+  rideability: 'Most good hours',
+  bestWindow: 'Longest window',
+  wind: 'Best wind',
+  onshore: 'Ideal direction',
+  waveMatch: 'Best waves',
+};
+
+function buildRunFromHours(hours) {
+  const start = hours[0].time.slice(0, 16);
+  const end = hours[hours.length - 1].time.slice(0, 16);
+  return { start, end, length: hours.length, hours };
+}
+
+function enumerateRunsFromHours(hours, minWindowHours) {
+  const runs = [];
+  let current = [];
+
+  for (const hour of hours) {
+    if (hour.rideable) {
+      current.push(hour);
+    } else if (current.length > 0) {
+      if (current.length >= minWindowHours) runs.push(buildRunFromHours(current));
+      current = [];
+    }
+  }
+  if (current.length >= minWindowHours) runs.push(buildRunFromHours(current));
+  return runs;
+}
+
+/** All contiguous min-length windows inside rideable blocks (sliding). */
+function enumerateMinLengthWindows(hours, minWindowHours) {
+  const blocks = enumerateRunsFromHours(hours, minWindowHours);
+  const windows = [];
+  for (const block of blocks) {
+    for (let i = 0; i <= block.hours.length - minWindowHours; i += 1) {
+      windows.push(buildRunFromHours(block.hours.slice(i, i + minWindowHours)));
+    }
+  }
+  return windows;
+}
+
+function longestRideableBlockLength(hours, minWindowHours) {
+  return Math.max(...enumerateRunsFromHours(hours, minWindowHours).map((run) => run.length), 0);
+}
+
+function buildConsensusHours(entry, dateStr) {
+  const modelEntries = Object.entries(entry.models ?? {}).filter(([, model]) => !model.error);
+  if (!modelEntries.length) {
+    return getDayHours(entry, dateStr);
+  }
+
+  const timelines = modelEntries.map(([, model]) => {
+    const day = model.days?.find((d) => d.date === dateStr);
+    return day?.hours ?? [];
+  });
+  const timeKeys = [
+    ...new Set(timelines.flatMap((hours) => hours.map((h) => h.time.slice(0, 16)))),
+  ].sort();
+
+  return timeKeys.map((key) => {
+    const sample =
+      timelines.map((hours) => hours.find((h) => h.time.slice(0, 16) === key)).find(Boolean) ??
+      { time: key };
+    const allRideable = timelines.every((hours) => {
+      const hour = hours.find((h) => h.time.slice(0, 16) === key);
+      return hour?.rideable === true;
+    });
+    return { ...sample, time: key, rideable: allRideable };
+  });
+}
+
+function enumerateConsensusRuns(entry, dateStr, minWindowHours) {
+  const consensusHours = buildConsensusHours(entry, dateStr);
+  return enumerateRunsFromHours(consensusHours, minWindowHours);
+}
+
+function computeWindowRunMetrics(runHours, dayHours, prefs, longestBlockLength, minWindowHours) {
+  const viableHours = runHours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
+  const directionAligned = (h) =>
+    h.windExposure === 'onshore' ||
+    h.windExposure === 'cross' ||
+    (h.windExposure == null && h.idealWind);
+  const onshoreHours = viableHours.filter(directionAligned).length;
+  const maxRideableWind = runHours.length
+    ? Math.max(...runHours.map((h) => h.windSpeed ?? 0))
+    : 0;
+  const wavePreference = wavePreferenceFromPrefs(prefs);
+  const normLength = Math.max(longestBlockLength, minWindowHours, 1);
+
+  return {
+    rideability: 1,
+    bestWindow: minWindowHours / normLength,
+    wind: Math.min(1, maxRideableWind / Math.max(prefs.max_gust_knots, 1)),
+    onshore:
+      viableHours.length > 0
+        ? onshoreHours / viableHours.length
+        : (entryHasIdealDirections(dayHours) ? 0.3 : 0.5),
+    waveMatch: estimateWaveMatch(runHours, wavePreference),
+  };
+}
+
+function entryHasIdealDirections(dayHours) {
+  return dayHours.some((h) => h.idealWind != null);
+}
+
+function topReasonsForWindowMetrics(metrics, order) {
+  const reasons = [];
+  for (const key of order) {
+    if (key === 'proximity') continue;
+    const value = metrics[key] ?? 0;
+    if (value <= 0) continue;
+    if (key === 'onshore' && value < 0.5) continue;
+    const label = WINDOW_REASON_LABELS[key];
+    if (label) reasons.push(label);
+    if (reasons.length >= 2) break;
+  }
+  return reasons;
+}
+
+function pickBestQualifyingWindow(entry, dateStr, prefs) {
+  const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
+  const consensusHours = buildConsensusHours(entry, dateStr);
+  const windows = enumerateMinLengthWindows(consensusHours, minWindowHours);
+  if (!windows.length) return null;
+
+  const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
+  const order = parseRankCriteriaOrder(prefs.rank_criteria_order);
+  const weights = weightsFromOrder(order);
+
+  const scored = windows.map((run) => {
+    const metrics = computeWindowRunMetrics(
+      run.hours,
+      consensusHours,
+      prefs,
+      longestBlockLength,
+      minWindowHours
+    );
+    let score = 0;
+    for (const key of Object.keys(weights)) {
+      if (key === 'proximity') continue;
+      score += (metrics[key] ?? 0) * weights[key];
+    }
+    return {
+      run,
+      windowScore: Math.round(score * 1000) / 1000,
+      metrics,
+    };
+  });
+
+  scored.sort((a, b) => b.windowScore - a.windowScore);
+  const topScore = scored[0].windowScore;
+  const tied = scored.filter((item) => Math.abs(item.windowScore - topScore) <= 0.02);
+  tied.sort((a, b) => b.run.start.localeCompare(a.run.start));
+  const best = tied[0];
+  return {
+    run: best.run,
+    windowScore: best.windowScore,
+    metrics: best.metrics,
+    topReasons: topReasonsForWindowMetrics(best.metrics, order),
+    sessionWindowHours: minWindowHours,
+  };
+}
+
 module.exports = {
   computeSessionScore,
   computeRawMetrics,
@@ -205,4 +369,9 @@ module.exports = {
   longestConsensusWindowLength,
   getDayHours,
   getModelDayHours,
+  weightsFromOrder,
+  enumerateConsensusRuns,
+  enumerateMinLengthWindows,
+  buildConsensusHours,
+  pickBestQualifyingWindow,
 };

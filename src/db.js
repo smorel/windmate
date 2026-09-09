@@ -190,6 +190,22 @@ function migrateDb(db) {
   migrateSportProfiles(db);
   migrateWatchlistUniqueBySport(db);
   migrateSportFavorites(db);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS travel_time_cache (
+      origin_lat REAL NOT NULL,
+      origin_lng REAL NOT NULL,
+      dest_lat REAL NOT NULL,
+      dest_lng REAL NOT NULL,
+      departure_bucket TEXT NOT NULL,
+      duration_seconds INTEGER NOT NULL,
+      distance_m INTEGER,
+      route_summary TEXT,
+      fetched_at INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      PRIMARY KEY (origin_lat, origin_lng, dest_lat, dest_lng, departure_bucket)
+    )
+  `);
 }
 
 /** @param {import('better-sqlite3').Database} db */
@@ -694,6 +710,44 @@ function parseSpot(row) {
   };
 }
 
+/** @param {import('better-sqlite3').Database} db */
+function getTravelTimeCache(db, key) {
+  return db
+    .prepare(
+      `SELECT * FROM travel_time_cache
+       WHERE origin_lat = ? AND origin_lng = ? AND dest_lat = ? AND dest_lng = ?
+         AND departure_bucket = ?`
+    )
+    .get(key.origin_lat, key.origin_lng, key.dest_lat, key.dest_lng, key.departure_bucket);
+}
+
+/** @param {import('better-sqlite3').Database} db */
+function upsertTravelTimeCache(db, row) {
+  db.prepare(
+    `INSERT INTO travel_time_cache (
+       origin_lat, origin_lng, dest_lat, dest_lng, departure_bucket,
+       duration_seconds, distance_m, route_summary, fetched_at, source
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(origin_lat, origin_lng, dest_lat, dest_lng, departure_bucket) DO UPDATE SET
+       duration_seconds = excluded.duration_seconds,
+       distance_m = excluded.distance_m,
+       route_summary = excluded.route_summary,
+       fetched_at = excluded.fetched_at,
+       source = excluded.source`
+  ).run(
+    row.origin_lat,
+    row.origin_lng,
+    row.dest_lat,
+    row.dest_lng,
+    row.departure_bucket,
+    row.duration_seconds,
+    row.distance_m ?? null,
+    row.route_summary ?? null,
+    row.fetched_at,
+    row.source
+  );
+}
+
 module.exports = {
   initDb,
   getPreferences,
@@ -715,5 +769,7 @@ module.exports = {
   updateWatchedSessionStatus,
   purgeExpiredWatchedSessions,
   todayIsoDate,
+  getTravelTimeCache,
+  upsertTravelTimeCache,
   DB_PATH,
 };

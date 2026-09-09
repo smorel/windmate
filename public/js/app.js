@@ -807,6 +807,13 @@ async function refreshDashboard({ silent = false } = {}) {
       observationsBySpot: obsBySpot,
       prefs: matrixPrefs,
     });
+    WindmateDeparture.loadForWatchlist(
+      els.watchlistStrip,
+      WindmateWatchlist.getSessions(),
+      userLocation.lat,
+      userLocation.lng,
+      (session) => WindmateWatchlist.resolveVerdict(session)
+    );
     const warningsBySpot = new Map(
       rideabilityData.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
     );
@@ -1776,16 +1783,28 @@ function renderRideabilityMatrix(data, observations) {
           ${windowStatsLine}
           ${verdictBanner}
           ${liveStrip}
-          <div class="matrix-panel mb-2">
-            <div class="matrix-panel-rows">
-              ${matrixRows}
-              <div class="flex justify-between mt-2 ml-28 text-[10px] text-slate-500">
-                <span>00:00</span>
-                <span>12:00</span>
-                <span>23:00</span>
+          <div class="departure-plan-group" data-departure-group="${spot.id}">
+            <div class="matrix-panel mb-0">
+              <div class="matrix-panel-rows">
+                <div
+                  class="matrix-grid-wrap"
+                  data-matrix-grid="${spot.id}"
+                  data-matrix-hour-times="${dayHours.map((h) => h.time.slice(0, 16)).join('|')}"
+                >
+                  ${matrixRows}
+                  <div class="flex justify-between mt-2 ml-28 text-[10px] text-slate-500">
+                    <span>00:00</span>
+                    <span>12:00</span>
+                    <span>23:00</span>
+                  </div>
+                </div>
               </div>
+              ${spotMap ? `<div class="matrix-panel-map">${spotMap}</div>` : ''}
             </div>
-            ${spotMap ? `<div class="matrix-panel-map">${spotMap}</div>` : ''}
+            <div class="departure-line-slot" data-departure-for="${spot.id}"></div>
+            <svg class="departure-plan-stroke" data-departure-stroke-for="${spot.id}" aria-hidden="true">
+              <path class="departure-plan-stroke__shape"></path>
+            </svg>
           </div>
         </div>`;
     })
@@ -1803,6 +1822,20 @@ function renderRideabilityMatrix(data, observations) {
     rideEntryBySpot
   );
   WindmateWatchlist.bindWatchButtons(els.rideabilityMatrix, data.preferences.sport);
+
+  const spotIds = rankedSpots.map((row) => row.entry.spot.id);
+  const sessionVerdictBySpot = new Map(
+    rankedSpots.map((row) => [row.entry.spot.id, resolveSessionVerdictForDay(row.entry, selectedDayDate)])
+  );
+  WindmateDeparture.loadForMatrix(
+    els.rideabilityMatrix,
+    spotIds,
+    selectedDayDate,
+    userLocation.lat,
+    userLocation.lng,
+    data.preferences.sport,
+    sessionVerdictBySpot
+  );
 }
 
 if (els.locateBtn) {

@@ -11,6 +11,7 @@ const { createLocationRouter } = require('./routes/location');
 const { createObservationsRouter } = require('./routes/observations');
 const { createSportsRouter } = require('./routes/sports');
 const { createWatchlistRouter } = require('./routes/watchlist');
+const { createDepartureRouter } = require('./routes/departure');
 const { startHorizonAlertScheduler } = require('./cron/horizonAlertScheduler');
 const { startWatchlistJobs } = require('./cron/watchlistDigest');
 const { syncIgetwindSpots } = require('./services/igetwindSync');
@@ -38,6 +39,7 @@ app.use('/api/observations', createObservationsRouter(db));
 app.use('/api/preferences', createPreferencesRouter(db));
 app.use('/api/sports', createSportsRouter(db));
 app.use('/api/watchlist', createWatchlistRouter(db));
+app.use('/api/departure', createDepartureRouter(db));
 app.use('/api/igetwind', createIgetwindRouter(db));
 app.use('/api/location', createLocationRouter());
 

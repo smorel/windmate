@@ -113,7 +113,7 @@ const WindmateWatchlist = (() => {
 
     container.querySelectorAll('[data-watch-nav]').forEach((card) => {
       card.addEventListener('click', (e) => {
-        if (e.target.closest('[data-watch-remove], .curve-toggle, button')) return;
+        if (e.target.closest('[data-watch-remove], .curve-toggle, .departure-line__maps, button')) return;
         onNavigate?.({
           spotId: card.dataset.spotId,
           sessionDate: card.dataset.sessionDate,
@@ -156,10 +156,13 @@ const WindmateWatchlist = (() => {
         ? `<div class="session-verdict-banner session-verdict-banner--${verdict.state}">${verdict.reason}</div>`
         : '';
 
+    const departureKey = WindmateDeparture.watchDepartureKey(session.id);
+
     return `
       <div
         class="watchlist-card watchlist-card--clickable bg-base-card border border-base-border rounded-xl p-4 ${isToday ? 'watchlist-card--today' : ''}"
         data-watch-nav
+        data-watch-id="${session.id}"
         data-spot-id="${session.spot_id}"
         data-session-date="${session.session_date}"
         data-sport="${session.sport}"
@@ -179,6 +182,9 @@ const WindmateWatchlist = (() => {
         </div>
         ${reasonBanner}
         ${liveStrip}
+        <div class="departure-plan-group departure-plan-group--banner-only mt-2" data-departure-group="${departureKey}">
+          <div class="departure-line-slot" data-departure-for="${departureKey}"></div>
+        </div>
       </div>`;
   }
 

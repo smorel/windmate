@@ -209,4 +209,15 @@ const WindmateCopy = {
     warningBanner: (message, type) =>
       `<div class="text-xs mt-2 ${type === 'storm_approaching' ? 'text-red-400' : 'text-amber-400'}">⚠️ ${message}</div>`,
   },
+
+  departure: {
+    leaveBy: (time, drive) => `Leave by ${time} mate — ${drive} min drive.`,
+    leaveNow: (time) => `Go now — window starts ${time}.`,
+    inWindow: (hours) => `You're in the window — ${hours} h left if you launch now.`,
+    passed: "Window's over for today.",
+    noWindow: (min) => `No ${min}h window that day.`,
+    noTraffic: (drive) => `~${drive} min — no live traffic data.`,
+    checkLive: 'Check live before you leave.',
+    openMaps: 'Open in Google Maps',
+  },
 };

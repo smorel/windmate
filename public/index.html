@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Windmate</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            base: { DEFAULT: '#0b0f19', card: '#0f1422', border: '#1a2235' },
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="bg-base text-slate-200 min-h-screen">
+  <div class="max-w-7xl mx-auto px-4 py-6 space-y-8">
+    <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">Windmate</h1>
+        <p class="text-slate-400 text-sm mt-1">Your wind mate — spots, sessions, and heads-ups</p>
+      </div>
+      <div class="flex flex-col items-start sm:items-end gap-2">
+        <div id="location-status" class="text-sm text-slate-400">Finding you…</div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            id="settings-btn"
+            type="button"
+            class="text-xs font-medium rounded-lg px-3 py-1.5 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-base-border transition"
+          >
+            Settings
+          </button>
+          <button
+            id="locate-btn"
+            type="button"
+            class="text-xs font-medium rounded-lg px-3 py-1.5 bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-600/40 transition disabled:opacity-50"
+          >
+            Use my location
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div id="spot-search" class="spot-search relative">
+      <label for="spot-search-input" class="sr-only">Search spots</label>
+      <input
+        id="spot-search-input"
+        type="text"
+        inputmode="search"
+        enterkeyhint="search"
+        dir="ltr"
+        autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-controls="spot-search-results"
+        aria-expanded="false"
+        placeholder="Search spots to add & favorite…"
+        class="spot-search-input w-full bg-base-card border border-base-border rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-600/50"
+      />
+      <div id="spot-search-results" class="spot-search-results hidden" role="listbox" aria-label="Spot search results"></div>
+    </div>
+
+    <section id="mate-picks" class="hidden bg-base-card border border-base-border rounded-xl p-5">
+      <h2 class="text-lg font-semibold text-white mb-2">Mate's picks today</h2>
+      <div id="mate-picks-content" class="space-y-2 text-sm text-slate-300"></div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-white mb-2">Horizon Planner</h2>
+      <p class="text-sm text-slate-400 mb-4">My 7-day read — tap a day to rank spots below</p>
+      <div id="horizon-planner" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"></div>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold text-white mb-2">Rideability Matrix</h2>
+      <p id="matrix-day-label" class="text-sm text-slate-400 mb-2">Hour by hour — when I reckon you can get on the water</p>
+      <div id="model-legend" class="flex flex-wrap gap-4 mb-4"></div>
+      <div id="rideability-matrix" class="space-y-6"></div>
+    </section>
+  </div>
+
+  <div id="settings-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="settings-modal-backdrop" data-close-settings tabindex="-1"></div>
+    <div class="settings-modal-panel">
+      <header class="settings-modal-header">
+        <div>
+          <h2 id="settings-modal-title" class="text-lg font-semibold text-white">Your setup</h2>
+          <p id="settings-save-status" class="text-xs text-slate-500 mt-0.5 min-h-[1rem]" aria-live="polite"></p>
+        </div>
+        <button type="button" class="settings-modal-close" data-close-settings aria-label="Close settings">×</button>
+      </header>
+      <div class="settings-modal-body">
+        <form id="prefs-form" class="space-y-6">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label class="block sm:col-span-2">
+              <span class="text-xs uppercase tracking-wide text-slate-400">Search radius (km)</span>
+              <input id="search-radius" type="number" min="5" max="300" step="5" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+              <span class="text-[10px] text-slate-500">Nearby spots within this range; favorites can be farther</span>
+            </label>
+            <label class="block sm:col-span-2">
+              <span class="text-xs uppercase tracking-wide text-slate-400">Sport</span>
+              <select id="sport" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white">
+                <option value="wingfoiling">Wingfoiling</option>
+                <option value="sailing">Sailing</option>
+                <option value="kitesurfing">Kitesurfing</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="text-xs uppercase tracking-wide text-slate-400">Min wind (kt)</span>
+              <input id="min-wind" type="number" min="0" max="60" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+            </label>
+            <label class="block">
+              <span class="text-xs uppercase tracking-wide text-slate-400">Max gust (kt)</span>
+              <input id="max-gust" type="number" min="0" max="80" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+            </label>
+            <label class="block">
+              <span class="text-xs uppercase tracking-wide text-slate-400">Min air (°C)</span>
+              <input id="min-air" type="number" step="0.5" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" placeholder="No limit" />
+            </label>
+            <label class="block">
+              <span class="text-xs uppercase tracking-wide text-slate-400">Min water (°C)</span>
+              <input id="min-water" type="number" step="0.5" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" placeholder="No limit" />
+              <span class="text-[10px] text-slate-500">Only when water data exists</span>
+            </label>
+          </div>
+          <div class="pt-5 border-t border-base-border">
+            <h3 id="rank-section-title" class="text-sm font-semibold text-white mb-1">Spot ranking</h3>
+            <p id="rank-section-hint" class="text-xs text-slate-500 mb-3"></p>
+            <ol id="rank-criteria-list" class="rank-criteria-list space-y-2"></ol>
+            <p id="rank-criteria-planned" class="text-[10px] text-slate-600 mt-3"></p>
+          </div>
+          <div id="manual-location" class="hidden pt-5 border-t border-base-border">
+            <h3 class="text-sm font-semibold text-white mb-1">Manual location</h3>
+            <p class="text-xs text-slate-500 mb-3">GPS unavailable — enter coordinates below</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <label class="block">
+                <span class="text-xs uppercase tracking-wide text-slate-400">Latitude</span>
+                <input id="manual-lat" type="number" step="0.0001" value="45.5017" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+              </label>
+              <label class="block">
+                <span class="text-xs uppercase tracking-wide text-slate-400">Longitude</span>
+                <input id="manual-lng" type="number" step="0.0001" value="-73.5673" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+              </label>
+            </div>
+            <button id="manual-loc-btn" type="button" class="mt-4 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg px-4 py-2 transition">Use coordinates</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/copy.js"></script>
+  <script src="/js/forecastTime.js"></script>
+  <script src="/js/windColors.js"></script>
+  <script src="/js/waveColors.js"></script>
+  <script src="/js/sessionRank.js"></script>
+  <script src="/js/observations.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

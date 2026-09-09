@@ -1,0 +1,80 @@
+module.exports = [
+  {
+    name: 'Lac Saint-Louis (Lachine)',
+    latitude: 45.4319,
+    longitude: -73.6789,
+    ideal_directions: ['SW', 'W', 'WNW'],
+  },
+  {
+    name: 'Baie-de-Valois (Salaberry-de-Valois)',
+    latitude: 45.3167,
+    longitude: -74.1333,
+    ideal_directions: ['W', 'WNW', 'NW'],
+  },
+  {
+    name: 'Hudson Beach',
+    latitude: 45.458,
+    longitude: -74.14,
+    ideal_directions: ['SW', 'W', 'NW'],
+  },
+  {
+    name: 'Oka Beach',
+    latitude: 45.47,
+    longitude: -74.09,
+    ideal_directions: ['SW', 'W', 'WNW'],
+  },
+  {
+    name: 'Carillon (Ottawa River)',
+    latitude: 45.567,
+    longitude: -74.372,
+    ideal_directions: ['E', 'SE', 'S'],
+  },
+  {
+    name: 'Beauharnois',
+    latitude: 45.317,
+    longitude: -73.872,
+    ideal_directions: ['SW', 'W', 'NW'],
+  },
+  {
+    name: 'Saint-Timothée',
+    latitude: 45.35,
+    longitude: -73.933,
+    ideal_directions: ['SW', 'W', 'WNW'],
+  },
+  {
+    name: 'Verdun Waterfront',
+    latitude: 45.458,
+    longitude: -73.572,
+    ideal_directions: ['S', 'SW', 'W'],
+  },
+  {
+    name: 'Venise-en-Québec',
+    latitude: 45.084,
+    longitude: -73.283,
+    ideal_directions: ['S', 'SW', 'W'],
+  },
+  {
+    name: 'Plattsburgh (Cumberland Bay)',
+    latitude: 44.695,
+    longitude: -73.431,
+    ideal_directions: ['SW', 'W', 'NW'],
+  },
+  {
+    name: 'Anse-à-l\'Orme',
+    latitude: 45.499,
+    longitude: -73.847,
+    ideal_directions: ['SW', 'W', 'NW'],
+  },
+  {
+    name: 'Saint-Placide',
+    latitude: 45.532,
+    longitude: -74.204,
+    ideal_directions: ['SW', 'W', 'WNW'],
+  },
+  {
+    name: 'Pointe-du-Lac (Trois-Rivières)',
+    latitude: 46.283,
+    longitude: -72.667,
+    ideal_directions: ['W', 'NW', 'SW'],
+  },
+];

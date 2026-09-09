@@ -6,6 +6,7 @@ const { SPORT_DEFAULTS } = require('../utils/sports');
 const { parseRankCriteriaOrder, VALID_RANK_CRITERIA } = require('../utils/rankCriteria');
 const { parseFavoriteSpotIds } = require('../utils/favoriteSpots');
 const { parseSearchRadiusKm } = require('../utils/searchRadius');
+const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 
 
 
@@ -135,6 +136,18 @@ function createPreferencesRouter(db) {
       radius_km = parseSearchRadiusKm(req.body.radius_km);
     }
 
+    let offshore_wind_ok = current.offshore_wind_ok ? 1 : 0;
+    if (req.body.offshore_wind_ok !== undefined) {
+      offshore_wind_ok = req.body.offshore_wind_ok ? 1 : 0;
+    } else if (sportChanged) {
+      offshore_wind_ok = defaults.offshore_wind_ok ? 1 : 0;
+    }
+
+    let min_rideable_window_hours = parseMinRideableWindowHours(current.min_rideable_window_hours);
+    if (req.body.min_rideable_window_hours !== undefined) {
+      min_rideable_window_hours = parseMinRideableWindowHours(req.body.min_rideable_window_hours);
+    }
+
     const updated = updatePreferences(db, {
 
       sport,
@@ -152,6 +165,10 @@ function createPreferencesRouter(db) {
       favorite_spot_ids,
 
       radius_km,
+
+      offshore_wind_ok,
+
+      min_rideable_window_hours,
 
     });
 

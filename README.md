@@ -2,7 +2,9 @@
 
 Your wind mate — spot forecasts, session planning, and heads-ups for wingfoiling, kitesurfing, and sailing.
 
-Windmate helps you decide **where** and **when** to get on the water. It combines community spots from [iGetwind](https://igetwind.com/), multi-model wind forecasts, rideability rules (wind, gusts, rain, temperature), live observations, and a dark dashboard tuned for quick session decisions.
+Windmate helps you decide **where** and **when** to get on the water — and whether a spot is actually **worth the drive**. It combines community spots from [iGetwind](https://igetwind.com/), multi-model wind forecasts, rideability rules (wind, gusts, rain, temperature), live observations, and a dark dashboard tuned for quick session decisions.
+
+Beyond wind and waves, the product roadmap covers **local ground truth**: social posts from the spot, live cams, water hazards (algae, debris, launch flooding), parking (free vs paid, open on session day), and seasonal access (flooded roads, closed lots) — with **lower ranking and mate-tone explanations** when a spot should be avoided.
 
 ## What it does
 
@@ -142,12 +144,24 @@ docs/superpowers/specs/   # Design specs + STATUS.md
 
 ## Roadmap
 
-Planned next (see STATUS.md):
+**Shipped focus so far:** wind/wave windows, live observations, client-side session ranking.
+
+**Planned next** (see [`docs/superpowers/specs/STATUS.md`](docs/superpowers/specs/STATUS.md)):
 
 1. Go/no-go mismatch pill (forecast vs live)
 2. Session watchlist (spot + date)
 3. Offshore / water quality / water level in ranking
-4. Webcams and community ground truth
+4. **Spot local intel** — social feed, live cams, parking & access, water hazards; rank lower when a spot is a bad bet ([spec](docs/superpowers/specs/2026-09-09-spot-local-intel-design.md))
+
+Design specs live under `docs/superpowers/specs/`:
+
+| Spec | Topic |
+|------|--------|
+| [windwatch-design](docs/superpowers/specs/2026-09-08-windwatch-design.md) | MVP + core pipeline |
+| [realtime-wind-design](docs/superpowers/specs/2026-09-08-realtime-wind-design.md) | Live wind vs forecast |
+| [session-ranking-design](docs/superpowers/specs/2026-09-08-session-ranking-design.md) | Composite spot score |
+| [session-watchlist-design](docs/superpowers/specs/2026-09-08-session-watchlist-design.md) | Planned sessions + cams |
+| [spot-local-intel-design](docs/superpowers/specs/2026-09-09-spot-local-intel-design.md) | Social, parking, access, water |
 
 ## License
 

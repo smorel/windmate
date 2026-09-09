@@ -1,8 +1,8 @@
 # Windmate — Spec Implementation Status
 
-**Last reviewed:** 2026-09-08 (codebase audit)
+**Last reviewed:** 2026-09-09
 
-Use this alongside the four design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not done
+Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not done
 
 ---
 
@@ -14,6 +14,7 @@ Use this alongside the four design specs. Legend: ✅ Done · 🟡 Partial · �
 | [realtime-wind-design](./2026-09-08-realtime-wind-design.md) | **~75%** — observations live; go/no-go UX missing |
 | [session-ranking-design](./2026-09-08-session-ranking-design.md) | **~40%** — client rank + banners; server + env factors missing |
 | [session-watchlist-design](./2026-09-08-session-watchlist-design.md) | **~5%** — favorites only; no spot+date watchlist |
+| [spot-local-intel-design](./2026-09-09-spot-local-intel-design.md) | **0%** — spec only (social, parking, access, water hazards) |
 
 **Also shipped (not in original MVP):** settings modal, auto-save prefs, spot search, favorites (incl. out-of-radius), customizable radius, Beaufort matrix colors, 3-band wind/gust/wave blocks, session warning time fix.
 
@@ -160,8 +161,33 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | **4** | Offshore pref + detection + matrix stripes | Ranking | Safety before distance/waves |
 | **5** | Wave preference in settings + `sessionRank` on API | Ranking | Persist ranking; enable non-JS clients |
 | **6** | Water quality manual cache (2–3 Quebec lakes) | Ranking | Priority #5, v1 manual proof |
-| **7** | Water level / foil depth | Ranking | Foiling spots |
+| **7** | Water level — wingfoil walk-out + kite launch beach; nuisance algae | Ranking | Appeal vs other spots; not just hard blocks |
 | **8** | Webcams + community signals | Watchlist v2 | Priority #4 ground truth |
+| **9** | Spot local intel v1 (manual cache, parking/access metadata, rank penalties) | [Local Intel](./2026-09-09-spot-local-intel-design.md) | Priority #6 — don't drive to closed lot/flooded road |
+| **10** | Official + social ingestion, Gemini parser | Local Intel v2–v3 | Richer feed; corroborated access/water signals |
+
+---
+
+## 5. Spot Local Intel — `2026-09-09-spot-local-intel-design.md`
+
+### ✅ Done
+
+- *(none)*
+
+### 🟡 Partial
+
+- **Water quality in ranking spec** — algae/advisory levels defined in session-ranking; not wired in app
+- **Webcam / community in watchlist spec** — design only; overlaps this spec
+
+### ❌ Not done
+
+- `spot_intel_cache`, `intel_sources`, parking/access spot columns
+- `GET /api/spots/:spotId/intel`
+- Intel panel UI (social thumbnails, cam, parking, access)
+- Access/parking ranking factors + hard blocks
+- Official municipal page parsers
+- Social aggregation (Reddit, Instagram/Facebook links, Gemini extract)
+- Session-day intel TTL + watchlist email line
 
 ---
 
@@ -181,3 +207,4 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | Offshore / water quality / level | ❌ |
 | Server `sessionRank` | ❌ |
 | Webcams / community | ❌ |
+| Spot local intel (parking, access, social) | ❌ |

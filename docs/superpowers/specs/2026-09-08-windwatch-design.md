@@ -14,8 +14,9 @@ These drive product decisions beyond the MVP checklist:
 1. **Don't drive out on a false forecast** — the worst outcome is forecast looks rideable but live conditions don't match. Realtime comparison to forecast is not decorative; it is how users decide whether to go.
 2. **Session watchlist** — mark a spot on a particular day (a planned session) and keep it at the forefront of the Horizon Planner until the session passes.
 3. **Session-day live validation** — on the day of a watched session, live conditions matter more than forecast-only green blocks. Surface go/no-go clearly when actual wind diverges from what was promised.
-4. **Ground-truth enrichment (later)** — webcam feeds at the spot and community chatter (social posts, local reports on conditions or nearby spots) would strongly improve confidence before leaving home.
-5. **Session spot ranking** — rank spots for a given day using wind **plus** user preferences (avoid offshore, flat vs small vs big waves), proximity, **water quality** (e.g. cyanobacteria on Quebec lakes), and **water level** for foiling depth — not rideable hours alone.
+4. **Ground-truth enrichment (later)** — webcam feeds at the spot and community chatter (social posts, photos, videos, local reports) would strongly improve confidence before leaving home.
+5. **Session spot ranking** — rank spots for a given day using wind **plus** user preferences (avoid offshore, flat vs small vs big waves), proximity, **water quality** (health advisories and **long algae** nuisance for wingfoil), and **water level** — shallow launch / walk-out appeal for foil; **kite launch room** when high on a tight beach — not rideable hours alone.
+6. **Local intel beyond forecast** — parking (free vs paid, open on session day), road/site access (seasonal floods, municipal closures), and broader **water conditions** (debris, launch flooding, ice) should **lower rank with a clear explanation**, sourced from official city/park pages and social signals when available.
 
 ## Scope
 
@@ -42,6 +43,7 @@ See dedicated specs for detail:
 
 - [Session Watchlist & Ground Truth](./2026-09-08-session-watchlist-design.md) — pin planned sessions in the planner, session-day go/no-go, webcams, community signals
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — offshore/wave prefs, water quality, water level, composite score per day
+- [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — social feed, live cams, water hazards, parking, seasonal access; rank lower + explain
 - Reddit/Google forum scraper + Gemini structured parsing (community condition reports)
 - Spot webcams (Windy Webcams API or per-spot URLs)
 
@@ -50,6 +52,7 @@ See dedicated specs for detail:
 - [Realtime Wind Observations](./2026-09-08-realtime-wind-design.md) — live wind overview per spot, forecast vs actual curve, mismatch warnings
 - [Session Watchlist & Ground Truth](./2026-09-08-session-watchlist-design.md) — watched sessions, planner prominence, session-day validation
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — rank spots per session day by wind, prefs, distance, water quality, level
+- [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — parking, access, social/official ground truth, ranking penalties
 
 ## Architecture
 
@@ -107,7 +110,11 @@ node-cron (every 3h) → rideability → SMTP email
 | shore_exposure | TEXT | `sheltered` · `moderate` · `open` |
 | water_body_type | TEXT | `lake` · `river` · `estuary` · `coastal` |
 | water_body_id | TEXT | nullable — hydrometric station id |
-| min_launch_depth_m | REAL | nullable — min depth to launch foil at spot |
+| min_launch_depth_m | REAL | nullable — depth at launch line (shore), not whole riding area |
+| walk_to_foil_m | REAL | nullable — typical walk/paddle to adequate depth at reference level (wingfoil) |
+| launch_beach_size | TEXT | `tight` · `moderate` · `wide` — rigging beach at reference level (kitesurfing) |
+| reference_water_level_m | REAL | nullable — hydrometric datum for "normal" beach |
+| beach_width_m | REAL | nullable — dry beach width at reference level |
 | quality_region_id | TEXT | nullable — bloom/advisory region |
 | source_url | TEXT | nullable |
 

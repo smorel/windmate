@@ -115,12 +115,13 @@ Prefer lazy-load iframe on expand to avoid autoplay noise. Fallback: thumbnail +
 
 ### Community signals (v2)
 
-Lightweight, honest about source freshness:
+Lightweight, honest about source freshness. Full data model, ingestion phasing, and ranking rules: **[Spot Local Intel spec](./2026-09-09-spot-local-intel-design.md)** (social feed, photos/videos, parking, access, water hazards).
 
 ```
-💬 What people are saying
-• r/wingfoil — "Lachine was dead until noon" (2 h ago) [link]
-• Windy spot chat — "Hudson picking up SW" (45 min ago) [link]
+💬 Latest from the spot
+• Instagram — choppy but rideable (3 h ago) [photo]
+• Facebook — "road still flooded" (1 h ago)
+• City of Oka — Beach opens May 15 (official)
 ```
 
 **Approaches (pick at implementation):**
@@ -129,10 +130,11 @@ Lightweight, honest about source freshness:
 |---|---|---|
 | **Curated links only** | No scraping, no API keys | User clicks out; no inline summary |
 | **Reddit JSON API** | Structured, search by spot keywords | Rate limits; needs keyword tuning per spot |
-| **Gemini summarize** | Readable mate-tone blurbs from fetched snippets | Cost; latency; needs parent spec parser |
+| **Official municipal parse** | Authoritative parking/access hours | Per-site parsers |
+| **Gemini summarize** | Readable mate-tone blurbs from fetched snippets | Cost; latency; needs allowlist |
 | **Manual notes** | Immediate value | Not scalable |
 
-Recommendation: **v2a curated links + manual notes**; **v2b Reddit search + Gemini summary** for Montreal seed spots only.
+Recommendation: **v2a curated links + manual `spot_intel_cache`**; **v2b official pages + Reddit**; **v2c Gemini + social thumbnails** for Montreal seed spots.
 
 ## Integration with realtime wind
 

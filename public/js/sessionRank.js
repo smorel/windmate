@@ -60,18 +60,9 @@ const WindmateSessionRank = (() => {
     return day?.hours ?? [];
   }
 
-  function longestRideableWindow(hours) {
-    let best = 0;
-    let current = 0;
-    for (const hour of hours) {
-      if (hour.rideable) {
-        current += 1;
-        best = Math.max(best, current);
-      } else {
-        current = 0;
-      }
-    }
-    return best;
+  function getModelDayHours(entry, modelId, dateStr) {
+    const day = entry.models?.[modelId]?.days?.find((d) => d.date === dateStr);
+    return day?.hours ?? [];
   }
 
   function estimateWaveMatch(rideableHours, wavePreference) {
@@ -100,39 +91,61 @@ const WindmateSessionRank = (() => {
     return WAVE_PREF_BY_SPORT[prefs?.sport] ?? 'flat';
   }
 
-  function computeRawMetrics(entry, dateStr) {
+  function computeRawMetrics(entry, dateStr, prefs) {
     const hours = getDayHours(entry, dateStr);
+    const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
     const rideableHours = hours.filter((h) => h.rideable);
-    const rideableCount = rideableHours.length;
+    const viableHours = hours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
+    const directionOkViable = viableHours.filter((h) => !h.offshoreBlocked);
+    const rideableCount = WindmateRideableWindow.longestConsensusWindowLength(
+      entry,
+      dateStr,
+      minWindowHours,
+      getModelDayHours
+    );
+    const idealDirections = entry.spot?.ideal_directions ?? [];
     const maxRideableWind = rideableHours.length
       ? Math.max(...rideableHours.map((h) => h.windSpeed ?? 0))
       : 0;
+    const maxDirectionWind = directionOkViable.length
+      ? Math.max(...directionOkViable.map((h) => h.windSpeed ?? 0))
+      : 0;
     const maxWind = hours.length ? Math.max(...hours.map((h) => h.windSpeed ?? 0)) : 0;
+    const directionAligned = (h) =>
+      h.windExposure === 'onshore' || h.windExposure === 'cross' || (h.windExposure == null && h.idealWind);
 
     return {
       hours,
       rideableCount,
       maxRideableWind,
+      maxDirectionWind,
       maxWind,
-      windowLen: longestRideableWindow(hours),
+      windowLen: rideableCount,
       idealRideable: rideableHours.filter((h) => h.idealWind).length,
+      idealViable: viableHours.filter(directionAligned).length,
+      viableCount: viableHours.length,
+      hasIdealDirections: idealDirections.length > 0,
     };
   }
 
-  function buildFactors(metrics, maxDistance, maxRideableWind, wavePreference) {
+  function buildFactors(metrics, maxDistance, windNorm, wavePreference, hasIdealDirections) {
     const rideableHours = metrics.hours.filter((h) => h.rideable);
     const dist = metrics.distance_km ?? 0;
+
+    const onshore = !metrics.hasIdealDirections
+      ? 0.5
+      : metrics.viableCount > 0
+        ? metrics.idealViable / metrics.viableCount
+        : 0;
+
+    const peakWind = hasIdealDirections ? metrics.maxDirectionWind : metrics.maxRideableWind || metrics.maxWind;
 
     return {
       rideability: metrics.rideableCount / 24,
       bestWindow: metrics.windowLen / 24,
       proximity: maxDistance > 0 ? 1 - dist / maxDistance : 1,
-      wind:
-        maxRideableWind > 0
-          ? (metrics.maxRideableWind || metrics.maxWind) / maxRideableWind
-          : metrics.maxWind / Math.max(maxRideableWind, 1),
-      onshore:
-        rideableHours.length > 0 ? metrics.idealRideable / rideableHours.length : 0,
+      wind: windNorm > 0 ? peakWind / windNorm : 0,
+      onshore,
       waveMatch: estimateWaveMatch(rideableHours, wavePreference),
     };
   }
@@ -144,8 +157,10 @@ const WindmateSessionRank = (() => {
     );
   }
 
-  function assignTopReasons(ranked, order, weights) {
-    const categoryLeader = {};
+  /** One banner per criterion across all spots; a spot may lead multiple criteria. */
+  function assignTopReasons(ranked, order) {
+    for (const row of ranked) row.topReasons = [];
+
     for (const cat of order) {
       let leader = -1;
       let best = -1;
@@ -156,32 +171,10 @@ const WindmateSessionRank = (() => {
           leader = i;
         }
       });
-      if (leader >= 0 && best > 0) categoryLeader[cat] = leader;
+      if (leader < 0 || best <= 0) continue;
+      if (cat === 'onshore' && best < 0.5) continue;
+      ranked[leader].topReasons.push(REASON_LABELS[cat]());
     }
-
-    for (const row of ranked) row.topReason = null;
-
-    for (const cat of order) {
-      const i = categoryLeader[cat];
-      if (i == null || ranked[i].topReason) continue;
-      ranked[i].topReason = REASON_LABELS[cat]();
-    }
-
-    ranked.forEach((row) => {
-      if (row.topReason) return;
-      let bestCat = order[0];
-      let bestScore = -1;
-      for (const cat of order) {
-        const values = ranked.map((r) => r.factors[cat] ?? 0);
-        const max = Math.max(...values, 0.0001);
-        const score = ((row.factors[cat] ?? 0) / max) * weights[cat];
-        if (score > bestScore) {
-          bestScore = score;
-          bestCat = cat;
-        }
-      }
-      row.topReason = REASON_LABELS[bestCat]();
-    });
   }
 
   function rankSpotsForDay(spots, dateStr, prefs, radiusKm) {
@@ -192,16 +185,17 @@ const WindmateSessionRank = (() => {
 
     const metricsList = spots.map((entry) => ({
       entry,
-      ...computeRawMetrics(entry, dateStr),
+      ...computeRawMetrics(entry, dateStr, prefs),
       distance_km: entry.spot.distance_km,
     }));
 
     const maxRideableWind = Math.max(...metricsList.map((m) => m.maxRideableWind), 0);
+    const maxDirectionWind = Math.max(...metricsList.map((m) => m.maxDirectionWind), 0);
     const globalMaxWind = Math.max(...metricsList.map((m) => m.maxWind), 1);
-    const windNorm = maxRideableWind > 0 ? maxRideableWind : globalMaxWind;
+    const windNorm = maxDirectionWind > 0 ? maxDirectionWind : maxRideableWind > 0 ? maxRideableWind : globalMaxWind;
 
     const ranked = metricsList.map((m) => {
-      const factors = buildFactors(m, maxDistance, windNorm, wavePreference);
+      const factors = buildFactors(m, maxDistance, windNorm, wavePreference, m.hasIdealDirections);
       return {
         entry: m.entry,
         factors,
@@ -210,7 +204,7 @@ const WindmateSessionRank = (() => {
       };
     });
 
-    assignTopReasons(ranked, order, weights);
+    assignTopReasons(ranked, order);
 
     ranked.sort((a, b) => {
       if (b.score !== a.score) return b.score - a.score;
@@ -221,14 +215,16 @@ const WindmateSessionRank = (() => {
     return applyFavoriteBoost(ranked, prefs?.favorite_spot_ids);
   }
 
-  /** Favorites first; relative rank order preserved within each group. */
+  /** Favorites with rideable hours first; relative rank order preserved within each group. */
   function applyFavoriteBoost(ranked, favoriteSpotIds) {
     const favorites = new Set(favoriteSpotIds ?? []);
     if (!favorites.size) return ranked;
     const favRows = [];
     const otherRows = [];
     for (const row of ranked) {
-      if (favorites.has(row.entry.spot.id)) favRows.push(row);
+      const isBoostedFavorite =
+        favorites.has(row.entry.spot.id) && row.rideableCount > 0;
+      if (isBoostedFavorite) favRows.push(row);
       else otherRows.push(row);
     }
     return [...favRows, ...otherRows];
@@ -238,10 +234,16 @@ const WindmateSessionRank = (() => {
     return `<span class="spot-rank-banner">${label}</span>`;
   }
 
+  function renderBanners(reasons) {
+    if (!reasons?.length) return '';
+    return reasons.map((label) => renderBanner(label)).join('');
+  }
+
   return {
     rankSpotsForDay,
     applyFavoriteBoost,
     renderBanner,
+    renderBanners,
     normalizeOrder,
     weightsFromOrder,
     DEFAULT_ORDER,

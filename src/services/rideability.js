@@ -10,10 +10,14 @@ const { isTempOk, buildTempSummary, buildContextByTime, enrichHourWithContext } 
 
 const { resolveWaveHeight } = require('./waves');
 
+const { classifyWindExposure, isOffshoreBlocked } = require('./offshore');
+
+const { parseMinRideableWindowHours, markInRideableWindow } = require('../utils/rideableWindow');
+
 /**
  * @param {{ hourly: object }} forecast
 
- * @param {{ min_wind_knots: number, max_gust_knots: number, min_air_temp_c?: number|null, min_water_temp_c?: number|null }} prefs
+ * @param {{ min_wind_knots: number, max_gust_knots: number, min_air_temp_c?: number|null, min_water_temp_c?: number|null, offshore_wind_ok?: number|boolean }} prefs
 
  * @param {string[]} idealDirections
 
@@ -51,9 +55,15 @@ function analyzeHourlyRideability(forecast, prefs, idealDirections, contextByTim
 
     const tempOk = isTempOk(prefs, context);
 
-    const rideable = windOk && weatherOk && tempOk;
-
     const idealWind = isIdealDirection(direction, idealDirections);
+
+    const windExposure = classifyWindExposure(direction, idealDirections);
+
+    const offshoreBlocked = isOffshoreBlocked(windExposure, prefs);
+
+    const directionOk = !offshoreBlocked;
+
+    const rideable = windOk && weatherOk && tempOk && directionOk;
 
 
 
@@ -75,9 +85,15 @@ function analyzeHourlyRideability(forecast, prefs, idealDirections, contextByTim
 
       tempOk,
 
+      directionOk,
+
       rideable,
 
       idealWind,
+
+      windExposure,
+
+      offshoreBlocked,
 
       waveHeightM: wave.waveHeightM,
 
@@ -97,7 +113,7 @@ function analyzeHourlyRideability(forecast, prefs, idealDirections, contextByTim
 
  * @param {object} mixedForecast
 
- * @param {{ min_wind_knots: number, max_gust_knots: number, min_air_temp_c?: number|null, min_water_temp_c?: number|null }} prefs
+ * @param {{ min_wind_knots: number, max_gust_knots: number, min_air_temp_c?: number|null, min_water_temp_c?: number|null, offshore_wind_ok?: number|boolean }} prefs
 
  * @param {string[]} idealDirections
 
@@ -221,7 +237,12 @@ function buildConsensusDays(modelResults) {
 
       if (!dayMap.has(day.date)) {
 
-        dayMap.set(day.date, { date: day.date, modelRideable: [], maxWind: 0 });
+        dayMap.set(day.date, {
+          date: day.date,
+          modelRideable: [],
+          maxWind: 0,
+          rideableWindStats: [],
+        });
 
       }
 
@@ -230,6 +251,8 @@ function buildConsensusDays(modelResults) {
       entry.modelRideable.push(day.rideableCount);
 
       entry.maxWind = Math.max(entry.maxWind, day.maxWind);
+
+      if (day.rideableWind) entry.rideableWindStats.push(day.rideableWind);
 
     }
 
@@ -263,6 +286,8 @@ function buildConsensusDays(modelResults) {
 
         rideableCount: avgRideable,
 
+        rideableWind: aggregateRideableWindStats(day.rideableWindStats),
+
         modelsAgreeing: agreeing,
 
         modelCount: counts.length,
@@ -277,19 +302,21 @@ function buildConsensusDays(modelResults) {
 
 /** @param {ReturnType<typeof analyzeHourlyRideability>} hours */
 
-function groupRideableWindows(hours, datePrefix) {
+function groupRideableWindows(hours, datePrefix, minWindowHours = 1) {
 
   const dayHours = hours.filter((h) => h.time.startsWith(datePrefix) && h.rideable);
 
   if (dayHours.length === 0) return [];
 
-
+  const minHours = parseMinRideableWindowHours(minWindowHours, 1);
 
   const windows = [];
 
   let windowStart = dayHours[0];
 
   let windowEnd = dayHours[0];
+
+  let runCount = 1;
 
   let maxWind = dayHours[0].windSpeed;
 
@@ -299,7 +326,10 @@ function groupRideableWindows(hours, datePrefix) {
 
   let waterTemps = dayHours[0].waterTempC != null ? [dayHours[0].waterTempC] : [];
 
-
+  function pushWindowIfLongEnough() {
+    if (runCount < minHours) return;
+    windows.push(buildWindow(windowStart, windowEnd, maxWind, dominantDirection, airTemps, waterTemps));
+  }
 
   for (let i = 1; i < dayHours.length; i++) {
 
@@ -310,6 +340,8 @@ function groupRideableWindows(hours, datePrefix) {
     if (currIdx === prevIdx + 1) {
 
       windowEnd = dayHours[i];
+
+      runCount += 1;
 
       if (dayHours[i].windSpeed > maxWind) {
 
@@ -325,11 +357,13 @@ function groupRideableWindows(hours, datePrefix) {
 
     } else {
 
-      windows.push(buildWindow(windowStart, windowEnd, maxWind, dominantDirection, airTemps, waterTemps));
+      pushWindowIfLongEnough();
 
       windowStart = dayHours[i];
 
       windowEnd = dayHours[i];
+
+      runCount = 1;
 
       maxWind = dayHours[i].windSpeed;
 
@@ -343,7 +377,7 @@ function groupRideableWindows(hours, datePrefix) {
 
   }
 
-  windows.push(buildWindow(windowStart, windowEnd, maxWind, dominantDirection, airTemps, waterTemps));
+  pushWindowIfLongEnough();
 
   return windows;
 
@@ -393,6 +427,40 @@ function formatHour(isoTime) {
 
 
 
+/** Min/max wind and gust across rideable hours only. */
+function buildRideableWindStats(hours) {
+  const rideable = hours.filter((h) => h.rideable);
+  if (!rideable.length) return null;
+
+  let minWind = Infinity;
+  let maxWind = -Infinity;
+  let minGust = Infinity;
+  let maxGust = -Infinity;
+
+  for (const hour of rideable) {
+    const wind = hour.windSpeed ?? 0;
+    const gust = hour.gusts ?? wind;
+    if (wind < minWind) minWind = wind;
+    if (wind > maxWind) maxWind = wind;
+    if (gust < minGust) minGust = gust;
+    if (gust > maxGust) maxGust = gust;
+  }
+
+  return { minWind, maxWind, minGust, maxGust };
+}
+
+function aggregateRideableWindStats(statsList) {
+  const valid = statsList.filter(Boolean);
+  if (!valid.length) return null;
+
+  return {
+    minWind: Math.min(...valid.map((s) => s.minWind)),
+    maxWind: Math.max(...valid.map((s) => s.maxWind)),
+    minGust: Math.min(...valid.map((s) => s.minGust)),
+    maxGust: Math.max(...valid.map((s) => s.maxGust)),
+  };
+}
+
 /** @param {ReturnType<typeof analyzeHourlyRideability>} hours */
 
 function summarizeByDay(hours) {
@@ -417,6 +485,10 @@ function summarizeByDay(hours) {
 
     entry.maxWind = Math.max(entry.maxWind, hour.windSpeed);
 
+  }
+
+  for (const entry of days.values()) {
+    entry.rideableWind = buildRideableWindStats(entry.hours);
   }
 
   return [...days.values()];
@@ -451,7 +523,11 @@ module.exports = {
 
   groupRideableWindows,
 
+  markInRideableWindow,
+
   summarizeByDay,
+
+  buildRideableWindStats,
 
   formatHour,
 

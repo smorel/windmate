@@ -1,13 +1,13 @@
-const SPORT_DEFAULTS = {
-  wingfoiling: { min_wind_knots: 12, max_gust_knots: 25, min_air_temp_c: 10, min_water_temp_c: 8 },
-  sailing: { min_wind_knots: 8, max_gust_knots: 30, min_air_temp_c: 5, min_water_temp_c: null },
-  kitesurfing: { min_wind_knots: 14, max_gust_knots: 28, min_air_temp_c: 12, min_water_temp_c: 10 },
-};
-
-const SPORT_COLORS = {
-  wingfoiling: { name: 'Emerald', hex: '#10b981', tailwind: 'emerald' },
-  sailing: { name: 'Teal', hex: '#14b8a6', tailwind: 'teal' },
-  kitesurfing: { name: 'Blue', hex: '#3b82f6', tailwind: 'blue' },
-};
-
-module.exports = { SPORT_DEFAULTS, SPORT_COLORS };
+const SPORT_DEFAULTS = {
+  wingfoiling: { min_wind_knots: 12, max_gust_knots: 25, min_air_temp_c: 10, min_water_temp_c: 8, offshore_wind_ok: 0 },
+  sailing: { min_wind_knots: 8, max_gust_knots: 30, min_air_temp_c: 5, min_water_temp_c: null, offshore_wind_ok: 0 },
+  kitesurfing: { min_wind_knots: 14, max_gust_knots: 28, min_air_temp_c: 12, min_water_temp_c: 10, offshore_wind_ok: 0 },
+};
+
+const SPORT_COLORS = {
+  wingfoiling: { name: 'Emerald', hex: '#10b981', tailwind: 'emerald' },
+  sailing: { name: 'Teal', hex: '#14b8a6', tailwind: 'teal' },
+  kitesurfing: { name: 'Blue', hex: '#3b82f6', tailwind: 'blue' },
+};
+
+module.exports = { SPORT_DEFAULTS, SPORT_COLORS };

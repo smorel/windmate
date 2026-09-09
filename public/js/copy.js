@@ -23,11 +23,19 @@ const WindmateCopy = {
     noSpotsInRange:
       "No spots loaded yet — restart the server so I can sync from iGetwind, or run POST /api/igetwind/sync.",
     noModelData: (label) => `${label}: blank on this one for now`,
+    noRideableHoursForDay:
+      'Nothing rideable this day mate — tap another day in the planner above.',
   },
 
   loading: {
     dashboard: 'Checking the forecast for you…',
     saved: 'Saved — refreshing your spots…',
+  },
+
+  legend: {
+    button: 'Legend',
+    title: 'Legend',
+    close: 'Close legend',
   },
 
   settings: {
@@ -52,7 +60,8 @@ const WindmateCopy = {
   },
 
   picks: {
-    intro: (count) => `Found ${count} spots nearby — here's what I'd do today:`,
+    intro: (count) =>
+      `Found ${count} rideable spot${count === 1 ? '' : 's'} nearby — here's what I'd do today:`,
     session: (name, hours, wind, direction) =>
       `<strong>${name}</strong> — ${hours} rideable hr${hours === 1 ? '' : 's'} today, up to ${wind} kt ${direction}`,
     quiet:
@@ -63,9 +72,19 @@ const WindmateCopy = {
 
   horizon: {
     modelsAgree: (agreeing, total) => `${agreeing}/${total} models back me up`,
+    spotsWithWindows: (count) =>
+      count === 1 ? '1 spot with a shared window' : `${count} spots with shared windows`,
     matrixDay: (label) => `${label} — best spots first`,
     matrixToday: 'Today — best spots first',
+    todayShort: 'Today',
     window: (start, end) => `${start}–${end}`,
+    windLine: (range) => `${range} kt wind`,
+    gustLine: (range) => `${range} kt gust`,
+    noRideableWind: 'No rideable wind',
+    rideableHours: (min, max) =>
+      min === max
+        ? `${max} rideable hr${max === 1 ? '' : 's'}`
+        : `${min}–${max} rideable hrs`,
   },
 
   rank: {
@@ -80,19 +99,51 @@ const WindmateCopy = {
   rankCriteria: {
     sectionTitle: 'Spot ranking',
     sectionHint: 'Drag to reorder — top matters most. Saves automatically.',
-    rideability: { label: 'Good hours', hint: 'How many hours pass your wind, gust, weather, and temp limits' },
+    rideability: { label: 'Good hours', hint: 'Hours passing wind, gust, weather, temp, and direction rules' },
     bestWindow: { label: 'Longest window', hint: 'Longest uninterrupted stretch of good hours' },
     proximity: { label: 'Distance', hint: 'Closer spots rank higher' },
     wind: { label: 'Wind strength', hint: 'Peak wind during good hours' },
     onshore: { label: 'Ideal direction', hint: 'Share of good hours with wind from ideal directions' },
     waveMatch: { label: 'Wave / chop', hint: 'Flatter chop scores higher (by sport default)' },
-    planned: 'Coming later: offshore safety, water quality, water level',
+    planned: 'Coming later: water quality, water level',
+  },
+
+  offshore: {
+    avoidHint: 'Offshore hours never count as rideable. Onshore and cross-shore still OK.',
+    okHint: 'Offshore hours can count as rideable when wind and weather are OK.',
+  },
+
+  direction: {
+    rowLabel: 'Direction',
+    exposure: {
+      onshore: 'Onshore',
+      cross: 'Cross-shore',
+      offshore: 'Offshore',
+      unknown: 'Unknown',
+    },
+    legendOnshore: 'Onshore',
+    legendCross: 'Cross-shore',
+    legendOffshore: 'Offshore',
+  },
+
+  map: {
+    sessionPeak: (dayLabel, hour) => `${dayLabel} · ${hour}`,
+    aria: (speed, direction, dayLabel, hour) =>
+      `Forecast map for ${dayLabel}, peak ${Math.round(speed)} knots from ${direction} around ${hour}`,
+    ariaEmpty: (name, dayLabel) => `Forecast map for ${name}, ${dayLabel}`,
   },
 
   rideable: {
     matrixHint:
-      'Colored blocks = good hours: top wind · mid gust · bottom waves (flat / small / big). Empty = not good. Hover for wave height.',
-    tooltipOk: 'good for your setup',
+      'Solid blocks = longest window where all models agree (min consecutive hrs in settings). Rideable hrs = length of that window. Faded = good in this model but outside the best shared window. Striped amber = offshore blocked. Hover for details.',
+    legendWindow: 'Best shared window',
+    legendIsolated: 'Good hour, not a sure window',
+    tooltipOk: 'all models agree — in a session window',
+    tooltipIsolated: 'good wind — window too short for your min hours',
+    tooltipModelDisagree: 'good in this model — not all models agree',
+    tooltipOffshore: 'offshore — blocked by your settings',
+    tooltipCross: 'cross-shore — OK for rideability',
+    tooltipWrongDirection: 'offshore — not rideable with your settings',
     tooltipBlocked: 'not good for your setup',
   },
 

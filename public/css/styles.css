@@ -975,6 +975,29 @@ body.modal-open {
   color: #fbbf24;
   font-size: 0.75rem;
 }
+.session-verdict-banner {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.session-verdict-banner--go {
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+}
+.session-verdict-banner--caution {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+.session-verdict-banner--no_go {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+.session-verdict-banner--unknown {
+  background: rgba(100, 116, 139, 0.12);
+  color: #94a3b8;
+}
 .watchlist-card--today { border-color: rgba(16, 185, 129, 0.35); }
 .watchlist-card--clickable {
   cursor: pointer;

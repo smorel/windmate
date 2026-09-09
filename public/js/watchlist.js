@@ -4,21 +4,36 @@ const WindmateWatchlist = (() => {
   let onChange = null;
   let onNavigate = null;
 
-  const STATUS_CLASS = {
-    on_track: 'watch-status--on-track',
-    degrading: 'watch-status--degrading',
-    at_risk: 'watch-status--at-risk',
-    no_go: 'watch-status--no-go',
-    unknown: 'watch-status--unknown',
+  const GO_NO_GO_CLASS = {
+    go: 'go-no-go-pill--go',
+    caution: 'go-no-go-pill--caution',
+    no_go: 'go-no-go-pill--no_go',
+    unknown: 'go-no-go-pill--unknown',
   };
 
-  const STATUS_LABEL = {
-    on_track: 'On track',
-    degrading: 'Degrading',
-    at_risk: 'At risk',
-    no_go: 'No go',
-    unknown: 'Unknown',
+  const LEGACY_STATUS_TO_VERDICT = {
+    on_track: 'go',
+    degrading: 'caution',
+    at_risk: 'caution',
+    no_go: 'no_go',
+    unknown: 'unknown',
   };
+
+  function resolveVerdict(session) {
+    if (session.sessionGoNoGo?.state) return session.sessionGoNoGo;
+    const state = LEGACY_STATUS_TO_VERDICT[session.status] ?? 'unknown';
+    const summary = session.summary;
+    let reason = '';
+    if (summary?.windRange) {
+      const gust = summary.windRange.gustMin != null
+        ? ` · ${summary.windRange.gustMin}–${summary.windRange.gustMax} kt gusts`
+        : '';
+      reason = `${summary.windowHours ?? '?'} h window · ${summary.windRange.min}–${summary.windRange.max} kt wind${gust}`;
+    } else if (summary?.windowHours != null) {
+      reason = `${summary.windowHours} h rideable window in forecast`;
+    }
+    return { state, reason };
+  }
 
   async function load() {
     const data = await fetch('/api/watchlist').then((r) => r.json());
@@ -120,31 +135,25 @@ const WindmateWatchlist = (() => {
   function renderCard(session, { observationsBySpot, prefs, today }) {
     const date = new Date(`${session.session_date}T12:00:00`);
     const dayLabel = date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-    const statusClass = STATUS_CLASS[session.status] ?? STATUS_CLASS.unknown;
-    const statusLabel = STATUS_LABEL[session.status] ?? session.status;
-    const summary = session.summary;
-    const wind =
-      summary?.windRange
-        ? `${summary.windRange.min}–${summary.windRange.max} kt`
-        : 'Forecast pending';
-    const windowH = summary?.windowHours ?? '?';
-
+    const verdict = resolveVerdict(session);
     const isToday = session.session_date === today;
+    const statusClass = GO_NO_GO_CLASS[verdict.state] ?? GO_NO_GO_CLASS.unknown;
+    const verdictLabels = isToday
+      ? WindmateCopy.watchlist.verdictLive
+      : WindmateCopy.watchlist.verdictForecast;
+    const statusLabel = verdictLabels[verdict.state] ?? verdict.state;
     const obs = observationsBySpot?.get(session.spot_id);
     const liveStrip =
       isToday && obs
-        ? WindmateObservations.renderLiveStrip(
-            session.spot,
-            obs,
-            null,
-            prefs,
-            { escalated: true }
-          )
+        ? WindmateObservations.renderLiveStrip(session.spot, obs, null, prefs, {
+            sessionGoNoGo: verdict,
+            suppressVerdictBanner: true,
+          })
         : '';
 
-    const mismatchBanner =
-      isToday && session.mismatchBanner
-        ? `<div class="watch-mismatch-banner">${session.mismatchBanner}</div>`
+    const reasonBanner =
+      verdict.reason
+        ? `<div class="session-verdict-banner session-verdict-banner--${verdict.state}">${verdict.reason}</div>`
         : '';
 
     return `
@@ -161,14 +170,14 @@ const WindmateWatchlist = (() => {
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div>
             <div class="text-sm font-semibold text-white">${dayLabel} · ${session.spot_name}</div>
-            <div class="text-xs text-slate-400 mt-0.5">Forecast ${wind} · ${windowH} h window · ${session.sport}</div>
+            <div class="text-xs text-slate-500 mt-0.5">${session.sport}</div>
           </div>
           <div class="flex items-center gap-2">
-            <span class="watch-status-pill ${statusClass}">${statusLabel}</span>
+            <span class="go-no-go-pill ${statusClass}">${statusLabel}</span>
             <button type="button" class="text-slate-500 hover:text-red-400 text-sm" data-watch-remove="${session.id}" aria-label="Remove watch">×</button>
           </div>
         </div>
-        ${mismatchBanner}
+        ${reasonBanner}
         ${liveStrip}
       </div>`;
   }
@@ -229,5 +238,6 @@ const WindmateWatchlist = (() => {
     setOnChange,
     setOnNavigate,
     getSessions: () => sessions,
+    resolveVerdict,
   };
 })();

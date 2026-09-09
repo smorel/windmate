@@ -44,11 +44,11 @@ const WindmateObservations = (() => {
       .join('');
   }
 
-  function renderGoNoGoPill(mismatch) {
-    if (!mismatch?.state) return '';
+  function renderGoNoGoPill(verdict) {
+    if (!verdict?.state) return '';
     const labels = WindmateCopy.observations.mismatch;
-    const label = labels[mismatch.state] ?? mismatch.state;
-    const cls = `go-no-go-pill go-no-go-pill--${mismatch.state}`;
+    const label = labels[verdict.state] ?? verdict.state;
+    const cls = `go-no-go-pill go-no-go-pill--${verdict.state}`;
     return `<span class="${cls}" role="status">${label}</span>`;
   }
 
@@ -70,7 +70,7 @@ const WindmateObservations = (() => {
         ? `<button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}">
             ${expanded.has(spotId) ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
           </button>
-          <div id="curve-${spotId}" class="${expanded.has(spotId) ? '' : 'hidden'} mt-3"></div>`
+          <div class="curve-panel ${expanded.has(spotId) ? '' : 'hidden'} mt-3" data-spot-id="${spotId}"></div>`
         : '';
       return `
         <div class="live-strip live-strip--empty mb-3 p-3 rounded-lg bg-base border border-base-border">
@@ -106,15 +106,20 @@ const WindmateObservations = (() => {
           )}</div>`
         : '';
 
+    const sessionVerdict = options.sessionGoNoGo;
     const mismatch = obsEntry?.today?.summary?.mismatch;
-    const pill = renderGoNoGoPill(mismatch);
-    const escalatedBanner =
-      options.escalated && mismatch && (mismatch.state === 'caution' || mismatch.state === 'no_go')
-        ? `<div class="watch-mismatch-banner mt-2">${WindmateCopy.observations.mismatchMessage(mismatch, current)}</div>`
-        : '';
+    const verdict = sessionVerdict ?? mismatch;
+    const pill = sessionVerdict ? '' : renderGoNoGoPill(mismatch);
+    const verdictBanner =
+      sessionVerdict?.reason && !options.suppressVerdictBanner
+        ? `<div class="session-verdict-banner session-verdict-banner--${sessionVerdict.state} mt-2">${sessionVerdict.reason}</div>`
+        : options.escalated && mismatch && (mismatch.state === 'caution' || mismatch.state === 'no_go')
+          ? `<div class="watch-mismatch-banner mt-2">${WindmateCopy.observations.mismatchMessage(mismatch, current)}</div>`
+          : '';
 
+    const stripState = verdict?.state;
     return `
-      <div class="live-strip mb-3 p-3 rounded-lg bg-base border border-base-border ${mismatch?.state === 'no_go' ? 'live-strip--no-go' : mismatch?.state === 'caution' ? 'live-strip--caution' : ''}">
+      <div class="live-strip mb-3 p-3 rounded-lg bg-base border border-base-border ${stripState === 'no_go' ? 'live-strip--no-go' : stripState === 'caution' ? 'live-strip--caution' : ''}">
         <div class="live-strip-content min-w-0">
           <div class="flex flex-wrap items-center gap-2 text-xs text-slate-300">
             <span class="live-dot ${dotClass(current, forecastHour)}"></span>
@@ -124,12 +129,12 @@ const WindmateObservations = (() => {
             <span class="text-slate-500">· ${formatUpdated(current.observedAt)}</span>
             <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 sm:ml-auto">${sourceBadge(current.source)}</span>
           </div>
-          ${delta}${hazard}${windowSummary}${escalatedBanner}
+          ${delta}${hazard}${windowSummary}${verdictBanner}
         </div>
         <button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}">
           ${expanded.has(spotId) ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
         </button>
-        <div id="curve-${spotId}" class="${expanded.has(spotId) ? '' : 'hidden'} mt-3"></div>
+        <div class="curve-panel ${expanded.has(spotId) ? '' : 'hidden'} mt-3" data-spot-id="${spotId}"></div>
         ${warningLines}
       </div>`;
   }
@@ -149,13 +154,59 @@ const WindmateObservations = (() => {
     return { ticks, top };
   }
 
-  function renderCurve(spotId, obsEntry, prefs) {
-    const container = document.getElementById(`curve-${spotId}`);
-    if (!container || !obsEntry) return;
+  function getModelDayHours(entry, modelId, dateStr) {
+    const day = entry.models?.[modelId]?.days?.find((d) => d.date === dateStr);
+    return day?.hours ?? [];
+  }
+
+  function qualifyingWindowHours(forecast, rideEntry, prefs) {
+    if (!forecast.length) return [];
+    const minWindow = WindmateRideableWindow.parseMinHours(prefs.min_rideable_window_hours);
+    const dateStr = forecast[0].time.slice(0, 10);
+    if (rideEntry?.models && Object.keys(rideEntry.models).length) {
+      return WindmateRideableWindow.getLongestConsensusWindowHours(
+        rideEntry,
+        dateStr,
+        minWindow,
+        getModelDayHours
+      );
+    }
+    const hours = forecast.map((hour) => ({ ...hour }));
+    WindmateRideableWindow.markLongestQualifyingWindows(hours, minWindow);
+    return hours.filter((hour) => hour.inRideableWindow);
+  }
+
+  function renderRideableWindowBands(windowHours, xForHour, pad, innerH, innerW) {
+    const barW = innerW / 24;
+    return windowHours
+      .map((hour) => {
+        const x = xForHour(hour.time);
+        return `<rect x="${x - barW / 2}" y="${pad.t}" width="${barW}" height="${innerH}" fill="rgba(16,185,129,0.22)" stroke="#10b981" stroke-width="0.75" stroke-opacity="0.4"/>`;
+      })
+      .join('');
+  }
+
+  function renderHazardBands(warnings, xForHour, pad, innerH, innerW) {
+    const barW = Math.max(innerW / 24, 8);
+    return warnings
+      .filter((w) => w.eventTime)
+      .map((w) => {
+        const x = xForHour(w.eventTime);
+        const fill =
+          w.type === 'storm_approaching' ? 'rgba(239,68,68,0.22)' : 'rgba(251,191,36,0.2)';
+        const stroke = w.type === 'storm_approaching' ? '#f87171' : '#fbbf24';
+        return `<rect x="${x - barW / 2}" y="${pad.t}" width="${barW}" height="${innerH}" fill="${fill}" stroke="${stroke}" stroke-width="0.75" stroke-opacity="0.45"/>`;
+      })
+      .join('');
+  }
+
+  function renderCurve(panel, obsEntry, prefs, options = {}) {
+    if (!panel || !obsEntry) return;
+    const container = panel;
 
     const actual = obsEntry.today?.actual ?? [];
     const forecast = obsEntry.today?.forecast ?? [];
-    const warnings = obsEntry.today?.warnings ?? [];
+    const warnings = options.warnings ?? obsEntry.today?.warnings ?? [];
     const width = 640;
     const height = 156;
     const pad = { l: 44, r: 12, t: 16, b: 24 };
@@ -197,20 +248,22 @@ const WindmateObservations = (() => {
     const bandTop = yForSpeed(prefs.max_gust_knots);
     const bandBottom = yForSpeed(prefs.min_wind_knots);
 
-    const hazardMarkers = warnings
-      .map((w) => {
-        const x = xForHour(w.eventTime);
-        const color = w.type === 'storm_approaching' ? '#f87171' : '#fbbf24';
-        return `<line x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + innerH}" stroke="${color}" stroke-dasharray="4 3" stroke-width="1.5"/>`;
-      })
-      .join('');
+    const rideableWindowHours = qualifyingWindowHours(forecast, options.rideEntry, prefs);
+    const rideableWindowBands = renderRideableWindowBands(
+      rideableWindowHours,
+      xForHour,
+      pad,
+      innerH,
+      innerW
+    );
+    const hazardBands = renderHazardBands(warnings, xForHour, pad, innerH, innerW);
 
     const weatherBlocks = forecast
       .filter((h) => WindmateWeatherHazards.hasForecastRain(h))
       .map((h) => {
         const x = xForHour(h.time);
         const w = innerW / 24;
-        return `<rect x="${x - w / 2}" y="${pad.t}" width="${w}" height="${innerH}" fill="rgba(239,68,68,0.12)"/>`;
+        return `<rect x="${x - w / 2}" y="${pad.t}" width="${w}" height="${innerH}" fill="rgba(127,29,29,0.2)"/>`;
       })
       .join('');
 
@@ -234,8 +287,9 @@ const WindmateObservations = (() => {
         <line x1="${pad.l}" y1="${pad.t + innerH}" x2="${pad.l + innerW}" y2="${pad.t + innerH}" stroke="#334155" stroke-width="1"/>
         ${yAxis}
         <rect x="${pad.l}" y="${bandTop}" width="${innerW}" height="${Math.max(0, bandBottom - bandTop)}" fill="rgba(16,185,129,0.08)"/>
+        ${rideableWindowBands}
         ${weatherBlocks}
-        ${hazardMarkers}
+        ${hazardBands}
         <path d="${forecastGustPath}" fill="none" stroke="#f59e0b" stroke-width="1.75" stroke-dasharray="3 4" opacity="0.9"/>
         <path d="${forecastPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/>
         ${actualPath ? `<path d="${actualPath}" fill="none" stroke="#10b981" stroke-width="2.5"/>` : ''}
@@ -247,26 +301,64 @@ const WindmateObservations = (() => {
         <span><span class="inline-block w-4 border-t-2 border-emerald-500 align-middle mr-1"></span>Actual wind</span>
         <span><span class="inline-block w-4 border-t-2 border-dashed border-slate-500 align-middle mr-1"></span>Forecast wind</span>
         <span><span class="inline-block w-4 border-t-2 border-dashed border-amber-500 align-middle mr-1"></span>Forecast gusts</span>
+        <span><span class="inline-block w-3 h-3 rounded-sm bg-emerald-500/25 border border-emerald-500/40 align-middle mr-1"></span>${WindmateCopy.observations.rideableWindow}</span>
       </div>`;
   }
 
-  function bindToggles(root, observationsBySpot, prefs) {
+  function curveWarningsFor(spotId, observationsBySpot, warningsBySpot) {
+    const obs = observationsBySpot.get(spotId);
+    return warningsBySpot?.get(spotId) ?? obs?.today?.warnings ?? [];
+  }
+
+  function curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot) {
+    return {
+      warnings: curveWarningsFor(spotId, observationsBySpot, warningsBySpot),
+      rideEntry: rideEntryBySpot?.get(spotId) ?? null,
+    };
+  }
+
+  function refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot) {
+    root.querySelectorAll('.curve-panel').forEach((panel) => {
+      const spotId = panel.dataset.spotId;
+      if (!spotId || !expanded.has(spotId)) return;
+      const obs = observationsBySpot.get(spotId);
+      if (!obs) return;
+      renderCurve(panel, obs, prefs, curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot));
+    });
+  }
+
+  function bindToggles(root, observationsBySpot, prefs, warningsBySpot = null, rideEntryBySpot = null) {
     root.querySelectorAll('.curve-toggle').forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const spotId = btn.dataset.spotId;
+        const strip = btn.closest('.live-strip');
+        const panel = strip?.querySelector('.curve-panel');
         if (expanded.has(spotId)) expanded.delete(spotId);
         else expanded.add(spotId);
         const obs = observationsBySpot.get(spotId);
         btn.textContent = expanded.has(spotId)
           ? WindmateCopy.observations.hideCurve
           : WindmateCopy.observations.showCurve;
-        const panel = document.getElementById(`curve-${spotId}`);
         if (panel) {
           panel.classList.toggle('hidden', !expanded.has(spotId));
-          if (expanded.has(spotId)) renderCurve(spotId, obs, prefs);
+          if (expanded.has(spotId)) {
+            renderCurve(
+              panel,
+              obs,
+              prefs,
+              curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot)
+            );
+          }
         }
       });
     });
+    refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot);
+  }
+
+  function renderVerdictBanner(verdict) {
+    if (!verdict?.reason) return '';
+    return `<div class="session-verdict-banner session-verdict-banner--${verdict.state} mb-3">${verdict.reason}</div>`;
   }
 
   function mapBySpotId(observationsData) {
@@ -277,5 +369,5 @@ const WindmateObservations = (() => {
     return map;
   }
 
-  return { renderLiveStrip, bindToggles, mapBySpotId, renderCurve };
+  return { renderLiveStrip, bindToggles, mapBySpotId, renderCurve, renderVerdictBanner };
 })();

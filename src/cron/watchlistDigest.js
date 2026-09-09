@@ -14,7 +14,7 @@ const { buildDaylightByDate } = require('../services/daylight');
 const { analyzeMixedRideability, analyzeHourlyRideability, summarizeByDay } = require('../services/rideability');
 const { getPrimaryHourlyForecast } = require('../services/weather');
 const { fetchSpotObservations } = require('../services/observations');
-const { evaluateWatchlistStatus, mismatchBannerCopy } = require('../services/watchlistStatus');
+const { evaluateWatchlistStatus } = require('../services/watchlistStatus');
 const { sendAlert, isConfigured } = require('../services/email');
 
 function startWatchlistJobs(db) {
@@ -113,9 +113,10 @@ async function runWatchlistDigest(db) {
         : 'wind TBD';
     const windowH = evaluation.summary.windowHours;
 
-    let line = `📅 ${dateLabel} · ${spot.name} (${session.sport})\n   ${wind}, ${windowH} h window · ${evaluation.status}`;
-    if (session.session_date === today && observation?.today?.summary?.mismatch) {
-      line += `\n   Live: ${mismatchBannerCopy(observation.today.summary.mismatch, observation.current)}`;
+    const verdict = evaluation.sessionGoNoGo?.state ?? evaluation.status;
+    let line = `📅 ${dateLabel} · ${spot.name} (${session.sport})\n   ${wind}, ${windowH} h window · ${verdict}`;
+    if (evaluation.sessionGoNoGo?.reason) {
+      line += `\n   ${evaluation.sessionGoNoGo.reason}`;
     } else if (worsened && session.status_snapshot) {
       const prev = session.status_snapshot;
       line += `\n   Was score ${prev.score?.toFixed?.(2) ?? '?'} — now ${evaluation.summary.score.toFixed(2)}`;

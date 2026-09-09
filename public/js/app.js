@@ -800,11 +800,24 @@ async function refreshDashboard({ silent = false } = {}) {
     renderModelLegend(rideabilityData);
     renderHorizonPlanner(rideabilityData);
     renderRideabilityMatrix(rideabilityData, observationsData);
+    const obsBySpot = WindmateObservations.mapBySpotId(observationsData);
+    const matrixPrefs = prefsForRanking(rideabilityData.preferences);
     WindmateWatchlist.renderStrip(els.watchlistStrip, {
       activeSport,
-      observationsBySpot: WindmateObservations.mapBySpotId(observationsData),
-      prefs: prefsForRanking(rideabilityData.preferences),
+      observationsBySpot: obsBySpot,
+      prefs: matrixPrefs,
     });
+    const warningsBySpot = new Map(
+      rideabilityData.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
+    );
+    const rideEntryBySpot = new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry]));
+    WindmateObservations.bindToggles(
+      els.watchlistStrip,
+      obsBySpot,
+      matrixPrefs,
+      warningsBySpot,
+      rideEntryBySpot
+    );
   } catch (err) {
     const msg = WindmateCopy.errors.loadFailed(err.message);
     els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
@@ -835,17 +848,21 @@ function renderMatePicks(data) {
       top
         .map((row) => {
           const entry = row.entry;
+          const windowHours = getEfficientWindowHours(entry, today, prefs);
           const dayHours = getSpotDayData(entry, today)?.hours ?? entry.today ?? [];
           const peak = dayHours.reduce(
             (best, h) =>
               h.rideable && h.windSpeed > (best?.windSpeed ?? 0) ? h : best,
             null
           );
+          const timeRange = WindmateForecastTime.formatWindowTimeRange(windowHours);
+          const windowCount = windowHours.length || row.rideableCount;
           return `<p>${WindmateCopy.picks.session(
             entry.spot.name,
-            row.rideableCount,
+            windowCount,
             Math.round(peak?.windSpeed ?? 0),
-            peak?.direction ?? '—'
+            peak?.direction ?? '—',
+            timeRange
           )}</p>`;
         })
         .join('');
@@ -1643,6 +1660,10 @@ function renderCriterionMatrixRows(timelineHours, modelEntries, getModelHours, w
     .join('');
 }
 
+function resolveSessionVerdictForDay(entry, date) {
+  return entry.sessionGoNoGoByDate?.[date] ?? null;
+}
+
 function renderRideabilityMatrix(data, observations) {
   if (!data.spots.length) {
     els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${WindmateCopy.empty.noSpotsInRange}</p>`;
@@ -1656,6 +1677,7 @@ function renderRideabilityMatrix(data, observations) {
   }
 
   const viewingToday = isForecastToday(selectedDayDate, data);
+  const obsBySpot = WindmateObservations.mapBySpotId(observations);
 
   const rankedSpots = sortSpotsForDay(
     data.spots,
@@ -1664,7 +1686,6 @@ function renderRideabilityMatrix(data, observations) {
     data.radius_km
   ).filter((row) => row.rideableCount > 0);
   const minWindowHours = getMinRideableWindowHours(data.preferences);
-  const obsBySpot = WindmateObservations.mapBySpotId(observations);
 
   if (!rankedSpots.length) {
     els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${WindmateCopy.empty.noRideableHoursForDay}</p>`;
@@ -1708,28 +1729,35 @@ function renderRideabilityMatrix(data, observations) {
         ? `<a href="${spot.source_url}" target="_blank" rel="noopener" class="text-emerald-500 hover:underline text-xs">iGetwind</a>`
         : '';
 
-      const liveStrip = viewingToday
-        ? WindmateObservations.renderLiveStrip(
-            spot,
-            obsBySpot.get(spot.id),
-            entry,
-            prefsForRanking(data.preferences)
-          )
-        : '';
-
-      const favoriteBtn = renderFavoriteButton(spot);
       const watched = WindmateWatchlist.isWatched(
         spot.id,
         selectedDayDate,
         data.preferences.sport
       );
+      const obsEntry = obsBySpot.get(spot.id);
+      const sessionVerdict = resolveSessionVerdictForDay(entry, selectedDayDate);
+      const verdictBanner = WindmateObservations.renderVerdictBanner(sessionVerdict);
+      const liveStrip = viewingToday
+        ? WindmateObservations.renderLiveStrip(
+            spot,
+            obsEntry,
+            entry,
+            prefsForRanking(data.preferences),
+            sessionVerdict ? { sessionGoNoGo: sessionVerdict, suppressVerdictBanner: true } : {}
+          )
+        : '';
+
+      const favoriteBtn = renderFavoriteButton(spot);
       const watchBtn = WindmateWatchlist.renderWatchButton(
         spot.id,
         selectedDayDate,
         data.preferences.sport,
         watched
       );
-      const windowStatsLine = renderEfficientWindowStats(entry, selectedDayDate, data.preferences);
+      const windowStatsLine =
+        sessionVerdict?.reason
+          ? ''
+          : renderEfficientWindowStats(entry, selectedDayDate, data.preferences);
 
       return `
         <div class="bg-base-card border border-base-border rounded-xl p-5" data-spot-id="${spot.id}">
@@ -1746,6 +1774,7 @@ function renderRideabilityMatrix(data, observations) {
             <span class="text-xs text-slate-400 shrink-0">${spot.distance_km.toFixed(1)} km · ${rideableCount} rideable hrs ${link}</span>
           </div>
           ${windowStatsLine}
+          ${verdictBanner}
           ${liveStrip}
           <div class="matrix-panel mb-2">
             <div class="matrix-panel-rows">
@@ -1762,7 +1791,17 @@ function renderRideabilityMatrix(data, observations) {
     })
     .join('');
 
-  WindmateObservations.bindToggles(els.rideabilityMatrix, obsBySpot, data.preferences);
+  const warningsBySpot = new Map(
+    data.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
+  );
+  const rideEntryBySpot = new Map(data.spots.map((entry) => [entry.spot.id, entry]));
+  WindmateObservations.bindToggles(
+    els.rideabilityMatrix,
+    obsBySpot,
+    data.preferences,
+    warningsBySpot,
+    rideEntryBySpot
+  );
   WindmateWatchlist.bindWatchButtons(els.rideabilityMatrix, data.preferences.sport);
 }
 

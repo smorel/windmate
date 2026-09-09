@@ -7,7 +7,13 @@ const { compareToday, currentForecastDelta } = require('./observationCompare');
 const { fetchOpenMeteoContext } = require('./openMeteoContext');
 const { buildContextByTime, buildTempSummary } = require('./temperature');
 const { buildDaylightByDate } = require('./daylight');
-const { analyzeHourlyRideability, computeSessionWarnings } = require('./rideability');
+const {
+  analyzeHourlyRideability,
+  analyzeMixedRideability,
+  computeSessionWarnings,
+  summarizeByDay,
+} = require('./rideability');
+const { computeSessionGoNoGo } = require('./sessionGoNoGo');
 const { getPrimaryHourlyForecast } = require('./weather');
 const { hazardLabel } = require('./weatherHazards');
 const { todayFromHourlyTimes } = require('../utils/forecastTime');
@@ -18,6 +24,108 @@ const { todayFromHourlyTimes } = require('../utils/forecastTime');
  * @param {object} prefs
  * @param {object} forecast
  */
+function observationCachePayload(obs) {
+  const { sessionGoNoGo, ...rest } = obs;
+  return rest;
+}
+
+function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options = {}) {
+  const contextData = cachedCore._contextData;
+  const contextByTime = buildContextByTime(contextData);
+  const daylightByDate = buildDaylightByDate(contextData);
+  const primary = getPrimaryHourlyForecast(forecast);
+  const today = todayFromHourlyTimes(primary);
+  const forecastHours = primary
+    ? analyzeHourlyRideability(
+        primary,
+        prefs,
+        spot.ideal_directions ?? [],
+        contextByTime,
+        daylightByDate
+      ).filter((h) => h.time.startsWith(today))
+    : [];
+
+  const current = cachedCore.current;
+  const actual = cachedCore.today?.actual ?? [];
+  const warnings = computeSessionWarnings(forecastHours, prefs);
+  const rideableHours = forecastHours.filter((h) => h.rideable);
+  const summary = {
+    ...compareToday(actual, forecastHours, prefs, current, {
+      escalated: Boolean(options.escalated),
+    }),
+    tempSummary: buildTempSummary(rideableHours),
+  };
+
+  if (current) {
+    current.deltaKt = currentForecastDelta(current, forecastHours);
+    const nowHour = forecastHours.find((h) => {
+      if (!current.observedAt) return false;
+      return new Date(h.time).getHours() === new Date(current.observedAt).getHours();
+    });
+    current.hazardLabel = nowHour && !nowHour.weatherOk ? hazardLabel(nowHour) : null;
+  }
+
+  const observation = {
+    spot: cachedCore.spot ?? {
+      id: spot.id,
+      name: spot.name,
+      distance_km: spot.distance_km,
+    },
+    current,
+    today: {
+      actual,
+      forecast: forecastHours,
+      warnings,
+      summary,
+    },
+  };
+
+  let sessionGoNoGo = null;
+  if (forecast.models) {
+    const mixed = analyzeMixedRideability(
+      forecast,
+      prefs,
+      spot.ideal_directions ?? [],
+      contextByTime,
+      daylightByDate
+    );
+    const days = mixed.consensusDays.length ? mixed.consensusDays : mixed.days;
+    sessionGoNoGo = computeSessionGoNoGo({
+      rideEntry: {
+        spot: {
+          id: spot.id,
+          distance_km: spot.distance_km,
+          ideal_directions: spot.ideal_directions ?? [],
+        },
+        primaryModel: mixed.primaryModel,
+        models: mixed.models,
+        days,
+      },
+      sessionDate: today,
+      prefs,
+      observation,
+    });
+  } else if (primary) {
+    sessionGoNoGo = computeSessionGoNoGo({
+      rideEntry: {
+        spot: {
+          id: spot.id,
+          distance_km: spot.distance_km,
+          ideal_directions: spot.ideal_directions ?? [],
+        },
+        primaryModel: forecast.model ?? 'open-meteo',
+        models: {},
+        days: summarizeByDay(forecastHours),
+      },
+      sessionDate: today,
+      prefs,
+      observation,
+    });
+  }
+
+  return { ...observation, sessionGoNoGo };
+}
+
 async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
   const ttlMs = options.ttlMs ?? OBSERVATION_CACHE_TTL_MS;
   const cached = db.prepare(
@@ -25,7 +133,12 @@ async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
   ).get(spot.id);
 
   if (cached && Date.now() - cached.fetched_at < ttlMs) {
-    return { ...JSON.parse(cached.data), cached: true };
+    const cachedCore = JSON.parse(cached.data);
+    const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
+    return {
+      ...refreshObservationAnalysis(spot, prefs, forecast, { ...cachedCore, _contextData: contextData }, options),
+      cached: true,
+    };
   }
 
   try {
@@ -34,11 +147,27 @@ async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
       INSERT INTO observation_cache (spot_id, fetched_at, data)
       VALUES (?, ?, ?)
       ON CONFLICT(spot_id) DO UPDATE SET fetched_at = excluded.fetched_at, data = excluded.data
-    `).run(spot.id, Date.now(), JSON.stringify(obs));
+    `).run(spot.id, Date.now(), JSON.stringify(observationCachePayload(obs)));
     return { ...obs, cached: false };
   } catch (err) {
     if (cached) {
-      return { ...JSON.parse(cached.data), cached: true, stale: true };
+      const cachedCore = JSON.parse(cached.data);
+      try {
+        const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
+        return {
+          ...refreshObservationAnalysis(
+            spot,
+            prefs,
+            forecast,
+            { ...cachedCore, _contextData: contextData },
+            options
+          ),
+          cached: true,
+          stale: true,
+        };
+      } catch {
+        return { ...cachedCore, cached: true, stale: true };
+      }
     }
     throw err;
   }
@@ -84,9 +213,13 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
   const primary = getPrimaryHourlyForecast(forecast);
   const today = todayFromHourlyTimes(primary);
   const forecastHours = primary
-    ? analyzeHourlyRideability(primary, prefs, [], contextByTime, daylightByDate).filter((h) =>
-        h.time.startsWith(today)
-      )
+    ? analyzeHourlyRideability(
+        primary,
+        prefs,
+        spot.ideal_directions ?? [],
+        contextByTime,
+        daylightByDate
+      ).filter((h) => h.time.startsWith(today))
     : [];
 
   const warnings = computeSessionWarnings(forecastHours, prefs);
@@ -121,7 +254,7 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
     }
   }
 
-  return {
+  const observation = {
     spot: {
       id: spot.id,
       name: spot.name,
@@ -135,9 +268,59 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
       summary,
     },
   };
+
+  let sessionGoNoGo = null;
+  if (forecast.models) {
+    const mixed = analyzeMixedRideability(
+      forecast,
+      prefs,
+      spot.ideal_directions ?? [],
+      contextByTime,
+      daylightByDate
+    );
+    const days = mixed.consensusDays.length ? mixed.consensusDays : mixed.days;
+    sessionGoNoGo = computeSessionGoNoGo({
+      rideEntry: {
+        spot: {
+          id: spot.id,
+          distance_km: spot.distance_km,
+          ideal_directions: spot.ideal_directions ?? [],
+        },
+        primaryModel: mixed.primaryModel,
+        models: mixed.models,
+        days,
+      },
+      sessionDate: today,
+      prefs,
+      observation,
+    });
+  } else if (primary) {
+    sessionGoNoGo = computeSessionGoNoGo({
+      rideEntry: {
+        spot: {
+          id: spot.id,
+          distance_km: spot.distance_km,
+          ideal_directions: spot.ideal_directions ?? [],
+        },
+        primaryModel: forecast.model ?? 'open-meteo',
+        models: {},
+        days: summarizeByDay(forecastHours),
+      },
+      sessionDate: today,
+      prefs,
+      observation,
+    });
+  }
+
+  return { ...observation, sessionGoNoGo };
+}
+
+function clearObservationCache(db) {
+  db.prepare('DELETE FROM observation_cache').run();
 }
 
 module.exports = {
   fetchSpotObservations,
+  clearObservationCache,
   OBSERVATION_CACHE_TTL_MS,
 };

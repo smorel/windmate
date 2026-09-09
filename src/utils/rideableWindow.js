@@ -13,20 +13,35 @@ function parseMinRideableWindowHours(value, fallback = DEFAULT_MIN_RIDEABLE_WIND
 
 /** Longest consecutive rideable run that meets minConsecutive (timeline gaps break runs). */
 function longestRideableWindow(hours, minConsecutive = 1) {
+  return longestRideableWindowSpan(hours, minConsecutive).length;
+}
+
+function longestRideableWindowSpan(hours, minConsecutive = 1) {
   const min = Math.max(1, minConsecutive);
-  let best = 0;
+  let best = { length: 0, start: null, end: null };
   let current = 0;
+  let runStart = null;
+  let runEnd = null;
 
   for (const hour of hours) {
     if (hour.rideable) {
+      if (current === 0) runStart = hour.time;
       current += 1;
-    } else {
-      if (current >= min) best = Math.max(best, current);
+      runEnd = hour.time;
+    } else if (current > 0) {
+      if (current >= min && current > best.length) {
+        best = { length: current, start: runStart, end: runEnd };
+      }
       current = 0;
+      runStart = null;
+      runEnd = null;
     }
   }
 
-  if (current >= min) best = Math.max(best, current);
+  if (current >= min && current > best.length) {
+    best = { length: current, start: runStart, end: runEnd };
+  }
+
   return best;
 }
 
@@ -143,6 +158,7 @@ module.exports = {
   hourTimeKey,
   parseMinRideableWindowHours,
   longestRideableWindow,
+  longestRideableWindowSpan,
   markInRideableWindow,
   buildConsensusWindowMaps,
   buildConsensusWindowMapsForTimeline,

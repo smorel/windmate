@@ -11,6 +11,7 @@ const { parseRankCriteriaOrder, VALID_RANK_CRITERIA } = require('../utils/rankCr
 const { parseFavoriteSpotIds } = require('../utils/favoriteSpots');
 const { parseSearchRadiusKm } = require('../utils/searchRadius');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
+const { clearObservationCache } = require('../services/observations');
 
 function parseNullableFloat(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -90,6 +91,13 @@ function createPreferencesRouter(db) {
     }
 
     try {
+      const windPrefsChanged =
+        min_wind_knots !== current.min_wind_knots ||
+        max_gust_knots !== current.max_gust_knots ||
+        (body.min_rideable_window_hours !== undefined &&
+          parseMinRideableWindowHours(body.min_rideable_window_hours) !==
+            current.min_rideable_window_hours);
+
       updateSportProfile(db, sport, {
         enabled: body.enabled,
         min_wind_knots,
@@ -111,6 +119,7 @@ function createPreferencesRouter(db) {
         alert_schedule: body.alert_schedule,
         favorite_spot_ids: body.favorite_spot_ids,
       });
+      if (windPrefsChanged) clearObservationCache(db);
       res.json(getFullPreferences(db));
     } catch (err) {
       res.status(400).json({ error: err.message });

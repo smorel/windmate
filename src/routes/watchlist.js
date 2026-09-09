@@ -18,8 +18,9 @@ const { buildDaylightByDate } = require('../services/daylight');
 const { analyzeMixedRideability, analyzeHourlyRideability, summarizeByDay } = require('../services/rideability');
 const { getPrimaryHourlyForecast } = require('../services/weather');
 const { fetchSpotObservations, OBSERVATION_CACHE_TTL_MS } = require('../services/observations');
-const { evaluateWatchlistStatus, mismatchBannerCopy } = require('../services/watchlistStatus');
+const { evaluateWatchlistStatus } = require('../services/watchlistStatus');
 const { VALID_SPORTS } = require('../utils/sports');
+const { haversineKm } = require('../utils/geo');
 
 const WATCHED_OBSERVATION_TTL_MS = parseInt(
   process.env.WATCHED_OBSERVATION_TTL_MS ?? '120000',
@@ -69,11 +70,17 @@ function createWatchlistRouter(db) {
       return { ...session, status: 'unknown', statusTrend: 'new' };
     }
 
-    const rideEntry = await buildRideEntry({ ...spot, distance_km: 0 }, prefs);
+    const global = getGlobalPreferences(db);
+    const distance_km =
+      global?.lat != null && global?.lng != null
+        ? haversineKm(global.lat, global.lng, spot.latitude, spot.longitude)
+        : prefs.radius_km ?? 50;
+    const spotWithDistance = { ...spot, distance_km };
+    const rideEntry = await buildRideEntry(spotWithDistance, prefs);
     let observation = null;
     if (session.session_date === todayIsoDate()) {
       const forecast = await fetchForecast(db, spot.id, spot);
-      observation = await fetchSpotObservations(db, { ...spot, distance_km: 0 }, prefs, forecast, {
+      observation = await fetchSpotObservations(db, spotWithDistance, prefs, forecast, {
         ttlMs: WATCHED_OBSERVATION_TTL_MS,
         escalated: true,
       });
@@ -86,17 +93,12 @@ function createWatchlistRouter(db) {
       status_snapshot: evaluation.snapshot,
     });
 
-    const mismatchBanner =
-      session.session_date === todayIsoDate() && observation?.today?.summary?.mismatch
-        ? mismatchBannerCopy(observation.today.summary.mismatch, observation.current)
-        : null;
-
     return {
       ...session,
       status: evaluation.status,
       statusTrend: evaluation.statusTrend,
       summary: evaluation.summary,
-      mismatchBanner,
+      sessionGoNoGo: evaluation.sessionGoNoGo,
       observation: session.session_date === todayIsoDate() ? observation : null,
     };
   }

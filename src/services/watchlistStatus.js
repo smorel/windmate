@@ -1,7 +1,6 @@
 const { computeSessionScore, longestConsensusWindowLength, getDayHours } = require('./sessionRank');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
-const { computeMismatch } = require('./mismatch');
-const { todayIsoDate } = require('../db');
+const { computeSessionGoNoGo, rideableWindRange } = require('./sessionGoNoGo');
 
 const STATUS_RANK = {
   on_track: 0,
@@ -14,13 +13,11 @@ const STATUS_RANK = {
 const ON_TRACK_MIN_SCORE = parseFloat(process.env.WATCHLIST_STATUS_ON_TRACK_MIN_SCORE ?? '0.55');
 const DEGRADING_SCORE_DELTA = parseFloat(process.env.WATCHLIST_DEGRADING_SCORE_DELTA ?? '0.1');
 
-function formatWindRange(hours) {
-  const rideable = hours.filter((h) => h.rideable);
-  if (!rideable.length) return null;
-  const winds = rideable.map((h) => h.windSpeed ?? 0);
-  const min = Math.round(Math.min(...winds));
-  const max = Math.round(Math.max(...winds));
-  return { min, max, count: rideable.length };
+function goNoGoToWatchStatus(goNoGoState) {
+  if (goNoGoState === 'go') return 'on_track';
+  if (goNoGoState === 'caution') return 'at_risk';
+  if (goNoGoState === 'no_go') return 'no_go';
+  return 'unknown';
 }
 
 /**
@@ -30,12 +27,18 @@ function formatWindRange(hours) {
  * @param {object|null} observation observation entry for session day
  */
 function evaluateWatchlistStatus(session, rideEntry, prefs, observation = null) {
-  const minWindow = parseMinRideableWindowHours(prefs.min_rideable_window_hours);
   const dateStr = session.session_date;
   const hours = getDayHours(rideEntry, dateStr);
+  const minWindow = parseMinRideableWindowHours(prefs.min_rideable_window_hours);
   const windowHours = longestConsensusWindowLength(rideEntry, dateStr, minWindow);
   const { score, metrics } = computeSessionScore(rideEntry, dateStr, prefs, prefs.radius_km);
-  const windRange = formatWindRange(hours);
+  const windRange = rideableWindRange(hours);
+  const sessionGoNoGo = computeSessionGoNoGo({
+    rideEntry,
+    sessionDate: dateStr,
+    prefs,
+    observation,
+  });
 
   const snapshot = {
     score,
@@ -44,18 +47,11 @@ function evaluateWatchlistStatus(session, rideEntry, prefs, observation = null) 
     maxWind: metrics.maxWind,
     windMin: windRange?.min ?? null,
     windMax: windRange?.max ?? null,
+    goNoGo: sessionGoNoGo.state,
   };
 
-  let status = 'unknown';
+  let status = goNoGoToWatchStatus(sessionGoNoGo.state);
   let statusTrend = 'new';
-
-  if (windowHours < minWindow || score < ON_TRACK_MIN_SCORE * 0.85) {
-    status = 'no_go';
-  } else if (windowHours <= minWindow || score < ON_TRACK_MIN_SCORE) {
-    status = 'at_risk';
-  } else {
-    status = 'on_track';
-  }
 
   const prev = session.status_snapshot;
   if (prev) {
@@ -72,17 +68,15 @@ function evaluateWatchlistStatus(session, rideEntry, prefs, observation = null) 
     }
   }
 
-  if (session.session_date === todayIsoDate() && observation?.today?.summary?.mismatch) {
-    const mismatch = observation.today.summary.mismatch;
-    if (mismatch.state === 'no_go') status = 'no_go';
-    else if (mismatch.state === 'caution' && status === 'on_track') status = 'degrading';
-    snapshot.mismatch = mismatch;
+  if (observation?.today?.summary?.mismatch) {
+    snapshot.mismatch = observation.today.summary.mismatch;
   }
 
   return {
     status,
     statusTrend,
     snapshot,
+    sessionGoNoGo,
     summary: {
       score,
       windowHours,
@@ -92,26 +86,7 @@ function evaluateWatchlistStatus(session, rideEntry, prefs, observation = null) 
   };
 }
 
-function mismatchBannerCopy(mismatch, current) {
-  if (!mismatch) return null;
-  if (mismatch.state === 'go') {
-    return `Looking good mate — ${Math.round(current?.windSpeed ?? 0)} kt, forecast nailed it.`;
-  }
-  if (mismatch.state === 'caution') {
-    const forecastKt =
-      current?.deltaKt != null
-        ? Math.round((current.windSpeed - current.deltaKt) * 10) / 10
-        : '?';
-    return `Forecast said ${forecastKt} kt — only seeing ${Math.round(current?.windSpeed ?? 0)}. Might be thin.`;
-  }
-  if (mismatch.state === 'no_go') {
-    return "Don't bother mate — forecast oversold it.";
-  }
-  return "Can't tell you what's happening right now — don't trust forecast alone.";
-}
-
 module.exports = {
   evaluateWatchlistStatus,
-  mismatchBannerCopy,
   ON_TRACK_MIN_SCORE,
 };

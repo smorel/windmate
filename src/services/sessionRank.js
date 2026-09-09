@@ -1,4 +1,8 @@
-const { parseMinRideableWindowHours, longestRideableWindow } = require('../utils/rideableWindow');
+const {
+  parseMinRideableWindowHours,
+  longestRideableWindow,
+  longestRideableWindowSpan,
+} = require('../utils/rideableWindow');
 const { parseRankCriteriaOrder } = require('../utils/rankCriteria');
 const { SPORT_WAVE_DEFAULTS } = require('../utils/sports');
 
@@ -37,11 +41,28 @@ function weightsFromOrder(order) {
 }
 
 function getDayHours(entry, dateStr) {
-  const primary = entry.primaryModel;
-  if (entry.models?.[primary]?.days) {
-    const day = entry.models[primary].days.find((d) => d.date === dateStr);
+  const models = entry.models ?? {};
+  const modelOrder = [
+    entry.primaryModel,
+    'gfs',
+    'open-meteo',
+    'hrrr',
+    'lam',
+    'nam5',
+    'nam12',
+    'ecmwf9',
+    'icon',
+    ...Object.keys(models),
+  ].filter(Boolean);
+
+  const seen = new Set();
+  for (const modelId of modelOrder) {
+    if (seen.has(modelId) || models[modelId]?.error) continue;
+    seen.add(modelId);
+    const day = models[modelId]?.days?.find((d) => d.date === dateStr);
     if (day?.hours?.length) return day.hours;
   }
+
   const day = (entry.days ?? []).find((d) => d.date === dateStr);
   return day?.hours ?? [];
 }
@@ -51,11 +72,11 @@ function getModelDayHours(entry, modelId, dateStr) {
   return day?.hours ?? [];
 }
 
-function longestConsensusWindowLength(entry, dateStr, minWindowHours) {
+function longestConsensusWindow(entry, dateStr, minWindowHours) {
   const modelEntries = Object.entries(entry.models ?? {}).filter(([, model]) => !model.error);
   if (!modelEntries.length) {
     const hours = getDayHours(entry, dateStr);
-    return longestRideableWindow(hours.filter((h) => h.rideable), minWindowHours);
+    return longestRideableWindowSpan(hours, minWindowHours);
   }
 
   const timelines = modelEntries.map(([, model]) => {
@@ -66,22 +87,37 @@ function longestConsensusWindowLength(entry, dateStr, minWindowHours) {
     ...new Set(timelines.flatMap((hours) => hours.map((h) => h.time.slice(0, 16)))),
   ].sort();
 
-  let best = 0;
+  let best = { length: 0, start: null, end: null };
   let current = 0;
+  let runStart = null;
+  let runEnd = null;
+
   for (const key of timeKeys) {
     const allRideable = timelines.every((hours) => {
       const hour = hours.find((h) => h.time.slice(0, 16) === key);
       return hour?.rideable === true;
     });
     if (allRideable) {
+      if (current === 0) runStart = key;
       current += 1;
-    } else {
-      if (current >= minWindowHours) best = Math.max(best, current);
+      runEnd = key;
+    } else if (current > 0) {
+      if (current >= minWindowHours && current > best.length) {
+        best = { length: current, start: runStart, end: runEnd };
+      }
       current = 0;
+      runStart = null;
+      runEnd = null;
     }
   }
-  if (current >= minWindowHours) best = Math.max(best, current);
+  if (current >= minWindowHours && current > best.length) {
+    best = { length: current, start: runStart, end: runEnd };
+  }
   return best;
+}
+
+function longestConsensusWindowLength(entry, dateStr, minWindowHours) {
+  return longestConsensusWindow(entry, dateStr, minWindowHours).length;
 }
 
 function estimateWaveMatch(rideableHours, wavePreference) {
@@ -165,6 +201,7 @@ function computeSessionScore(entry, dateStr, prefs, radiusKm) {
 module.exports = {
   computeSessionScore,
   computeRawMetrics,
+  longestConsensusWindow,
   longestConsensusWindowLength,
   getDayHours,
   getModelDayHours,

@@ -62,8 +62,8 @@ const WindmateCopy = {
   picks: {
     intro: (count) =>
       `Found ${count} rideable spot${count === 1 ? '' : 's'} nearby — here's what I'd do today:`,
-    session: (name, hours, wind, direction) =>
-      `<strong>${name}</strong> — ${hours} rideable hr${hours === 1 ? '' : 's'} today, up to ${wind} kt ${direction}`,
+    session: (name, hours, wind, direction, timeRange = '') =>
+      `<strong>${name}</strong> — ${hours} rideable hr${hours === 1 ? '' : 's'} today${timeRange}, up to ${wind} kt ${direction}`,
     quiet:
       "Quiet one today mate — nothing hits your wind thresholds. Best bet follows your ranking order below.",
     bestWind: (name, wind, direction, dist) =>
@@ -159,6 +159,21 @@ const WindmateCopy = {
     loadFailed: (msg) => `Something went sideways mate — ${msg}`,
   },
 
+  watchlist: {
+    verdictLive: {
+      go: 'Go',
+      caution: 'Caution',
+      no_go: 'No go',
+      unknown: 'Unknown',
+    },
+    verdictForecast: {
+      go: 'On track',
+      caution: 'Unsure',
+      no_go: 'Looking bad',
+      unknown: 'Unknown',
+    },
+  },
+
   observations: {
     noCurrent: "Can't tell you what's happening right now — forecast's still below",
     mismatch: {
@@ -185,6 +200,7 @@ const WindmateCopy = {
     },
     showCurve: "Today's curve ▾",
     hideCurve: "Hide curve ▴",
+    rideableWindow: 'Rideable window',
     windowTemp: (airMin, airMax, waterMin, waterMax) => {
       let line = `Best window temps · ${airMin}–${airMax}°C air`;
       if (waterMin != null) line += ` · ${waterMin}–${waterMax}°C water`;

@@ -20,10 +20,10 @@ const WindmateForecastTime = (() => {
     return `${String(parts.h).padStart(2, '0')}:${String(parts.mi).padStart(2, '0')}`;
   }
 
-  function subtractForecastMinutes(isoTime, minutes) {
+  function shiftForecastMinutes(isoTime, minutes) {
     const parts = parseForecastParts(isoTime);
     if (!parts) return isoTime;
-    const ts = Date.UTC(parts.y, parts.mo - 1, parts.d, parts.h, parts.mi) - minutes * 60 * 1000;
+    const ts = Date.UTC(parts.y, parts.mo - 1, parts.d, parts.h, parts.mi) + minutes * 60 * 1000;
     const shifted = new Date(ts);
     const y = shifted.getUTCFullYear();
     const mo = String(shifted.getUTCMonth() + 1).padStart(2, '0');
@@ -31,6 +31,21 @@ const WindmateForecastTime = (() => {
     const h = String(shifted.getUTCHours()).padStart(2, '0');
     const mi = String(shifted.getUTCMinutes()).padStart(2, '0');
     return `${y}-${mo}-${d}T${h}:${mi}`;
+  }
+
+  function subtractForecastMinutes(isoTime, minutes) {
+    return shiftForecastMinutes(isoTime, -minutes);
+  }
+
+  function addForecastMinutes(isoTime, minutes) {
+    return shiftForecastMinutes(isoTime, minutes);
+  }
+
+  function formatWindowTimeRange(windowHours) {
+    if (!windowHours?.length) return '';
+    const start = formatForecastClock(windowHours[0].time);
+    const end = formatForecastClock(addForecastMinutes(windowHours[windowHours.length - 1].time, 60));
+    return ` (${start}–${end})`;
   }
 
   function sessionWarningMessage(warning, prefs, bufferMin = 30) {
@@ -64,7 +79,9 @@ const WindmateForecastTime = (() => {
 
   return {
     formatForecastClock,
+    addForecastMinutes,
     subtractForecastMinutes,
+    formatWindowTimeRange,
     sessionWarningMessage,
     localDateString,
     forecastTodayFromRideability,

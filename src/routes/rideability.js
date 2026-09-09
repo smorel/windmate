@@ -13,6 +13,7 @@ const {
 const { SPORT_COLORS } = require('../utils/sports');
 const { MODEL_COLORS } = require('../utils/models');
 const { selectDashboardSpots } = require('../utils/spotSelection');
+const { attachSessionGoNoGoByDate } = require('../services/sessionGoNoGo');
 
 function createRideabilityRouter(db) {
   const router = express.Router();
@@ -83,15 +84,23 @@ function createRideabilityRouter(db) {
               contextByTime,
               daylightByDate
             );
+            const days = mixed.consensusDays.length ? mixed.consensusDays : mixed.days;
+            const rideEntry = {
+              spot: spotInfo,
+              primaryModel: mixed.primaryModel,
+              models: mixed.models,
+              days,
+            };
             return {
               spot: spotInfo,
               primaryModel: mixed.primaryModel,
               models: mixed.models,
               today: mixed.today,
-              days: mixed.consensusDays.length ? mixed.consensusDays : mixed.days,
+              days,
               rideableToday: mixed.rideableToday,
               warnings: mixed.warnings,
               tempSummary: mixed.tempSummary,
+              sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs),
             };
           }
 
@@ -108,6 +117,12 @@ function createRideabilityRouter(db) {
           const todayHours = hourly.filter((h) => h.time.startsWith(today));
           const rideableTodayHours = todayHours.filter((h) => h.rideable);
 
+          const rideEntry = {
+            spot: spotInfo,
+            primaryModel: forecast.model ?? 'open-meteo',
+            models: {},
+            days,
+          };
           return {
             spot: spotInfo,
             primaryModel: forecast.model ?? 'open-meteo',
@@ -117,6 +132,7 @@ function createRideabilityRouter(db) {
             rideableToday: rideableTodayHours.length,
             warnings: computeSessionWarnings(todayHours, prefs),
             tempSummary: buildTempSummary(rideableTodayHours),
+            sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs),
           };
         })
       );

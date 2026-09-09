@@ -73,18 +73,12 @@
       <div id="mate-picks-content" class="space-y-2 text-sm text-slate-300"></div>
     </section>
 
-    <section>
-      <h2 class="text-lg font-semibold text-white mb-2">Horizon Planner</h2>
-      <p class="text-sm text-slate-400 mb-4">My 7-day read — tap a day to rank spots below</p>
-      <div id="horizon-planner" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"></div>
-    </section>
-
-    <section>
-      <div class="flex items-start justify-between gap-4 mb-4">
-        <div class="min-w-0">
-          <h2 class="text-lg font-semibold text-white">Rideability Matrix</h2>
-          <p id="matrix-day-label" class="text-sm text-slate-400 mt-2">Hour by hour — when I reckon you can get on the water</p>
-        </div>
+    <section class="dashboard-planner">
+      <h2 class="text-lg font-semibold text-white mb-4">Horizon Planner</h2>
+      <div class="horizon-planner-sticky">
+        <div id="horizon-planner" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"></div>
+      </div>
+      <div class="flex justify-end mt-6 mb-4">
         <button
           id="legend-btn"
           type="button"

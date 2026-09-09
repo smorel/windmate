@@ -74,8 +74,6 @@ const WindmateCopy = {
     modelsAgree: (agreeing, total) => `${agreeing}/${total} models back me up`,
     spotsWithWindows: (count) =>
       count === 1 ? '1 spot with a shared window' : `${count} spots with shared windows`,
-    matrixDay: (label) => `${label} — best spots first`,
-    matrixToday: 'Today — best spots first',
     todayShort: 'Today',
     window: (start, end) => `${start}–${end}`,
     windLine: (range) => `${range} kt wind`,

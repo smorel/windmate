@@ -10,6 +10,18 @@
 .horizon-day-6 { filter: var(--blur-day-6); opacity: 0.78; }
 .horizon-day-7 { filter: var(--blur-day-7); opacity: 0.7; }
 
+.horizon-planner-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  margin-left: -1rem;
+  margin-right: -1rem;
+  padding: 0.5rem 1rem 0.75rem;
+  background: #0b0f19;
+  border-bottom: 1px solid #1a2235;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
+}
+
 .horizon-day-card {
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;

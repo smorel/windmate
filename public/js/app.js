@@ -34,7 +34,6 @@ const els = {
   offshoreWindHint: document.getElementById('offshore-wind-hint'),
   minRideableWindow: document.getElementById('min-rideable-window'),
   horizonPlanner: document.getElementById('horizon-planner'),
-  matrixDayLabel: document.getElementById('matrix-day-label'),
   rideabilityMatrix: document.getElementById('rideability-matrix'),
   modelLegend: document.getElementById('model-legend'),
   legendBtn: document.getElementById('legend-btn'),
@@ -1096,12 +1095,28 @@ function renderHorizonWindBlock(spots, dateStr, prefs, sportColor, rideableMax) 
     </div>`;
 }
 
+function scrollSpotListToTop({ behavior = 'smooth' } = {}) {
+  const sticky = document.querySelector('.horizon-planner-sticky');
+  const firstSpot = els.rideabilityMatrix?.firstElementChild;
+  if (!firstSpot) return;
+
+  const stickyRect = sticky?.getBoundingClientRect();
+  const stickyActive = stickyRect && stickyRect.top <= 1;
+  const offset = stickyActive ? stickyRect.height + 12 : 12;
+  const firstTop = firstSpot.getBoundingClientRect().top;
+
+  if (firstTop >= offset && firstTop < window.innerHeight) return;
+
+  const top = firstTop + window.scrollY - offset;
+  window.scrollTo({ top: Math.max(0, top), behavior });
+}
+
 function selectDay(dateStr) {
   selectedDayDate = dateStr;
   if (!rideabilityData) return;
   renderHorizonPlanner(rideabilityData);
   renderRideabilityMatrix(rideabilityData, observationsData);
-  els.rideabilityMatrix?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  scrollSpotListToTop();
 }
 
 function renderHorizonPlanner(data) {
@@ -1405,11 +1420,6 @@ function renderRideabilityMatrix(data, observations) {
   }
 
   const viewingToday = isForecastToday(selectedDayDate, data);
-  if (els.matrixDayLabel) {
-    els.matrixDayLabel.textContent = viewingToday
-      ? WindmateCopy.horizon.matrixToday
-      : WindmateCopy.horizon.matrixDay(formatDayLabel(selectedDayDate));
-  }
 
   const rankedSpots = sortSpotsForDay(
     data.spots,

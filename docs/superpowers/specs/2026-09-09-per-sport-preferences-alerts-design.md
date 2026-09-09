@@ -74,7 +74,7 @@ Keeps **app-wide** settings. Sport-specific fields **move** to `sport_profiles`.
 
 ### `sport_profiles`
 
-One row per sport. User may disable sports they don't practice (`enabled = 0` hides tab; no alerts).
+One row per sport. User may disable sports they don't practice (`enabled = 0`) — hidden from dashboard dropdown and settings tabs; profile data retained; no horizon alerts. Re-enable from **My sports** in Settings (see below). At least one sport must stay enabled.
 
 | Column | Type | Default | Notes |
 |---|---|---|---|
@@ -233,11 +233,23 @@ Current cron (`Mate, [Spot] is on today`) becomes a **subset** when `today_alert
 
 See [Dashboard Sport Selector](./2026-09-09-sport-selector-design.md) — dropdown below spot search with horizon status dots; sets `active_sport`, reloads matrix/planner with that profile's radius and ranking. Accent colour follows sport.
 
-### Settings — per-sport tabs
+### Settings — My sports + per-sport tabs
+
+Users typically practice only a few sports. **My sports** is the on/off list for all six; only enabled sports appear in the dashboard dropdown and as tabs below.
 
 ```
 Settings
-[Wingfoil] [Sailing] [Kite] [Windsurf] [Kitefoil] [Parawing]
+
+── My sports ──
+  [✓] Wingfoiling
+  [✓] Kitesurfing
+  [ ] Sailing
+  [ ] Windsurfing
+  [ ] Kitefoiling
+  [ ] Parawing
+  "Pick the sports you ride — only these show on the dashboard."
+
+[Wingfoil] [Kitesurf]          ← tabs for enabled sports only
 
 ── Rideability ──
 Min wind · Max gust · Min air/water temp
@@ -257,7 +269,16 @@ Days: (•) Any day  ( ) Weekends only  ( ) Weekdays  ( ) Custom…
 Min quality: [Good ▼]  → maps to min_session_score
 ```
 
-Disabled sport tab: "Don't practice this" toggle at bottom of tab.
+**My sports behaviour:**
+
+| Action | Effect |
+|---|---|
+| Uncheck a sport | `enabled = 0`; removed from dashboard dropdown and tab bar; skipped by horizon summary + alert cron; thresholds preserved in DB |
+| Check a sport | `enabled = 1`; appears in dropdown and new tab; defaults used if never configured |
+| Uncheck active sport | `active_sport` moves to first remaining enabled sport (alphabetical); dashboard refreshes |
+| Uncheck last sport | Blocked — at least one sport required |
+
+`PUT /api/preferences/sports/:sport` accepts `{ "enabled": 0 \| 1 }` (auto-save on toggle, same as other fields).
 
 ### Matrix / planner
 
@@ -303,6 +324,8 @@ Existing `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` unchanged.
 ## Testing checklist
 
 - [ ] Six sport profiles seed on fresh DB; migration preserves current user's thresholds on correct sport row
+- [ ] My sports: disable sailing → hidden from dropdown + tabs; re-enable restores profile
+- [ ] Cannot disable last enabled sport
 - [ ] Changing wing min wind does not change sailing profile
 - [ ] `active_sport` switch updates matrix radius, rank order, and wind gates without page reload (or with clear refresh)
 - [ ] Sailing `days_of_week: [0,6]` — alert fires for Saturday candidate, not Thursday

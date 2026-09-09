@@ -13,7 +13,9 @@ Selecting a sport applies **that sport's profile** to the whole dashboard: Mate'
 
 ## User story
 
-> "I wing weekdays and sail weekends. On Monday I open Windmate — wing has a green dot, sailing is gray. I stay on wing and see my 12 kt / 40 km setup. Saturday I tap the dropdown, sailing has a green dot, I switch — matrix re-ranks for wind and waves, radius jumps to 80 km, and Mate's pick updates."
+> "I only wing and kite — I turned off sailing, windsurf, kitefoil, and parawing in Settings. My dashboard dropdown just shows those two. On Monday wing has a green dot, kite is gray. I stay on wing. Saturday I switch to kite — matrix re-ranks with my kite thresholds and radius."
+
+> "I wing weekdays and sail weekends (both enabled). Monday — wing green, sailing gray. Saturday I switch to sailing — matrix re-ranks for wind and waves, radius jumps to 80 km."
 
 ## Problem with today
 
@@ -34,7 +36,7 @@ Sport lives only in **Settings**. Changing it **overwrites** the single `user_pr
 
 - Next-day label or day count in dropdown (v2 polish — see [Open questions](#open-questions))
 - Per-sport favorites in switcher
-- Showing disabled sports in dropdown (hidden; re-enable in Settings tabs)
+- Showing disabled sports in dropdown (hidden; re-enable via **My sports** in Settings)
 - Live-observation-based dots (forecast only — same as horizon alerts)
 
 ## Dependencies
@@ -87,6 +89,8 @@ Dot only — no day name or count in v1.
 
 ### Visual reference
 
+Only **enabled** sports appear (e.g. user practices wing + kite only):
+
 ```
 ┌─────────────────────────────┐
 │ 🪽 Wingfoiling           ● │ ▾
@@ -94,11 +98,11 @@ Dot only — no day name or count in v1.
         ↓ open
 ┌─────────────────────────────┐
 │ Wingfoiling              ● │  ← green
-│ Kitesurfing              ● │
-│ Sailing                  ○ │  ← gray (weekends only, none yet)
-│ Windsurfing              ○ │
+│ Kitesurfing              ○ │  ← gray — no qualifying days
 └─────────────────────────────┘
 ```
+
+Sailing, windsurf, etc. are absent — disabled in Settings → My sports.
 
 ## Horizon qualification logic
 
@@ -222,15 +226,30 @@ Preserve `selectedDayDate` across sport switch when that date still exists in th
 
 Remove global **Sport** `<select>` from settings form; sport editing moves to per-sport tabs only.
 
-## Settings interaction
+## Settings interaction — My sports
 
-- **Per-sport tabs** edit thresholds, radius, alert schedule — see [per-sport spec](./2026-09-09-per-sport-preferences-alerts-design.md#settings--per-sport-tabs).
-- **"Don't practice this"** (`enabled = 0`) removes sport from dashboard dropdown; if it was active, fall back to first enabled sport alphabetically.
-- Changing alert `days_of_week` or `min_session_score` updates summary dots on next summary refetch.
+Users enable only the sports they practice. See [per-sport spec — My sports](./2026-09-09-per-sport-preferences-alerts-design.md#settings--my-sports--per-sport-tabs).
+
+| Layer | Enabled sports | Disabled sports |
+|---|---|---|
+| **Dashboard dropdown** | Listed with horizon dots | Hidden |
+| **Settings tabs** | Full rideability / ranking / alerts | Hidden (toggle back on in My sports) |
+| **Horizon summary API** | Computed | Omitted from response |
+| **Alert cron** | Scanned | Skipped |
+| **DB profile row** | Active | Retained — re-enable restores saved thresholds |
+
+On toggle off: if that sport was `active_sport`, switch to first remaining enabled sport (alphabetical) and refresh dashboard. Cannot disable the last sport.
+
+**Per-sport tabs** (enabled only) edit thresholds, radius, alert schedule. Changing alert `days_of_week` or `min_session_score` updates summary dots on next summary refetch.
+
+**Single enabled sport:** hide dropdown chevron; show sport label + dot only (no menu). User re-enables more sports in Settings when needed.
 
 ## Testing checklist
 
-- [ ] Enabled sports appear in dropdown; disabled sports hidden
+- [ ] Only enabled sports in dropdown; disabled sports hidden entirely
+- [ ] My sports toggle off removes sport from dropdown immediately; toggle on adds it back
+- [ ] Cannot disable last enabled sport (validation error + UI block)
+- [ ] Single enabled sport — label only, no chevron/dropdown
 - [ ] Green dot when wing `any day` + qualifying Thursday exists; gray when none
 - [ ] Sailing `weekends only` — gray Mon–Fri with good wind; green when Sat qualifies
 - [ ] Switch sport updates matrix rank order, wind gates, radius, sport colour, mate's pick
@@ -252,4 +271,4 @@ Remove global **Sport** `<select>` from settings form; sport editing moves to pe
 
 1. **Summary cache TTL** — recompute every request vs 15 min server cache keyed by `(lat, lng, profiles fingerprint)`?
 2. **v2 glance text** — next day name vs rideable hour count when user wants more than a dot?
-3. **Single enabled sport** — hide dropdown chevron and treat as label only, or always show switcher for consistency?
+3. ~~**Single enabled sport**~~ — resolved: label + dot only, no chevron when count = 1

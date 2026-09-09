@@ -21,10 +21,11 @@ Let users **mark a planned session** (spot + date) and keep it visible **through
 - **Pin watched sessions** to the top of the Horizon Planner (above the 7-day blur cards)
 - **Session-day panel** — expanded card for today's watched sessions with live strip, go/no-go pill, and forecast vs actual curve inline
 - **Mismatch banners** — consume [Forecast vs actual mismatch](./2026-09-08-realtime-wind-design.md#forecast-vs-actual-mismatch) states; escalate on watched session day
-- **Daily watchlist status email** — once per day per watched session (future + today) while `notify_email = 1`; mate-tone summary: on track, degrading, or no longer valid
-- **Session-day email** — same daily job on session day; includes live mismatch when `session_date === today`
+- **Daily watchlist status email** — once per day per watched session (future + today) while `notify_email = 1`; requires **signed-in account with verified email** (see [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#accounts-login--security)); local-only watches show UI status only
+- **Session-day email** — same daily job on session day; includes live mismatch when `session_date === today`; verified account only
 - **Auto-expire** — delete watched sessions when `session_date < today` (end of session day in user local TZ); no past-watch history in UI or DB
-- SQLite persistence; no auth (single-user local app, same as preferences)
+- **Local storage (default)** — watched sessions in browser `localStorage`; no auth; pins + session-day UI work offline from cloud
+- **Cloud storage (optional)** — server `watched_sessions` when user signs in for sync, notifications, or lift share
 
 ### In scope (v2 — ground truth enrichment)
 
@@ -34,8 +35,8 @@ Let users **mark a planned session** (spot + date) and keep it visible **through
 
 ### Out of scope
 
-- Multi-user accounts / shared watchlists
-- Push notifications (email only in v1 watchlist)
+- Forced login for browse/planner (login optional — see [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#accounts-login--security))
+- Push notifications (email only in v1 watchlist; email requires account)
 - Automated scraping without user-configured sources (legal/ToS review required)
 - Booking or calendar sync (Google Calendar export is a possible later nice-to-have)
 
@@ -46,20 +47,21 @@ Let users **mark a planned session** (spot + date) and keep it visible **through
 | Column | Type | Notes |
 |---|---|---|
 | id | TEXT (UUID) | PK |
+| user_id | TEXT | FK → users — **cloud rows only** |
 | spot_id | TEXT | FK → spots |
 | session_date | TEXT | ISO date `YYYY-MM-DD` (user local TZ — see [Open questions](#open-questions)) |
 | sport | TEXT | Sport profile used when watching — see [Supported sports](./2026-09-08-windwatch-design.md#supported-sports); default `active_sport` at create time |
 | note | TEXT | nullable — e.g. "Morning foil with Alex" |
 | created_at | INTEGER | Unix ms |
-| notify_email | INTEGER | 0/1 — daily status + session-day emails (default 1) |
+| notify_email | INTEGER | 0/1 — daily status + session-day emails (**cloud + verified email only**; ignored for local watches) |
 | last_status | TEXT | `on_track` · `degrading` · `at_risk` · `no_go` · `unknown` — last computed forecast/live status |
 | last_status_at | INTEGER | Unix ms — when `last_status` was last evaluated |
 | last_notified_at | INTEGER | nullable — Unix ms — last daily email sent for this row |
 | status_snapshot | TEXT | nullable — JSON blob of last evaluation (session score, window hours, rank, intel badges) for trend detection |
 
-Unique constraint: `(spot_id, session_date)`.
+Unique constraint: `(user_id, spot_id, session_date)` for cloud rows. Local watches are client-side only (no DB row).
 
-**Lifecycle:** only `session_date >= today` (user local date) exist in `watched_sessions`. A daily purge job **deletes** rows where `session_date < today` — no archive, no "past watched" UI.
+**Lifecycle:** only `session_date >= today` (user local date) exist in cloud `watched_sessions`. A daily purge job **deletes** rows where `session_date < today` — no archive, no "past watched" UI.
 
 ### `spots` extension (v2)
 
@@ -159,6 +161,7 @@ Recommendation: **v2a curated links + manual `spot_intel_cache`**; **v2b officia
 | Shorter poll TTL for watched spots on session day | Realtime (`OBSERVATION_CACHE_TTL_MS` override per spot) |
 | Planner pin order, star UX, webcam UI | This spec |
 | Session rank for day (wind, waves, quality, level) | [Session Spot Ranking](./2026-09-08-session-ranking-design.md) |
+| Lift requests for same watched session | [Session Lift Share](./2026-09-09-session-lift-share-design.md) |
 
 ## Watchlist status evaluation
 
@@ -180,7 +183,9 @@ Persist `last_status`, `last_status_at`, and `status_snapshot` on each evaluatio
 
 ## Email (daily watchlist digest)
 
-One **daily job** at **08:00 local** (configurable) for all active watched sessions where `notify_email = 1`. Prefer **one digest email** listing every watched session; skip rows unchanged since yesterday unless `last_status` worsened (always email on degradation).
+Requires **verified account** — see [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#accounts-login--security). Cron skips users without `email_verified_at`. Local-only watches never receive email (UI status only).
+
+One **daily job** at **08:00 local** (configurable) for all active **cloud** watched sessions where `notify_email = 1` and user verified. Prefer **one digest email** listing every watched session; skip rows unchanged since yesterday unless `last_status` worsened (always email on degradation).
 
 ### Future session day (before today)
 

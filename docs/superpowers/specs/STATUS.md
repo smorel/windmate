@@ -18,6 +18,7 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 | [departure-planner-design](./2026-09-09-departure-planner-design.md) | **0%** — spec only (leave-by + Google Maps drive) |
 | [per-sport-preferences-alerts](./2026-09-09-per-sport-preferences-alerts-design.md) | **0%** — spec only (sport profiles, horizon alerts) |
 | [sport-selector](./2026-09-09-sport-selector-design.md) | **0%** — spec only (dashboard dropdown + horizon dots) |
+| [session-lift-share](./2026-09-09-session-lift-share-design.md) | **0%** — spec only (watched-session lift matching + email intro) |
 
 **Also shipped (not in original MVP):** settings modal, auto-save prefs, spot search, favorites (incl. out-of-radius), customizable radius, Beaufort matrix colors, 3-band wind/gust/wave blocks, session warning time fix.
 
@@ -173,6 +174,8 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | **11** | Departure planner v1 (leave-by, Google Maps, spot card) | [Departure Planner](./2026-09-09-departure-planner-design.md) | Priority #7 — leave time for min hours + best window per `rank_criteria_order` |
 | **12** | Per-sport profiles (DB, API, settings tabs) | [Per-Sport Prefs](./2026-09-09-per-sport-preferences-alerts-design.md) | Prerequisite for sport selector + horizon alerts |
 | **13** | Dashboard sport selector + `GET /api/sports/horizon-summary` | [Sport Selector](./2026-09-09-sport-selector-design.md) | Switch sports without Settings; glance at horizon per sport |
+| **14** | Optional auth (local default) | [Lift Share](./2026-09-09-session-lift-share-design.md) | Login only for cloud sync, **email notifications**, or lift share; verified email for all outbound mail |
+| **15** | Session lift share v1 (opt-in, request, accept, email intro) | [Session Lift Share](./2026-09-09-session-lift-share-design.md) | Connect nearby watchers on same session day |
 
 ---
 
@@ -222,6 +225,29 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 
 ---
 
+## 7. Session Lift Share — `2026-09-09-session-lift-share-design.md`
+
+### ✅ Done
+
+- *(none)*
+
+### 🟡 Partial
+
+- **SMTP email** — existing nodemailer path reusable for intro emails
+- **Home coords / Haversine** — same primitives as spots + departure planner (when shipped)
+
+### ❌ Not done
+
+- Multi-user auth (`users`, `user_sessions`, `auth_tokens`) — email/password, Argon2id, verify + reset flows
+- Per-user `watched_sessions.user_id`
+- `user_lift_preferences`, `lift_requests` tables
+- Lift settings UI (driver opt-in, radius)
+- Request / inbox / accept API + first-accept-wins match
+- Watched session "Need a lift" + driver inbox UI
+- Intro email on match; purge with watchlist expiry
+
+---
+
 ## Quick reference — cross-cutting features
 
 | Feature | Status |
@@ -243,3 +269,4 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | Min consecutive hours (settings) | ✅ |
 | Per-sport profiles | ❌ |
 | Dashboard sport selector + horizon dots | ❌ |
+| Session lift share (driver opt-in, request, accept, email intro) | ❌ |

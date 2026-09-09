@@ -3,7 +3,7 @@
 **Date:** 2026-09-09  
 **Status:** Draft (requirements captured; implementation after session ranking v1 + watchlist v1)  
 **Parent:** [Windmate Design Spec](./2026-09-08-windwatch-design.md)  
-**Related:** [Session Spot Ranking](./2026-09-08-session-ranking-design.md), [Session Watchlist](./2026-09-08-session-watchlist-design.md), [Departure Planner](./2026-09-09-departure-planner-design.md)
+**Related:** [Session Spot Ranking](./2026-09-08-session-ranking-design.md), [Session Watchlist](./2026-09-08-session-watchlist-design.md), [Departure Planner](./2026-09-09-departure-planner-design.md), [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#accounts-login--security)
 
 ## Goal
 
@@ -37,9 +37,10 @@ Anyone may mix presets and custom rules per sport.
 ### In scope (v2 — horizon alerts)
 
 - **Per-sport alert schedule** — horizon length, eligible days of week, enable/disable
-- **Cron horizon scan** — evaluate each enabled sport profile against forecast for matching days; email digest of opportunities
+- **Cron horizon scan** — evaluate each **verified** cloud user's enabled sport profiles; email digest to `users.email`
 - **Alert qualification** — uses that sport's thresholds + `min_rideable_window_hours` + session rank (not raw rideable hour count alone)
 - **Mate-tone digest email** — one email combining all sports, or per-sport sections in one send
+- **Account gate** — enabling `alert_enabled` or `alerts_master_enabled` prompts sign-in + email verify if anonymous (see [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#accounts-login--security))
 
 ### In scope (v3 — polish)
 
@@ -49,7 +50,7 @@ Anyone may mix presets and custom rules per sport.
 
 ### Out of scope
 
-- Multi-user accounts / per-user SMTP (still single-user local app)
+- Forced login for dashboard / local prefs editing (login required only for **email** alerts — see [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#accounts-login--security))
 - Push notifications (email only; same as parent spec)
 - Calendar sync (Google Calendar export is a later nice-to-have)
 - Paid alert tiers or SMS
@@ -166,7 +167,7 @@ TTL: prune rows older than 14 days.
 
 ## Alert qualification logic
 
-For each `sport_profile` where `enabled = 1` AND `alert_enabled = 1` AND global `alerts_master_enabled = 1`:
+For each **verified cloud user** where global `alerts_master_enabled = 1`, iterate `sport_profile` rows where `enabled = 1` AND `alert_enabled = 1`:
 
 1. Resolve user origin (home coords or last GPS).
 2. For each `session_date` from today through `today + horizon_days`:
@@ -176,7 +177,9 @@ For each `sport_profile` where `enabled = 1` AND `alert_enabled = 1` AND global 
    - Find best window ≥ `min_rideable_window_hours`.
    - Compute `sessionScore` for that day using **this sport's** `rank_criteria_order` and ranking factors ([Session Ranking](./2026-09-08-session-ranking-design.md)).
 4. If best spot's `sessionScore >= min_session_score` and qualifying window exists → **candidate**.
-5. Dedupe against `alert_sent_log`; group candidates by sport; send digest.
+5. Dedupe against `alert_sent_log`; group candidates by sport; send digest to `users.email`.
+
+Skip users without `email_verified_at`. Anonymous / local-only users may configure alert toggles in UI but cron does not send until they sign in and verify.
 
 **Today vs horizon:** `today_alerts: false` still allows tomorrow+ in horizon; use when user only wants advance notice (unusual).
 
@@ -304,7 +307,7 @@ Refactor existing `alertScheduler.js` to call `horizonAlertScheduler` or merge.
 | `ALERT_QUIET_END_HOUR` | _(unset)_ | v3 — no send before this hour |
 | `ALERT_DIGEST_MAX_SPORTS` | `6` | Cap sections in one email |
 
-Existing `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` unchanged.
+Existing `ALERT_EMAIL_FROM` unchanged. **`ALERT_EMAIL_TO`** — legacy single-user self-host only; hosted multi-user cron sends to each verified user's email instead (see [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#local-vs-cloud-data)).
 
 ## Migration
 

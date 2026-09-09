@@ -47,6 +47,7 @@ See dedicated specs for detail:
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — offshore/wave prefs, water quality, water level, composite score per day
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — social feed, live cams, water hazards, parking, seasonal access; rank lower + explain
 - [Departure Planner](./2026-09-09-departure-planner-design.md) — leave-by time from home using rideable window + Google Maps drive duration
+- [Session Lift Share](./2026-09-09-session-lift-share-design.md) — optional accounts for cloud sync, email notifications, lift matching
 - [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md) — independent profiles per sport; horizon email when a good session appears on eligible days
 - Reddit/Google forum scraper + Gemini structured parsing (community condition reports)
 - Spot webcams (Windy Webcams API or per-spot URLs)
@@ -58,6 +59,7 @@ See dedicated specs for detail:
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — rank spots per session day by wind, prefs, distance, water quality, level
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — parking, access, social/official ground truth, ranking penalties
 - [Departure Planner](./2026-09-09-departure-planner-design.md) — when to leave home for the best window
+- [Session Lift Share](./2026-09-09-session-lift-share-design.md) — lift requests for watched sessions, driver inbox, email match
 - [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md) — sport profiles, per-sport ranking/thresholds, horizon alert scheduling
 
 ## Architecture
@@ -97,9 +99,9 @@ node-cron (every 3h) → horizon scan per sport profile → SMTP digest email
 | `SMTP_USER` | No | SMTP username |
 | `SMTP_PASS` | No | SMTP password |
 | `ALERT_EMAIL_FROM` | No | Sender address |
-| `ALERT_EMAIL_TO` | No* | Alert recipient |
+| `ALERT_EMAIL_TO` | No* | Legacy single-user alert recipient (self-host dev). **Hosted:** per-user verified email — see [Session Lift Share](./2026-09-09-session-lift-share-design.md#local-vs-cloud-data) |
 
-*Email alerts skipped gracefully if unset.
+*Email alerts skipped gracefully if unset (self-host) or if user has not signed in / verified email (hosted).
 
 ## Data model
 
@@ -227,7 +229,7 @@ All new user-facing strings go through these modules so tone stays consistent.
 
 ## Email alert format
 
-**Horizon digest (v2)** — per [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md): one email listing qualifying sessions per sport (e.g. wing Thursday + sailing Saturday), each evaluated with that sport's thresholds, radius, window length, and rank score. Only on **eligible days** per sport (`any day` vs `weekends only`, etc.).
+**Horizon digest (v2)** — per [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md): one email listing qualifying sessions per sport, sent to the user's **verified account email** when signed in. Requires account — see [Session Lift Share — Accounts](./2026-09-09-session-lift-share-design.md#accounts-login--security).
 
 **Today / legacy** — subject: `Mate, [Spot Name] is on today 🌬️`
 

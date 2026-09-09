@@ -972,6 +972,73 @@ function buildRideableWindFromHours(hours) {
   return { minWind, maxWind, minGust, maxGust };
 }
 
+/** Min/max wind, gust, waves during opaque consensus window hours. */
+function buildEfficientWindowStats(hours) {
+  if (!hours?.length) return null;
+
+  let minWind = Infinity;
+  let maxWind = -Infinity;
+  let minGust = Infinity;
+  let maxGust = -Infinity;
+  let minWave = Infinity;
+  let maxWave = -Infinity;
+  let waveEstimated = false;
+
+  for (const hour of hours) {
+    const wind = hour.windSpeed ?? 0;
+    const gust = hour.gusts ?? wind;
+    if (wind < minWind) minWind = wind;
+    if (wind > maxWind) maxWind = wind;
+    if (gust < minGust) minGust = gust;
+    if (gust > maxGust) maxGust = gust;
+
+    const { heightM, source } = WindmateWaveColors.resolveHeight(hour);
+    if (source === 'estimated') waveEstimated = true;
+    if (heightM < minWave) minWave = heightM;
+    if (heightM > maxWave) maxWave = heightM;
+  }
+
+  return {
+    minWind,
+    maxWind,
+    minGust,
+    maxGust,
+    minWave,
+    maxWave,
+    waveEstimated,
+  };
+}
+
+function formatWaveRange(minM, maxM, estimated) {
+  const lo = minM.toFixed(1);
+  const hi = maxM.toFixed(1);
+  const range = lo === hi ? lo : `${lo}–${hi}`;
+  return estimated ? `${range} m est.` : `${range} m`;
+}
+
+function getEfficientWindowHours(entry, dateStr, prefs) {
+  const minWindowHours = getMinRideableWindowHours(prefs);
+  return WindmateRideableWindow.getLongestConsensusWindowHours(
+    entry,
+    dateStr,
+    minWindowHours,
+    getModelDayHours
+  );
+}
+
+function renderEfficientWindowStats(entry, dateStr, prefs) {
+  const windowHours = getEfficientWindowHours(entry, dateStr, prefs);
+  const stats = buildEfficientWindowStats(windowHours);
+  if (!stats) return '';
+
+  const wind = formatKtRange(stats.minWind, stats.maxWind);
+  const gust = formatKtRange(stats.minGust, stats.maxGust);
+  const waves = formatWaveRange(stats.minWave, stats.maxWave, stats.waveEstimated);
+  const line = WindmateCopy.rideable.windowStats(wind, gust, waves);
+
+  return `<div class="text-xs text-slate-400 mb-2" title="${escapeHtml(WindmateCopy.rideable.windowStatsTitle)}">${line}</div>`;
+}
+
 function aggregateRideableWindStats(statsList) {
   const valid = statsList.filter(Boolean);
   if (!valid.length) return null;
@@ -1142,13 +1209,15 @@ function hourTooltipLines(hour, label) {
         : WindmateCopy.rideable.tooltipModelDisagree
     : hour.windOk && hour.weatherOk && hour.tempOk && hour.offshoreBlocked
       ? WindmateCopy.rideable.tooltipOffshore
-      : hour.windOk && hour.weatherOk && hour.tempOk && hour.windExposure === 'cross'
-        ? WindmateCopy.rideable.tooltipCross
-        : hour.windOk && !hour.weatherOk
-          ? 'Rain or storm'
-          : hour.windOk && !hour.tempOk
-            ? 'Too cold'
-            : 'Wind or gusts out of range';
+      : hour.windOk && hour.weatherOk && hour.tempOk && hour.daylightOk === false
+        ? WindmateCopy.rideable.tooltipNight
+        : hour.windOk && hour.weatherOk && hour.tempOk && hour.windExposure === 'cross'
+          ? WindmateCopy.rideable.tooltipCross
+          : hour.windOk && !hour.weatherOk
+            ? 'Rain or storm'
+            : hour.windOk && !hour.tempOk
+              ? 'Too cold'
+              : 'Wind or gusts out of range';
 
   const lines = [
     `${label} · ${hourLabel}`,
@@ -1337,10 +1406,11 @@ function renderRideabilityMatrix(data, observations) {
         : '';
 
       const favoriteBtn = renderFavoriteButton(spot);
+      const windowStatsLine = renderEfficientWindowStats(entry, selectedDayDate, data.preferences);
 
       return `
         <div class="bg-base-card border border-base-border rounded-xl p-5" data-spot-id="${spot.id}">
-          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
             <h3 class="font-semibold text-white flex flex-wrap items-center gap-2 min-w-0">
               <span class="text-slate-500 font-normal">#${rank + 1}</span>
               <span class="spot-title">
@@ -1351,6 +1421,7 @@ function renderRideabilityMatrix(data, observations) {
             </h3>
             <span class="text-xs text-slate-400 shrink-0">${spot.distance_km.toFixed(1)} km · ${rideableCount} rideable hrs ${link}</span>
           </div>
+          ${windowStatsLine}
           ${liveStrip}
           <div class="matrix-panel mb-2">
             <div class="matrix-panel-rows">

@@ -3,6 +3,7 @@ const { getAllSpots, getPreferences } = require('../db');
 const { fetchForecast, getProvider, getPrimaryHourlyForecast } = require('../services/weather');
 const { fetchOpenMeteoContext } = require('../services/openMeteoContext');
 const { buildContextByTime, buildTempSummary } = require('../services/temperature');
+const { buildDaylightByDate } = require('../services/daylight');
 const {
   analyzeMixedRideability,
   analyzeHourlyRideability,
@@ -56,6 +57,7 @@ function createRideabilityRouter(db) {
           const forecast = await fetchForecast(db, spot.id, spot);
           const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
           const contextByTime = buildContextByTime(contextData);
+          const daylightByDate = buildDaylightByDate(contextData);
 
           const spotInfo = {
             id: spot.id,
@@ -68,7 +70,13 @@ function createRideabilityRouter(db) {
           };
 
           if (forecast.models) {
-            const mixed = analyzeMixedRideability(forecast, prefs, spot.ideal_directions, contextByTime);
+            const mixed = analyzeMixedRideability(
+              forecast,
+              prefs,
+              spot.ideal_directions,
+              contextByTime,
+              daylightByDate
+            );
             return {
               spot: spotInfo,
               primaryModel: mixed.primaryModel,
@@ -82,7 +90,13 @@ function createRideabilityRouter(db) {
           }
 
           const primary = getPrimaryHourlyForecast(forecast) ?? forecast;
-          const hourly = analyzeHourlyRideability(primary, prefs, spot.ideal_directions, contextByTime);
+          const hourly = analyzeHourlyRideability(
+            primary,
+            prefs,
+            spot.ideal_directions,
+            contextByTime,
+            daylightByDate
+          );
           const days = summarizeByDay(hourly);
           const today = days[0]?.date ?? new Date().toISOString().slice(0, 10);
           const todayHours = hourly.filter((h) => h.time.startsWith(today));

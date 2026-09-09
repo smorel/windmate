@@ -8,6 +8,8 @@ const { isWeatherBlocked, computeSessionWarnings } = require('./weatherHazards')
 
 const { isTempOk, buildTempSummary, buildContextByTime, enrichHourWithContext } = require('./temperature');
 
+const { buildDaylightByDate, isDaylightOk } = require('./daylight');
+
 const { resolveWaveHeight } = require('./waves');
 
 const { classifyWindExposure, isOffshoreBlocked } = require('./offshore');
@@ -23,9 +25,17 @@ const { parseMinRideableWindowHours, markInRideableWindow } = require('../utils/
 
  * @param {Map<string, object>} [contextByTime]
 
+ * @param {Map<string, { sunrise: string, sunset: string }>} [daylightByDate]
+
  */
 
-function analyzeHourlyRideability(forecast, prefs, idealDirections, contextByTime = new Map()) {
+function analyzeHourlyRideability(
+  forecast,
+  prefs,
+  idealDirections,
+  contextByTime = new Map(),
+  daylightByDate = new Map()
+) {
 
   const hourly = forecast.hourly;
 
@@ -63,7 +73,9 @@ function analyzeHourlyRideability(forecast, prefs, idealDirections, contextByTim
 
     const directionOk = !offshoreBlocked;
 
-    const rideable = windOk && weatherOk && tempOk && directionOk;
+    const daylightOk = isDaylightOk(time, daylightByDate);
+
+    const rideable = windOk && weatherOk && tempOk && directionOk && daylightOk;
 
 
 
@@ -86,6 +98,8 @@ function analyzeHourlyRideability(forecast, prefs, idealDirections, contextByTim
       tempOk,
 
       directionOk,
+
+      daylightOk,
 
       rideable,
 
@@ -119,9 +133,17 @@ function analyzeHourlyRideability(forecast, prefs, idealDirections, contextByTim
 
  * @param {Map<string, object>} [contextByTime]
 
+ * @param {Map<string, { sunrise: string, sunset: string }>} [daylightByDate]
+
  */
 
-function analyzeMixedRideability(mixedForecast, prefs, idealDirections, contextByTime = new Map()) {
+function analyzeMixedRideability(
+  mixedForecast,
+  prefs,
+  idealDirections,
+  contextByTime = new Map(),
+  daylightByDate = new Map()
+) {
 
   const primaryModel = mixedForecast.primaryModel;
 
@@ -159,7 +181,13 @@ function analyzeMixedRideability(mixedForecast, prefs, idealDirections, contextB
 
 
 
-    const hourly = analyzeHourlyRideability(modelData, prefs, idealDirections, contextByTime);
+    const hourly = analyzeHourlyRideability(
+      modelData,
+      prefs,
+      idealDirections,
+      contextByTime,
+      daylightByDate
+    );
 
     const days = summarizeByDay(hourly);
 
@@ -503,11 +531,19 @@ function analyzeForecastRideability(forecast, prefs, idealDirections, contextDat
 
   const contextByTime = contextData ? buildContextByTime(contextData) : new Map();
 
+  const daylightByDate = contextData ? buildDaylightByDate(contextData) : new Map();
+
   const primary = getPrimaryHourlyForecast(forecast);
 
   if (!primary) return [];
 
-  return analyzeHourlyRideability(primary, prefs, idealDirections, contextByTime);
+  return analyzeHourlyRideability(
+    primary,
+    prefs,
+    idealDirections,
+    contextByTime,
+    daylightByDate
+  );
 
 }
 

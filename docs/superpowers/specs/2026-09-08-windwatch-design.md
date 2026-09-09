@@ -163,8 +163,11 @@ windOk     = wind_speed >= min_wind AND gusts <= max_gust
 weatherOk  = NOT (precipitation > 0.1 mm OR weather_code in rain/storm set)
 tempOk     = airTempC >= min_air_temp_c (when set)
              AND (waterTempC unknown OR waterTempC >= min_water_temp_c (when set))
-rideable   = windOk AND weatherOk AND tempOk
+daylightOk = hour start >= sunrise AND < sunset (Open-Meteo daily, spot-local TZ)
+rideable   = windOk AND weatherOk AND tempOk AND daylightOk [AND directionOk when offshore gate on]
 ```
+
+Night hours stay **transparent** in the matrix and do **not** count toward rideable hours or shared windows.
 
 **Weather-blocked codes** (Open-Meteo WMO): rain `61–67`, showers `80–82`, thunderstorm `95–99`.
 
@@ -227,7 +230,7 @@ Sent when cron finds ≥1 rideable hour today for a spot.
 - **Tagline:** "Your wind mate — spots, sessions, and heads-ups"
 - **Palette:** `#0b0f19` background, `#0f1422` cards, accent by sport
 - **Horizon Planner:** 7-day forecast cards; CSS `blur()` increases on days 4–7
-- **Rideability Matrix:** good hours use 3 bands — Beaufort wind (top), gust (mid), waves flat/small/big (bottom); wave height in tooltip; empty = not good
+- **Rideability Matrix:** good hours use 3 bands — Beaufort wind (top), gust (mid), waves flat/small/big (bottom); wave height in tooltip; empty = not good; **window stats line** on each spot card — min–max wind, gust, and wave (m) during the solid opaque shared window only (not faded isolated hours)
 - **Preferences panel:** sport selector, min wind, max gust, min air/water temp, **offshore toggle**, **wave preference**, optional **foil depth**
 - **Spot ranking:** matrix sorted by composite [session score](./2026-09-08-session-ranking-design.md) (#1 = best for your prefs that day), not raw rideable hours alone
 - **Location:** browser Geolocation with manual lat/lng fallback

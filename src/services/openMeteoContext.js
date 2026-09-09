@@ -35,6 +35,7 @@ async function fetchOpenMeteoContextRaw(spot) {
       'apparent_temperature',
       'soil_temperature_0cm',
     ].join(','),
+    daily: 'sunrise,sunset',
     current: [
       'wind_speed_10m',
       'wind_gusts_10m',

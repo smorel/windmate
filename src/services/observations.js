@@ -6,6 +6,7 @@ const { fetchWindyObservations } = require('./windyObservations');
 const { compareToday, currentForecastDelta } = require('./observationCompare');
 const { fetchOpenMeteoContext } = require('./openMeteoContext');
 const { buildContextByTime, buildTempSummary } = require('./temperature');
+const { buildDaylightByDate } = require('./daylight');
 const { analyzeHourlyRideability, computeSessionWarnings } = require('./rideability');
 const { getPrimaryHourlyForecast } = require('./weather');
 const { hazardLabel } = require('./weatherHazards');
@@ -78,10 +79,11 @@ async function buildSpotObservation(db, spot, prefs, forecast) {
 
   const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
   const contextByTime = buildContextByTime(contextData);
+  const daylightByDate = buildDaylightByDate(contextData);
   const primary = getPrimaryHourlyForecast(forecast);
   const today = todayFromHourlyTimes(primary);
   const forecastHours = primary
-    ? analyzeHourlyRideability(primary, prefs, [], contextByTime).filter((h) =>
+    ? analyzeHourlyRideability(primary, prefs, [], contextByTime, daylightByDate).filter((h) =>
         h.time.startsWith(today)
       )
     : [];

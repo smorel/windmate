@@ -162,6 +162,7 @@ Recommendation: **v2a curated links + manual `spot_intel_cache`**; **v2b officia
 | Planner pin order, star UX, webcam UI | This spec |
 | Session rank for day (wind, waves, quality, level) | [Session Spot Ranking](./2026-09-08-session-ranking-design.md) |
 | Lift requests for same watched session | [Session Lift Share](./2026-09-09-session-lift-share-design.md) |
+| Watcher count bands on matrix cards | [Session Watcher Count](./2026-09-09-session-watcher-count-design.md) |
 
 ## Watchlist status evaluation
 

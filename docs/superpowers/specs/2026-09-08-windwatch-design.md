@@ -48,6 +48,7 @@ See dedicated specs for detail:
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — social feed, live cams, water hazards, parking, seasonal access; rank lower + explain
 - [Departure Planner](./2026-09-09-departure-planner-design.md) — leave-by time from home using rideable window + Google Maps drive duration
 - [Session Lift Share](./2026-09-09-session-lift-share-design.md) — optional accounts for cloud sync, email notifications, lift matching
+- [Session Watcher Count](./2026-09-09-session-watcher-count-design.md) — banded social proof on matrix cards (spot + date)
 - [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md) — independent profiles per sport; horizon email when a good session appears on eligible days
 - Reddit/Google forum scraper + Gemini structured parsing (community condition reports)
 - Spot webcams (Windy Webcams API or per-spot URLs)
@@ -60,6 +61,7 @@ See dedicated specs for detail:
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — parking, access, social/official ground truth, ranking penalties
 - [Departure Planner](./2026-09-09-departure-planner-design.md) — when to leave home for the best window
 - [Session Lift Share](./2026-09-09-session-lift-share-design.md) — lift requests for watched sessions, driver inbox, email match
+- [Session Watcher Count](./2026-09-09-session-watcher-count-design.md) — how many riders watch a session (banded labels on matrix)
 - [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md) — sport profiles, per-sport ranking/thresholds, horizon alert scheduling
 
 ## Architecture

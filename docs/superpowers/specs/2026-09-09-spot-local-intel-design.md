@@ -10,6 +10,7 @@
 Wind and waves alone are not enough to pick a session. Users also need **local ground truth** before leaving home:
 
 - What are people **posting from the spot** right now (photos, videos, comments)?
+- What does the **spot look like** — photos and videos (ideally people doing **your sport**: wingfoil, kite, sailing)?
 - Is there a **live cam**?
 - Are **water conditions** safe and pleasant — not just rideable wind-wise (algae, debris, flooding at launch, ice, murky water)?
 - Is **parking** public or paid, and **open on the session day**?
@@ -26,6 +27,7 @@ When intel says avoid a spot, Windmate should **rank it lower** and explain why 
 | Concern | User question | Affects ranking? |
 |---|---|---|
 | **Social feed** | What's the latest news from people at the spot? | Indirect — parsed signals feed access/water/parking |
+| **Spot media** | What does the launch/water look like? Anyone riding my sport there? | No — visual context; does not change score |
 | **Live cam** | Can I see the launch and water myself? | No — confidence booster; does not change score |
 | **Water conditions** | Safe to touch / foil / kite? (algae, toxins, debris, launch flooding) | Yes — see [Water conditions](#water-conditions) |
 | **Parking** | Free vs paid? Open today? Seasonal lot closure? | Yes — see [Parking](#parking) |
@@ -42,6 +44,7 @@ Forecast-only rideability cannot answer these. They require **community signals*
 - **Ranking penalties** when intel level is `caution` or `closed` (access, parking, water)
 - **Spot metadata** for stable facts: parking type, official hours URL, access bulletin URL
 - **Mate-tone explanations** on rank badges — e.g. "Main lot closed until May 15 — check the city page"
+- **Google Images/Videos link-out** — sport-aware search URLs per spot (no inline thumbnails yet)
 
 ### In scope (v2 — automated ingestion)
 
@@ -50,6 +53,7 @@ Forecast-only rideability cannot answer these. They require **community signals*
 - **Structured extraction** — Gemini (or similar) turns posts and HTML bulletins into `{ category, level, summary, valid_until }`
 - **Live cam** — per [Session Watchlist — Webcam block](./2026-09-08-session-watchlist-design.md#webcam-block-v2)
 - **Photo/video thumbnails** in intel panel when embeddable (link out when not)
+- **Spot media gallery** — Google Images & Videos results for the spot, biased toward the user's selected sport (see [Spot media](#spot-media-google-images--videos))
 
 ### In scope (v3 — session-day freshness)
 
@@ -85,7 +89,8 @@ Forecast-only rideability cannot answer these. They require **community signals*
   { "type": "facebook_group", "url": "https://facebook.com/groups/hudsonwing", "label": "Hudson wing group" },
   { "type": "instagram_hashtag", "url": "https://instagram.com/explore/tags/lacstlouis", "label": "#lacstlouis" },
   { "type": "municipal", "url": "https://ville.oka.qc.ca/...", "label": "Ville d'Oka — plage" },
-  { "type": "reddit_search", "url": "https://reddit.com/search/?q=oka+beach+kite", "label": "Reddit" }
+  { "type": "reddit_search", "url": "https://reddit.com/search/?q=oka+beach+kite", "label": "Reddit" },
+  { "type": "google_media", "url": "https://www.google.com/search?tbm=isch&q=Plage+d%27Oka+wingfoil", "label": "Spot photos" }
 ]
 ```
 
@@ -101,6 +106,7 @@ One row per spot; refreshed by cron or on-demand. Holds **merged** intel from al
 | headline | TEXT | mate-tone one-liner for card subtitle |
 | overall_level | TEXT | `ok` · `caution` · `closed` · `unknown` |
 | valid_for_date | TEXT | ISO date nullable — when signal is date-specific (e.g. "lot closed May 12") |
+| media_gallery | TEXT | nullable — JSON `MediaGallery` per sport (v2); v1 may omit and build link-out client-side |
 
 #### `IntelSignal` shape
 
@@ -238,6 +244,80 @@ Some spots are fine at normal level but **unlaunchable for kites** when the rive
 
 Parser keywords (FR/EN): `plage`, `beach`, `lancement`, `launch`, `trop haut`, `no room`, `inondé`, `flood`.
 
+## Spot media (Google Images & Videos)
+
+Users want to **see the spot** before committing — launch layout, water colour, crowd level, and ideally **someone doing their sport** at that location. Google Images and Google Videos are a practical fallback when social feeds are quiet or link-only.
+
+### What to show
+
+**"Spot photos & videos"** strip in the intel drawer — separate from the real-time social feed:
+
+```
+📷 Spot photos & videos · wingfoil
+[thumb] [thumb] [thumb] [thumb]  →  More on Google
+```
+
+- **6–8 thumbnails** per tab (`Images` · `Videos`), horizontal scroll on mobile
+- Each tile: thumbnail, optional duration badge (video), **link out** to source page (never hotlink full-res in-app)
+- **Sport-aware query** — uses user's `preferences.sport` (`wingfoiling` · `kitesurfing` · `sailing`) to bias results toward people riding that discipline at this spot
+- **Fallback** when API unavailable or quota exceeded: prominent **"Search Google Images"** / **"Search Google Videos"** buttons with the same pre-built query (opens new tab)
+
+### Sport query terms
+
+| `sport` | Primary terms (EN) | FR variants (Montreal seed) |
+|---|---|---|
+| `wingfoiling` | wingfoil, wing foil, wingfoiling | wing, foil, aile |
+| `kitesurfing` | kitesurf, kiteboarding, kite | kitesurf, cerf-volant |
+| `sailing` | sailing, sailboat, dinghy | voile, dériveur |
+
+**Query template** (built server-side, URL-encoded for fallback links):
+
+```
+"{spot_name}" ({sport_terms}) {region_hint}
+```
+
+Example for Oka + wingfoil: `"Plage d'Oka" (wingfoil OR wing foil) Lac des Deux Montagnes`
+
+`region_hint` comes from spot seed (`region`, `water_body`, or lat/lon city name) to disambiguate common names.
+
+### Ingestion approaches
+
+| Approach | Pros | Cons |
+|---|---|---|
+| **Link-out only (v1)** | No API key, no quota, ships with curated spots | User leaves app; no inline thumbnails |
+| **Google Custom Search JSON API** | Structured image/video results + thumbnails | Daily quota (100 free/day); needs Programmable Search Engine setup |
+| **Cache thumbnails in `spot_intel_cache`** | Fast drawer open; respects API limits | Stale media; storage of third-party thumb URLs |
+
+**Recommendation:** v1 **pre-built Google search links** per spot + sport (stored in `intel_sources` or generated from spot name). v2 **Custom Search API** for inline thumbnails; cache in `spot_intel_cache` with same TTL as other intel. Re-fetch on session day when spot is watched (v3).
+
+### API & data
+
+Extend `IntelSignal` or add parallel `media_gallery` on `spot_intel_cache`:
+
+```json
+{
+  "sport": "wingfoiling",
+  "images": [
+    { "thumbnail_url": "https://...", "source_url": "https://...", "title": "Wingfoil at Oka beach" }
+  ],
+  "videos": [
+    { "thumbnail_url": "https://...", "source_url": "https://...", "title": "...", "duration": "2:14" }
+  ],
+  "google_images_url": "https://www.google.com/search?tbm=isch&q=...",
+  "google_videos_url": "https://www.google.com/search?tbm=vid&q=..."
+}
+```
+
+`intel_sources` entry type: `google_media` — optional override URL if a spot needs a hand-tuned query.
+
+**Ranking:** none. Media is **confidence and appeal** only — same as live cam.
+
+### UX notes
+
+- Default tab matches user sport; user can switch sport tab to compare (e.g. kite launch room vs wing conditions)
+- Empty results → mate copy: "No photos turned up mate — try the live cam or check the Facebook group."
+- Do not imply copyright ownership; attribution via link to source page only
+
 ## Parking
 
 ### Static metadata
@@ -312,7 +392,7 @@ Re-rank order in `rank_criteria_order` UI: user may deprioritize proximity over 
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/spots/:spotId/intel` | Cached intel + sources + cam URL |
+| GET | `/api/spots/:spotId/intel` | Cached intel + sources + cam URL + `media_gallery` (sport query param optional) |
 | GET | `/api/rideability` | Extend payload: `intel.headline`, `intel.badges`, factor weights |
 
 Optional: `POST /api/intel/refresh/:spotId` (admin/dev) to force fetch.
@@ -338,6 +418,7 @@ LOCAL INTEL · updated 12 min ago
 💧 Water — Algae watch [MELCC link]
 📷 Live cam [expand]
 📸 Latest posts [thumbnails → links]
+🖼️ Spot photos & videos · wingfoil [Images | Videos tabs → Google]
 ```
 
 ### Watched session day
@@ -352,6 +433,7 @@ Intel drawer **open by default** when any `caution` or `closed` signal exists fo
 | `src/services/intelSources/official.js` | Fetch/parse allowlisted municipal pages |
 | `src/services/intelSources/reddit.js` | Keyword search, normalize posts |
 | `src/services/intelSources/social.js` | oEmbed thumbnails, link metadata |
+| `src/services/intelSources/googleMedia.js` | Sport-aware query build; Custom Search fetch + cache (v2) |
 | `src/services/intelParser.js` | Gemini structured extraction (v2) |
 | `src/cron/intelRefresh.js` | TTL refresh per spot; faster for watched session days |
 
@@ -363,14 +445,16 @@ Intel drawer **open by default** when any `caution` or `closed` signal exists fo
 | `INTEL_SESSION_DAY_TTL_MS` | `900000` (15 min) | TTL for watched spots on session day |
 | `INTEL_PARSER_ENABLED` | `false` | Enable Gemini extraction |
 | `GEMINI_API_KEY` | _(unset)_ | For structured parsing (v2) |
+| `GOOGLE_CSE_API_KEY` | _(unset)_ | Custom Search JSON API (v2 spot media) |
+| `GOOGLE_CSE_CX` | _(unset)_ | Programmable Search Engine ID (image + video search) |
 
 ## Phasing
 
 | Phase | Deliverable |
 |---|---|
-| **v1** | `spot_intel_cache` manual seed for 5–8 spots; intel panel; rank penalties; parking/access metadata columns |
-| **v2** | Official URL parsers (2–3 cities); Reddit search; webcam embed; merge water quality |
-| **v3** | Gemini parser; social thumbnails; session-day refresh + optional email line in watchlist mail |
+| **v1** | `spot_intel_cache` manual seed for 5–8 spots; intel panel; rank penalties; parking/access metadata columns; Google Images/Videos link-out (sport-aware) |
+| **v2** | Official URL parsers (2–3 cities); Reddit search; webcam embed; merge water quality; Google Custom Search inline thumbnails |
+| **v3** | Gemini parser; social thumbnails; session-day media refresh for watched spots + optional email line in watchlist mail |
 
 ## Testing checklist
 
@@ -381,6 +465,9 @@ Intel drawer **open by default** when any `caution` or `closed` signal exists fo
 - [ ] Worst-of merge: quality `watch` + intel water `closed` → `closed`
 - [ ] Cam embed lazy-loads; broken URL shows fallback
 - [ ] `headline` uses mate tone from `copy.js`
+- [ ] Google media links include user's sport terms; switching sport rebuilds query
+- [ ] v2: thumbnail grid loads async; API quota failure falls back to link-out only
+- [ ] Video tiles show duration when available; all tiles open source in new tab
 
 ## Open questions
 
@@ -388,3 +475,5 @@ Intel drawer **open by default** when any `caution` or `closed` signal exists fo
 2. **Corroboration** — how many social posts before `access: closed` without official source?
 3. **Bilingual official pages** — parse FR/EN; summarize in user's locale?
 4. **iGetwind spots worldwide** — intel only for curated seed spots until source templates exist?
+5. **Google CSE quota** — cache per spot+sport globally, or fetch on drawer open only for watched spots?
+6. **Sport tab override** — always show user's sport first, or remember last-selected tab per spot?

@@ -113,6 +113,12 @@ const WindmateCopy = {
     okHint: 'Offshore hours can count as rideable when wind and weather are OK.',
   },
 
+  matrix: {
+    windRow: 'Wind',
+    gustRow: 'Gust',
+    waveRow: 'Wave',
+  },
+
   direction: {
     rowLabel: 'Direction',
     exposure: {
@@ -138,7 +144,7 @@ const WindmateCopy = {
       `Window · ${windKt} kt · gusts ${gustKt} kt · waves ${waves}`,
     windowStatsTitle: 'Min–max during the solid shared window (opaque blocks)',
     matrixHint:
-      'Solid blocks = longest daylight window where all models agree (min consecutive hrs in settings). Night hours never count. Rideable hrs = length of that window. Faded = good in this model but outside the best shared window. Striped amber = offshore blocked. Hover for details.',
+      'Each hour splits by model — compare colors across segments to spot agreement. Solid = longest shared window (min consecutive hrs in settings). Faded = good but outside the best shared window. Striped amber = offshore blocked. Hover for details.',
     legendWindow: 'Best shared window',
     legendIsolated: 'Good hour, not a sure window',
     tooltipOk: 'all models agree — in a session window',

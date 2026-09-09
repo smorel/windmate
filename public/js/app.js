@@ -1169,22 +1169,25 @@ function renderHorizonPlanner(data) {
   });
 }
 
-function hourBlockClass(hour) {
-  const classes = ['hour-block'];
-  if (hour.rideable) classes.push('rideable');
-  if (hour.rideable && !hour.inRideableWindow) classes.push('rideable-isolated');
-  if (hour.offshoreBlocked && hour.windOk) classes.push('offshore-hour');
-  if (WindmateWeatherHazards.hasForecastRain(hour)) classes.push('rain-hour');
-  if (hour.weatherCode >= 95) classes.push('storm-hour');
-  return classes.join(' ');
+function criterionColor(hour, criterion) {
+  if (criterion === 'wind') return WindmateWindColors.forSpeed(hour.windSpeed);
+  if (criterion === 'gust') return WindmateWindColors.forSpeed(hour.gusts);
+  return WindmateWaveColors.forHour(hour);
 }
 
-function hourBlockStyle(hour) {
-  if (!hour.rideable) return '';
-  const windColor = WindmateWindColors.forSpeed(hour.windSpeed);
-  const gustColor = WindmateWindColors.forSpeed(hour.gusts);
-  const waveColor = WindmateWaveColors.forHour(hour);
-  return `--wind-color:${windColor};--gust-color:${gustColor};--wave-color:${waveColor}`;
+function criterionHourBlockClass(timelineSlot, modelHoursAtSlot) {
+  const classes = ['hour-block'];
+  const anyRideable = modelHoursAtSlot.some((hour) => hour?.rideable);
+  if (anyRideable) classes.push('rideable');
+  if (anyRideable && !timelineSlot.inRideableWindow) classes.push('rideable-isolated');
+  if (!anyRideable && modelHoursAtSlot.some((hour) => hour?.offshoreBlocked && hour?.windOk)) {
+    classes.push('offshore-hour');
+  }
+  if (modelHoursAtSlot.some((hour) => WindmateWeatherHazards.hasForecastRain(hour))) {
+    classes.push('rain-hour');
+  }
+  if (modelHoursAtSlot.some((hour) => (hour?.weatherCode ?? 0) >= 95)) classes.push('storm-hour');
+  return classes.join(' ');
 }
 
 function escapeHtml(text) {
@@ -1195,61 +1198,69 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
-function hourTooltipLines(hour, label) {
-  const hourLabel = hour.time.slice(11, 16);
-  const bf = WindmateWindColors.beaufortForSpeed(hour.windSpeed);
-  const gustBf = WindmateWindColors.beaufortForSpeed(hour.gusts);
-  const status = hour.rideable
-    ? hour.inRideableWindow
-      ? WindmateWeatherHazards.hasForecastRain(hour)
+function modelHourStatus(hour) {
+  if (!hour) return 'No data';
+  if (hour.rideable) {
+    if (hour.inRideableWindow) {
+      return WindmateWeatherHazards.hasForecastRain(hour)
         ? 'All models agree (minor rain)'
-        : WindmateCopy.rideable.tooltipOk
-      : hour.allModelsRideable
-        ? WindmateCopy.rideable.tooltipIsolated
-        : WindmateCopy.rideable.tooltipModelDisagree
-    : hour.windOk && hour.weatherOk && hour.tempOk && hour.offshoreBlocked
-      ? WindmateCopy.rideable.tooltipOffshore
-      : hour.windOk && hour.weatherOk && hour.tempOk && hour.daylightOk === false
-        ? WindmateCopy.rideable.tooltipNight
-        : hour.windOk && hour.weatherOk && hour.tempOk && hour.windExposure === 'cross'
-          ? WindmateCopy.rideable.tooltipCross
-          : hour.windOk && !hour.weatherOk
-            ? 'Rain or storm'
-            : hour.windOk && !hour.tempOk
-              ? 'Too cold'
-              : 'Wind or gusts out of range';
-
-  const lines = [
-    `${label} · ${hourLabel}`,
-    `Wind ${hour.windSpeed.toFixed(0)} kt (Bf ${bf.force}) ${hour.direction}`,
-    `Gusts ${hour.gusts.toFixed(0)} kt (Bf ${gustBf.force})`,
-    `Waves ${WindmateWaveColors.formatWave(hour)}`,
-  ];
-
-  if (hour.airTempC != null) {
-    const feels =
-      hour.apparentTempC != null ? ` · feels ${Math.round(hour.apparentTempC)}°C` : '';
-    lines.push(`Air ${Math.round(hour.airTempC)}°C${feels}`);
+        : WindmateCopy.rideable.tooltipOk;
+    }
+    return hour.allModelsRideable
+      ? WindmateCopy.rideable.tooltipIsolated
+      : WindmateCopy.rideable.tooltipModelDisagree;
   }
-  if (hour.waterTempC != null) {
-    lines.push(`Water ${Math.round(hour.waterTempC)}°C`);
+  if (hour.windOk && hour.weatherOk && hour.tempOk && hour.offshoreBlocked) {
+    return WindmateCopy.rideable.tooltipOffshore;
+  }
+  if (hour.windOk && hour.weatherOk && hour.tempOk && hour.daylightOk === false) {
+    return WindmateCopy.rideable.tooltipNight;
+  }
+  if (hour.windOk && hour.weatherOk && hour.tempOk && hour.windExposure === 'cross') {
+    return WindmateCopy.rideable.tooltipCross;
+  }
+  if (hour.windOk && !hour.weatherOk) return 'Rain or storm';
+  if (hour.windOk && !hour.tempOk) return 'Too cold';
+  return 'Wind or gusts out of range';
+}
+
+function criterionValueLine(hour, criterion) {
+  if (criterion === 'wind') {
+    const bf = WindmateWindColors.beaufortForSpeed(hour.windSpeed);
+    return `Wind ${hour.windSpeed.toFixed(0)} kt (Bf ${bf.force}) ${hour.direction}`;
+  }
+  if (criterion === 'gust') {
+    const gustBf = WindmateWindColors.beaufortForSpeed(hour.gusts);
+    return `Gusts ${hour.gusts.toFixed(0)} kt (Bf ${gustBf.force})`;
+  }
+  return `Waves ${WindmateWaveColors.formatWave(hour)}`;
+}
+
+function criterionTooltipLines(modelHours, criterion, time) {
+  const hourLabel = time.slice(11, 16);
+  const criterionLabel =
+    criterion === 'wind'
+      ? WindmateCopy.matrix.windRow
+      : criterion === 'gust'
+        ? WindmateCopy.matrix.gustRow
+        : WindmateCopy.matrix.waveRow;
+
+  const lines = [`${criterionLabel} · ${hourLabel}`];
+  for (const { label, hour } of modelHours) {
+    if (!hour?.rideable) {
+      lines.push(`${label}: — (${modelHourStatus(hour)})`);
+      continue;
+    }
+    lines.push(`${label}: ${criterionValueLine(hour, criterion)}`);
   }
 
-  const precip = hour.precipitation ?? 0;
-  if (WindmateWeatherHazards.hasForecastRain(hour)) {
-    lines.push(precip > 0 ? `Rain ${precip.toFixed(1)} mm/h` : 'Rain');
-  }
-
-  if (hour.windExposure) {
-    lines.push(WindmateCopy.direction.exposure[hour.windExposure] ?? hour.windExposure);
-  }
-
-  lines.push(status);
+  const primary = modelHours.find((entry) => entry.hour?.rideable)?.hour ?? modelHours[0]?.hour;
+  if (primary) lines.push(modelHourStatus(primary));
   return lines;
 }
 
-function hourTooltipHtml(hour, label) {
-  return escapeHtml(hourTooltipLines(hour, label).join('\n'));
+function criterionTooltipHtml(modelHours, criterion, time) {
+  return escapeHtml(criterionTooltipLines(modelHours, criterion, time).join('\n'));
 }
 
 function renderMatrixRainOverlay(hours) {
@@ -1288,26 +1299,56 @@ function renderDirectionRow(hours) {
     </div>`;
 }
 
-function renderHourRow(timelineHours, modelHours, label, windowMaps) {
+function buildAlignedModels(timelineHours, modelEntries, getModelHours, windowMaps) {
+  return modelEntries.map(([id, model]) => ({
+    id,
+    label: model.label ?? id,
+    hours: WindmateRideableWindow.alignModelHoursToTimeline(
+      timelineHours,
+      getModelHours(id) ?? [],
+      windowMaps
+    ),
+  }));
+}
+
+function renderCriterionSegments(modelHoursAtSlot, criterion) {
+  return modelHoursAtSlot
+    .map((hour) => {
+      if (!hour?.rideable) {
+        return '<div class="hour-block-seg hour-block-seg--empty"></div>';
+      }
+      const color = criterionColor(hour, criterion);
+      return `<div class="hour-block-seg" style="background:${color}"></div>`;
+    })
+    .join('');
+}
+
+function renderCriterionRow(timelineHours, alignedModels, criterion, label, windowMaps) {
   if (!timelineHours?.length) {
     return `<div class="text-xs text-slate-500 py-1">${WindmateCopy.empty.noModelData(label)}</div>`;
   }
 
-  const matrixHours = WindmateRideableWindow.alignModelHoursToTimeline(
+  const timelineSlots = WindmateRideableWindow.alignModelHoursToTimeline(
     timelineHours,
-    modelHours ?? [],
+    timelineHours,
     windowMaps
   );
-  const blocks = matrixHours
-    .map((hour) => {
-      const cls = hourBlockClass(hour);
-      const style = hourBlockStyle(hour);
-      const tip = hourTooltipHtml(hour, label);
-      return `<div class="${cls}" style="${style}"><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
+
+  const blocks = timelineSlots
+    .map((slot, index) => {
+      const modelHoursAtSlot = alignedModels.map((model) => model.hours[index]);
+      const cls = criterionHourBlockClass(slot, modelHoursAtSlot);
+      const segments = renderCriterionSegments(modelHoursAtSlot, criterion);
+      const modelHours = alignedModels.map((model) => ({
+        label: model.label,
+        hour: model.hours[index],
+      }));
+      const tip = criterionTooltipHtml(modelHours, criterion, slot.time);
+      return `<div class="${cls}"><div class="hour-block-segments">${segments}</div><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
     })
     .join('');
 
-  const rainOverlay = renderMatrixRainOverlay(matrixHours);
+  const rainOverlay = renderMatrixRainOverlay(timelineSlots);
 
   return `
     <div class="matrix-row flex items-center gap-2 mb-1">
@@ -1317,6 +1358,35 @@ function renderHourRow(timelineHours, modelHours, label, windowMaps) {
         <div class="matrix-hour-blocks">${blocks}</div>
       </div>
     </div>`;
+}
+
+function renderCriterionMatrixRows(timelineHours, modelEntries, getModelHours, windowMaps) {
+  const alignedModels =
+    modelEntries.length > 0
+      ? buildAlignedModels(timelineHours, modelEntries, getModelHours, windowMaps)
+      : [
+          {
+            id: 'primary',
+            label: 'Forecast',
+            hours: WindmateRideableWindow.alignModelHoursToTimeline(
+              timelineHours,
+              timelineHours,
+              windowMaps
+            ),
+          },
+        ];
+
+  const criteria = [
+    { key: 'wind', label: WindmateCopy.matrix.windRow },
+    { key: 'gust', label: WindmateCopy.matrix.gustRow },
+    { key: 'wave', label: WindmateCopy.matrix.waveRow },
+  ];
+
+  return criteria
+    .map((criterion) =>
+      renderCriterionRow(timelineHours, alignedModels, criterion.key, criterion.label, windowMaps)
+    )
+    .join('');
 }
 
 function renderRideabilityMatrix(data, observations) {
@@ -1372,21 +1442,14 @@ function renderRideabilityMatrix(data, observations) {
               getModelDayHours
             )
           : WindmateRideableWindow.buildSingleModelWindowMaps(dayHours, minWindowHours);
-      const modelRows =
-        modelEntries.length > 0
-          ? modelEntries
-              .map(([id, model]) =>
-                renderHourRow(
-                  dayHours,
-                  getModelDayHours(entry, id, selectedDayDate),
-                  model.label ?? id,
-                  windowMaps
-                )
-              )
-              .join('')
-          : renderHourRow(dayHours, dayHours, primaryModel ?? 'Forecast', windowMaps);
+      const criterionRows = renderCriterionMatrixRows(
+        dayHours,
+        modelEntries,
+        (modelId) => getModelDayHours(entry, modelId, selectedDayDate),
+        windowMaps
+      );
 
-      const matrixRows = `${directionRow}${modelRows}`;
+      const matrixRows = `${directionRow}${criterionRows}`;
       const dayLabel = viewingToday
         ? WindmateCopy.horizon.todayShort
         : formatDayLabel(selectedDayDate);

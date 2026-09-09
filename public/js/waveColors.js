@@ -53,7 +53,7 @@ const WindmateWaveColors = (() => {
     );
     return `
       <div class="wave-legend">
-        <span class="text-xs text-slate-400 shrink-0">Waves (bottom third)</span>
+        <span class="text-xs text-slate-400 shrink-0">Waves</span>
         <div class="wave-legend-bar">${segments.join('')}</div>
       </div>`;
   }

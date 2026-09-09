@@ -115,19 +115,27 @@
   visibility: visible;
 }
 
-/* Rideable — Beaufort wind (top) / gust (mid) / waves (bottom) */
+/* Rideable — model segments per criterion row */
 .hour-block.rideable {
-  --rideable-gradient: linear-gradient(
-    to bottom,
-    var(--wind-color, #334155) 0%,
-    var(--wind-color, #334155) 33.33%,
-    var(--gust-color, #334155) 33.33%,
-    var(--gust-color, #334155) 66.66%,
-    var(--wave-color, #134e4a) 66.66%,
-    var(--wave-color, #134e4a) 100%
-  );
   border-color: transparent;
-  background: var(--rideable-gradient);
+  background: transparent;
+}
+
+.hour-block-segments {
+  display: flex;
+  gap: 1px;
+  height: 100%;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.hour-block-seg {
+  flex: 1;
+  min-width: 0;
+}
+
+.hour-block-seg--empty {
+  background: rgba(15, 23, 42, 0.35);
 }
 
 .hour-block.rideable.rideable-isolated {
@@ -135,15 +143,25 @@
 }
 
 .hour-block.rideable.rain-hour {
-  background:
-    repeating-linear-gradient(
-      -52deg,
-      rgba(248, 113, 113, 0) 0 5px,
-      rgba(248, 113, 113, 0.55) 5px 7px
-    ),
-    var(--rideable-gradient);
   box-shadow: inset 0 -3px 0 rgba(248, 113, 113, 0.9);
   border-color: rgba(248, 113, 113, 0.55);
+}
+
+.hour-block.rideable.rain-hour .hour-block-segments {
+  position: relative;
+}
+
+.hour-block.rideable.rain-hour .hour-block-segments::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: repeating-linear-gradient(
+    -52deg,
+    rgba(248, 113, 113, 0) 0 5px,
+    rgba(248, 113, 113, 0.55) 5px 7px
+  );
+  pointer-events: none;
 }
 
 .hour-block.offshore-hour:not(.rideable) {
@@ -257,13 +275,11 @@
 .matrix-ride-legend-swatch--rideable {
   border: 1px solid transparent;
   background: linear-gradient(
-    to bottom,
-    #4ade80 0%,
-    #4ade80 33.33%,
-    #facc15 33.33%,
-    #facc15 66.66%,
-    #0891b2 66.66%,
-    #0891b2 100%
+    to right,
+    #60a059 0 24%,
+    #9eb851 24% 49%,
+    #60a059 49% 74%,
+    #e9bd47 74% 100%
   );
 }
 
@@ -271,13 +287,11 @@
   border: 1px solid transparent;
   opacity: 0.5;
   background: linear-gradient(
-    to bottom,
-    #22c55e 0%,
-    #22c55e 33.33%,
-    #16a34a 33.33%,
-    #16a34a 66.66%,
-    #134e4a 66.66%,
-    #134e4a 100%
+    to right,
+    #60a059 0 24%,
+    #9eb851 24% 49%,
+    #60a059 49% 74%,
+    #e9bd47 74% 100%
   );
 }
 
@@ -290,13 +304,11 @@
       rgba(248, 113, 113, 0.55) 3px 4px
     ),
     linear-gradient(
-      to bottom,
-      #4ade80 0%,
-      #4ade80 33.33%,
-      #facc15 33.33%,
-      #facc15 66.66%,
-      #0891b2 66.66%,
-      #0891b2 100%
+      to right,
+      #60a059 0 24%,
+      #9eb851 24% 49%,
+      #60a059 49% 74%,
+      #e9bd47 74% 100%
     );
   box-shadow: inset 0 -2px 0 rgba(248, 113, 113, 0.9);
 }

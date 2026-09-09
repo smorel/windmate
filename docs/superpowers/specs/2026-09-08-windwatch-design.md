@@ -249,7 +249,7 @@ Superseded by horizon digest when per-sport alerts ship; kept when `today_alerts
 - **Palette:** `#0b0f19` background, `#0f1422` cards, accent by sport
 - **Horizon Planner:** 7-day forecast cards; CSS `blur()` increases on days 4–7
 - **Rideability Matrix:** good hours use 3 bands — Beaufort wind (top), gust (mid), waves flat/small/big (bottom); wave height in tooltip; empty = not good; **window stats line** on each spot card — min–max wind, gust, and wave (m) during the solid opaque shared window only (not faded isolated hours)
-- **Sport switcher:** header toggle across all [supported sports](#supported-sports) sets active profile for matrix + planner
+- **Sport switcher:** dashboard dropdown with horizon dots — see [Sport Selector](./2026-09-09-sport-selector-design.md); sets `active_sport` profile for matrix + planner
 - **Preferences panel:** tab per sport — min wind, max gust, min air/water temp, **offshore toggle**, **wave preference**, optional **foil depth**, **radius**, **min window hours**, **rank criteria order**, **alert schedule** (horizon + eligible days)
 - **Spot ranking:** matrix sorted by composite [session score](./2026-09-08-session-ranking-design.md) (#1 = best for your prefs that day), not raw rideable hours alone
 - **Location:** browser Geolocation with manual lat/lng fallback

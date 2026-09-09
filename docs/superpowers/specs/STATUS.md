@@ -16,6 +16,8 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 | [session-watchlist-design](./2026-09-08-session-watchlist-design.md) | **~5%** — favorites only; no spot+date watchlist |
 | [spot-local-intel-design](./2026-09-09-spot-local-intel-design.md) | **0%** — spec only (social, parking, access, water hazards) |
 | [departure-planner-design](./2026-09-09-departure-planner-design.md) | **0%** — spec only (leave-by + Google Maps drive) |
+| [per-sport-preferences-alerts](./2026-09-09-per-sport-preferences-alerts-design.md) | **0%** — spec only (sport profiles, horizon alerts) |
+| [sport-selector](./2026-09-09-sport-selector-design.md) | **0%** — spec only (dashboard dropdown + horizon dots) |
 
 **Also shipped (not in original MVP):** settings modal, auto-save prefs, spot search, favorites (incl. out-of-radius), customizable radius, Beaufort matrix colors, 3-band wind/gust/wave blocks, session warning time fix.
 
@@ -169,6 +171,8 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | **9** | Spot local intel v1 (manual cache, parking/access metadata, rank penalties) | [Local Intel](./2026-09-09-spot-local-intel-design.md) | Priority #6 — don't drive to closed lot/flooded road |
 | **10** | Official + social ingestion, Gemini parser | Local Intel v2–v3 | Richer feed; corroborated access/water signals |
 | **11** | Departure planner v1 (leave-by, Google Maps, spot card) | [Departure Planner](./2026-09-09-departure-planner-design.md) | Priority #7 — leave time for min hours + best window per `rank_criteria_order` |
+| **12** | Per-sport profiles (DB, API, settings tabs) | [Per-Sport Prefs](./2026-09-09-per-sport-preferences-alerts-design.md) | Prerequisite for sport selector + horizon alerts |
+| **13** | Dashboard sport selector + `GET /api/sports/horizon-summary` | [Sport Selector](./2026-09-09-sport-selector-design.md) | Switch sports without Settings; glance at horizon per sport |
 
 ---
 
@@ -237,3 +241,5 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | Spot local intel (parking, access, social) | ❌ |
 | Departure planner (leave-by + drive time) | ❌ |
 | Min consecutive hours (settings) | ✅ |
+| Per-sport profiles | ❌ |
+| Dashboard sport selector + horizon dots | ❌ |

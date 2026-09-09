@@ -229,9 +229,9 @@ Current cron (`Mate, [Spot] is on today`) becomes a **subset** when `today_alert
 
 ## UI design
 
-### Sport switcher (header)
+### Sport switcher (dashboard)
 
-Quick toggle: **Wing** · **Sail** · **Kite** — sets `active_sport`, reloads matrix/planner with that profile's radius and ranking. Accent colour follows sport.
+See [Dashboard Sport Selector](./2026-09-09-sport-selector-design.md) — dropdown below spot search with horizon status dots; sets `active_sport`, reloads matrix/planner with that profile's radius and ranking. Accent colour follows sport.
 
 ### Settings — per-sport tabs
 
@@ -261,7 +261,7 @@ Disabled sport tab: "Don't practice this" toggle at bottom of tab.
 
 ### Matrix / planner
 
-All rideability, ranking, and distance labels reflect **active sport** profile. Tooltip: "Using your wingfoil settings — switch sport in header."
+All rideability, ranking, and distance labels reflect **active sport** profile. Tooltip: "Using your wingfoil settings — switch sport on the dashboard."
 
 ## Services (planned)
 

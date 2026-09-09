@@ -138,9 +138,11 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 - Pin strip above Horizon Planner
 - Session-day expanded panel
 - Mismatch banners escalated for watched sessions
-- Session-day email (08:00, caution/no_go)
-- Past sessions auto-unpin, `notify_email` per session
-- Env: `WATCHLIST_SESSION_DAY_EMAIL_HOUR`, `WATCHED_OBSERVATION_TTL_MS`
+- Daily watchlist status digest email (on track / degrading / no_go)
+- `last_status`, `status_snapshot`, trend detection
+- Auto-purge rows when `session_date < today` (no past watches)
+- `sport` per watched session; status pill on planner card
+- Env: `WATCHLIST_DIGEST_EMAIL_HOUR`, `WATCHLIST_PURGE_HOUR`, `WATCHED_OBSERVATION_TTL_MS`
 
 ### ❌ Not done (v2 ground truth)
 
@@ -158,7 +160,7 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 |-------|------|------|-----|
 | **1** | Go/no-go mismatch state + pill on live strip | Realtime | Priority #1 — finish before driving out |
 | **2** | Session watchlist v1 (DB, API, planner pin, session-day panel) | Watchlist | Priority #2–3 |
-| **3** | Mismatch escalation for watched sessions + optional morning email | Watchlist + Realtime | Priority #3 |
+| **3** | Mismatch escalation + daily watchlist status digest + midnight purge | Watchlist + Realtime | Priority #3 |
 | **4** | Offshore pref + detection + matrix stripes | Ranking | Safety before distance/waves |
 | **5** | Wave preference in settings + `sessionRank` on API | Ranking | Persist ranking; enable non-JS clients |
 | **6** | Water quality manual cache (2–3 Quebec lakes) | Ranking | Priority #5, v1 manual proof |

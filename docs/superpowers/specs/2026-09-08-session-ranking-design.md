@@ -45,12 +45,15 @@ Weights derived from position: rank 1 gets `6/21`, rank 2 gets `5/21`, … rank 
 - **Waves:** radio — Flat · Small (≤ 1 m) · Any · Big waves preferred
 - **Foil depth:** optional cm input — "Min water depth for my setup" (hint: mast length + ~15 cm margin)
 
-Changing sport resets wave/offshore defaults:
+Changing sport resets wave/offshore defaults (full list: [Supported sports](./2026-09-08-windwatch-design.md#supported-sports)):
 
 | Sport | `offshore_wind_ok` | `wave_preference` | Notes |
 |---|---|---|---|
 | wingfoiling | 0 | `flat` | Offshore + chop is worst case for foil |
+| parawing | 0 | `flat` | Same foil/chop sensitivity as wing |
+| kitefoiling | 0 | `flat` | Foil + kite launch constraints when level is high |
 | kitesurfing | 0 | `small` | Offshore is dangerous; **launch beach** constraints apply when level is high |
+| windsurfing | 0 | `small` | Offshore is dangerous; fin depth less sensitive than foil mast |
 | sailing | 1 | `any` | Dinghy sailors often accept more chop |
 
 ## Spot metadata (extensions)
@@ -132,9 +135,9 @@ Separate from health advisories — detected via social posts, cams, manual inte
 | `moderate` | Long algae mats — walk through or foil with drag | −0.25; "Long algae mate — foil'll feel gunky" |
 | `heavy` | Thick mats, constant clogging, unpleasant session | −0.4; prefer other spots; **not** a hard block unless paired with `advisory` |
 
-**Sport weighting:** apply full nuisance penalty for `wingfoiling`; half penalty for `kitesurfing` (lines/launch); minimal for `sailing`.
+**Sport weighting:** apply full nuisance penalty for `wingfoiling`, `parawing`, and `kitefoiling`; half penalty for `kitesurfing` and `windsurfing` (lines/launch/fin); minimal for `sailing`.
 
-Kitesurfing and sailing still use **health** levels fully; nuisance is wingfoil-first.
+All sports still use **health** levels fully; nuisance algae is foil-first.
 
 ### Data sources (implementation order)
 
@@ -230,7 +233,7 @@ When only `launch_beach_size` is set (no numeric width), use category thresholds
 | `moderate` | ≥ 0.6 m | ≥ 1.0 m |
 | `wide` | ≥ 1.0 m | ≥ 1.5 m |
 
-Default `min_kite_launch_beach_m` = **20 m** usable dry beach (tunable constant). Below that → launch constraint applies for `sport === kitesurfing`.
+Default `min_kite_launch_beach_m` = **20 m** usable dry beach (tunable constant). Below that → launch constraint applies for `sport === kitesurfing` or `sport === kitefoiling`.
 
 **Social / intel override:** posts like "no beach left" or cam showing water at the grass → bump to `severe` even if hydrometric math says `caution` (see [Spot Local Intel — launch room](./2026-09-09-spot-local-intel-design.md#launch-room-kitesurfing)).
 
@@ -250,12 +253,12 @@ Computed per user `sport`. Store raw hydrometrics in cache; derive `adequacy` + 
 | State | Condition | Sports | Ranking impact |
 |---|---|---|---|
 | `ok` | Depth OK at launch; launch beach OK | all | neutral / +0.05 if comfortably above reference |
-| `walk_short` | Shallow launch; adequate depth after short walk/paddle | **wingfoiling** | −0.15; see [Wingfoil depth](#wingfoil--depth--launch-appeal-level-too-low) |
-| `walk_long` | Shallow launch; long walk/paddle before foiling | **wingfoiling** | −0.3 |
-| `shallow_marginal` | Within 0.2 m of required at launch | **wingfoiling** | −0.2 |
-| `shallow` | Unsafe or impractical depth at launch | **wingfoiling** | −0.45 |
-| `launch_tight` | High level + tight/moderate beach; usable beach marginal | **kitesurfing** | −0.3; badge "Beach is tight — tricky kite launch" |
-| `launch_blocked` | High level; usable beach below minimum or `tight` + severe delta | **kitesurfing** | −0.5; strongly discourage; prefer other spots |
+| `walk_short` | Shallow launch; adequate depth after short walk/paddle | **wingfoiling**, **parawing**, **kitefoiling** | −0.15; see [Wingfoil depth](#wingfoil--depth--launch-appeal-level-too-low) |
+| `walk_long` | Shallow launch; long walk/paddle before foiling | **wingfoiling**, **parawing**, **kitefoiling** | −0.3 |
+| `shallow_marginal` | Within 0.2 m of required at launch | **wingfoiling**, **parawing**, **kitefoiling** | −0.2 |
+| `shallow` | Unsafe or impractical depth at launch | **wingfoiling**, **parawing**, **kitefoiling** | −0.45 |
+| `launch_tight` | High level + tight/moderate beach; usable beach marginal | **kitesurfing**, **kitefoiling** | −0.3; badge "Beach is tight — tricky kite launch" |
+| `launch_blocked` | High level; usable beach below minimum or `tight` + severe delta | **kitesurfing**, **kitefoiling** | −0.5; strongly discourage; prefer other spots |
 | `unknown` | no station or stale data | all | neutral; "Level unknown" — do not block |
 
 For **St. Lawrence / tidal influence**, use forecast tide + river level composite (v2); v1 static threshold vs current level only.

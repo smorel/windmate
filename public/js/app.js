@@ -3,6 +3,9 @@ const SPORT_COLORS = {
   wingfoiling: '#10b981',
   sailing: '#14b8a6',
   kitesurfing: '#3b82f6',
+  windsurfing: '#06b6d4',
+  kitefoiling: '#8b5cf6',
+  parawing: '#f59e0b',
 };
 
 let userLocation = { ...MONTREAL };

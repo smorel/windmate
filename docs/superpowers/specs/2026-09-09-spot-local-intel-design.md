@@ -10,7 +10,7 @@
 Wind and waves alone are not enough to pick a session. Users also need **local ground truth** before leaving home:
 
 - What are people **posting from the spot** right now (photos, videos, comments)?
-- What does the **spot look like** — photos and videos (ideally people doing **your sport**: wingfoil, kite, sailing)?
+- What does the **spot look like** — photos and videos (ideally people doing **your sport** — see [Supported sports](./2026-09-08-windwatch-design.md#supported-sports))?
 - Is there a **live cam**?
 - Are **water conditions** safe and pleasant — not just rideable wind-wise (algae, debris, flooding at launch, ice, murky water)?
 - Is **parking** public or paid, and **open on the session day**?
@@ -259,7 +259,7 @@ Users want to **see the spot** before committing — launch layout, water colour
 
 - **6–8 thumbnails** per tab (`Images` · `Videos`), horizontal scroll on mobile
 - Each tile: thumbnail, optional duration badge (video), **link out** to source page (never hotlink full-res in-app)
-- **Sport-aware query** — uses user's `preferences.sport` (`wingfoiling` · `kitesurfing` · `sailing`) to bias results toward people riding that discipline at this spot
+- **Sport-aware query** — uses user's active sport profile to bias results toward people riding that discipline at this spot
 - **Fallback** when API unavailable or quota exceeded: prominent **"Search Google Images"** / **"Search Google Videos"** buttons with the same pre-built query (opens new tab)
 
 ### Sport query terms
@@ -269,6 +269,9 @@ Users want to **see the spot** before committing — launch layout, water colour
 | `wingfoiling` | wingfoil, wing foil, wingfoiling | wing, foil, aile |
 | `kitesurfing` | kitesurf, kiteboarding, kite | kitesurf, cerf-volant |
 | `sailing` | sailing, sailboat, dinghy | voile, dériveur |
+| `windsurfing` | windsurf, windsurfing, windsurfer | planche à voile, windsurf |
+| `kitefoiling` | kitefoil, kite foil, kitefoiling | foil kite, kitefoil |
+| `parawing` | parawing, paraglide wing, parawing foil | aile parapente, parawing |
 
 **Query template** (built server-side, URL-encoded for fallback links):
 

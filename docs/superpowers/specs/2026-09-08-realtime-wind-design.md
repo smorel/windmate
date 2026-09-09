@@ -348,6 +348,9 @@ Extend `user_preferences` (see parent spec):
 | wingfoiling | 10 | 8 |
 | sailing | 5 | null (often dressed for cold) |
 | kitesurfing | 12 | 10 |
+| windsurfing | 8 | 8 |
+| kitefoiling | 10 | 8 |
+| parawing | 10 | 8 |
 
 ### Rideability extension
 

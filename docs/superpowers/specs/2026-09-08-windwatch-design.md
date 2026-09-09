@@ -5,19 +5,20 @@
 
 ## Goal
 
-Build a wind alert and spot tracker for sailors, wingfoilers, and kitesurfers. Wind is personified as **your mate** — all user-facing text (website, emails, warnings) is written in a casual, direct, second-person tone. MVP dashboard with GPS-based spot discovery, Open-Meteo forecasts, user wind thresholds, scheduled rideability checks, and email alerts. Montreal seed spots; works anywhere via browser GPS.
+Build a wind alert and spot tracker for wingfoilers, sailors, kitesurfers, windsurfers, kitefoilers, and parawing riders. Wind is personified as **your mate** — all user-facing text (website, emails, warnings) is written in a casual, direct, second-person tone. MVP dashboard with GPS-based spot discovery, Open-Meteo forecasts, user wind thresholds, scheduled rideability checks, and email alerts. Montreal seed spots; works anywhere via browser GPS.
 
 ## User priorities
 
 These drive product decisions beyond the MVP checklist:
 
 1. **Don't drive out on a false forecast** — the worst outcome is forecast looks rideable but live conditions don't match. Realtime comparison to forecast is not decorative; it is how users decide whether to go.
-2. **Session watchlist** — mark a spot on a particular day (a planned session) and keep it at the forefront of the Horizon Planner until the session passes.
+2. **Session watchlist** — mark a spot on a particular day (a planned session) and keep it at the forefront of the Horizon Planner through session day; **daily email** on whether it is still on track or degrading; **auto-remove** after the date passes.
 3. **Session-day live validation** — on the day of a watched session, live conditions matter more than forecast-only green blocks. Surface go/no-go clearly when actual wind diverges from what was promised.
 4. **Ground-truth enrichment (later)** — webcam feeds at the spot and community chatter (social posts, photos, videos, local reports) would strongly improve confidence before leaving home.
 5. **Session spot ranking** — rank spots for a given day using wind **plus** user preferences (avoid offshore, flat vs small vs big waves), proximity, **water quality** (health advisories and **long algae** nuisance for wingfoil), and **water level** — shallow launch / walk-out appeal for foil; **kite launch room** when high on a tight beach — not rideable hours alone.
 6. **Local intel beyond forecast** — parking (free vs paid, open on session day), road/site access (seasonal floods, municipal closures), and broader **water conditions** (debris, launch flooding, ice) should **lower rank with a clear explanation**, sourced from official city/park pages and social signals when available.
 7. **Leave-home timing** — for a chosen day, combine the best qualifying rideable window (`min_rideable_window_hours` + **`rank_criteria_order`**), **traffic-aware drive time** (Google Maps), and rigging buffer so the spot card shows **when to leave** to be on the water when conditions match your setup — not hours early.
+8. **Per-sport setup & alerts** — each sport has its own wind range, radius, session length, ranking order, and **when to email** (e.g. wing any day on the horizon; sailing weekends only).
 
 ## Scope
 
@@ -46,6 +47,7 @@ See dedicated specs for detail:
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — offshore/wave prefs, water quality, water level, composite score per day
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — social feed, live cams, water hazards, parking, seasonal access; rank lower + explain
 - [Departure Planner](./2026-09-09-departure-planner-design.md) — leave-by time from home using rideable window + Google Maps drive duration
+- [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md) — independent profiles per sport; horizon email when a good session appears on eligible days
 - Reddit/Google forum scraper + Gemini structured parsing (community condition reports)
 - Spot webcams (Windy Webcams API or per-spot URLs)
 
@@ -56,6 +58,7 @@ See dedicated specs for detail:
 - [Session Spot Ranking](./2026-09-08-session-ranking-design.md) — rank spots per session day by wind, prefs, distance, water quality, level
 - [Spot Local Intel](./2026-09-09-spot-local-intel-design.md) — parking, access, social/official ground truth, ranking penalties
 - [Departure Planner](./2026-09-09-departure-planner-design.md) — when to leave home for the best window
+- [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md) — sport profiles, per-sport ranking/thresholds, horizon alert scheduling
 
 ## Architecture
 
@@ -67,11 +70,11 @@ Express Server
   ├── /api/spots          → Haversine filter by user lat/lng
   ├── /api/forecast       → Open-Meteo proxy + cache
   ├── /api/rideability    → threshold matching + session rank
-  ├── /api/preferences    → sport + wind limits
+  ├── /api/preferences    → active sport + global prefs + sport profiles
   └── public/             → SPA
 
 SQLite
-node-cron (every 3h) → rideability → SMTP email
+node-cron (every 3h) → horizon scan per sport profile → SMTP digest email
 ```
 
 ## Tech stack
@@ -121,19 +124,32 @@ node-cron (every 3h) → rideability → SMTP email
 | quality_region_id | TEXT | nullable — bloom/advisory region |
 | source_url | TEXT | nullable |
 
-### `user_preferences`
+### `user_preferences` (global)
 
 | Column | Type | Notes |
 |---|---|---|
 | id | INTEGER | PK (single row, id=1) |
-| sport | TEXT | `wingfoiling`, `sailing`, `kitesurfing` |
-| min_wind_knots | INTEGER | |
-| max_gust_knots | INTEGER | |
-| min_air_temp_c | REAL | nullable — no gate when null |
-| min_water_temp_c | REAL | nullable — no gate when null; only enforced when water temp data exists |
-| offshore_wind_ok | INTEGER | 0/1 — default 0 (avoid offshore); see [Session Ranking spec](./2026-09-08-session-ranking-design.md) |
+| `active_sport` | TEXT | Dashboard default — see [Supported sports](#supported-sports) |
+| `favorite_spot_ids` | TEXT | JSON array |
+| `alerts_master_enabled` | INTEGER | 0/1 — master switch for horizon emails |
+
+Sport-specific thresholds, radius, window hours, rank order, and alert schedule live on **`sport_profiles`** — see [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md).
+
+### `sport_profiles` (per sport)
+
+| Column | Type | Notes |
+|---|---|---|
+| sport | TEXT | PK — see [Supported sports](#supported-sports) |
+| min_wind_knots, max_gust_knots | INTEGER | Per-sport rideability |
+| min_air_temp_c, min_water_temp_c | REAL | nullable |
+| offshore_wind_ok | INTEGER | 0/1 |
 | wave_preference | TEXT | `flat` · `small` · `any` · `big` |
-| min_foil_depth_cm | INTEGER | nullable — mast + margin for water level checks |
+| min_foil_depth_cm | INTEGER | nullable |
+| radius_km | INTEGER | Search + alert scan radius |
+| min_rideable_window_hours | INTEGER | Min consecutive rideable hours |
+| rank_criteria_order | TEXT | JSON — see [Session Ranking](./2026-09-08-session-ranking-design.md) |
+| alert_enabled | INTEGER | 0/1 |
+| alert_schedule | TEXT | JSON — horizon days, eligible weekdays |
 
 ### `forecast_cache`
 
@@ -150,8 +166,9 @@ node-cron (every 3h) → rideability → SMTP email
 | GET | `/api/spots?lat=&lng=&radius=` | Nearby spots sorted by distance |
 | GET | `/api/forecast/:spotId` | Cached hourly forecast |
 | GET | `/api/rideability?lat=&lng=&radius=` | Rideable hours per nearby spot, sorted by [session rank](./2026-09-08-session-ranking-design.md) |
-| GET | `/api/preferences` | Current user preferences |
-| PUT | `/api/preferences` | Update sport + thresholds |
+| GET | `/api/preferences` | Global prefs + all sport profiles |
+| PUT | `/api/preferences` | Update global fields (`active_sport`, favorites, …) |
+| PUT | `/api/preferences/sports/:sport` | Update one sport profile |
 | GET | `/api/health` | Health check |
 
 ## Rideability logic
@@ -210,9 +227,10 @@ All new user-facing strings go through these modules so tone stays consistent.
 
 ## Email alert format
 
-Subject: `Mate, [Spot Name] is on today 🌬️`
+**Horizon digest (v2)** — per [Per-Sport Preferences & Horizon Alerts](./2026-09-09-per-sport-preferences-alerts-design.md): one email listing qualifying sessions per sport (e.g. wing Thursday + sailing Saturday), each evaluated with that sport's thresholds, radius, window length, and rank score. Only on **eligible days** per sport (`any day` vs `weekends only`, etc.).
 
-Body:
+**Today / legacy** — subject: `Mate, [Spot Name] is on today 🌬️`
+
 ```
 Hey mate — it's blowing at [Spot Name].
 [Wind Speed] kts from [Direction], [Start Hour]–[End Hour].
@@ -223,7 +241,7 @@ Worth a look.
 ⚠️ [Optional] Wind's dying below [Min] kt around [Time]. Wrap up by [Finish By] or you'll be stuck.
 ```
 
-Sent when cron finds ≥1 rideable hour today for a spot.
+Superseded by horizon digest when per-sport alerts ship; kept when `today_alerts` is on and today matches the sport's day filter.
 
 ## UI design
 
@@ -231,17 +249,36 @@ Sent when cron finds ≥1 rideable hour today for a spot.
 - **Palette:** `#0b0f19` background, `#0f1422` cards, accent by sport
 - **Horizon Planner:** 7-day forecast cards; CSS `blur()` increases on days 4–7
 - **Rideability Matrix:** good hours use 3 bands — Beaufort wind (top), gust (mid), waves flat/small/big (bottom); wave height in tooltip; empty = not good; **window stats line** on each spot card — min–max wind, gust, and wave (m) during the solid opaque shared window only (not faded isolated hours)
-- **Preferences panel:** sport selector, min wind, max gust, min air/water temp, **offshore toggle**, **wave preference**, optional **foil depth**
+- **Sport switcher:** header toggle across all [supported sports](#supported-sports) sets active profile for matrix + planner
+- **Preferences panel:** tab per sport — min wind, max gust, min air/water temp, **offshore toggle**, **wave preference**, optional **foil depth**, **radius**, **min window hours**, **rank criteria order**, **alert schedule** (horizon + eligible days)
 - **Spot ranking:** matrix sorted by composite [session score](./2026-09-08-session-ranking-design.md) (#1 = best for your prefs that day), not raw rideable hours alone
 - **Location:** browser Geolocation with manual lat/lng fallback
 
+## Supported sports
+
+Canonical slugs (DB, API, UI): `wingfoiling` · `sailing` · `kitesurfing` · `windsurfing` · `kitefoiling` · `parawing`
+
+| Slug | Display | Accent |
+|---|---|---|
+| `wingfoiling` | Wingfoiling | Emerald |
+| `sailing` | Sailing | Teal |
+| `kitesurfing` | Kitesurfing | Blue |
+| `windsurfing` | Windsurfing | Cyan |
+| `kitefoiling` | Kitefoiling | Violet |
+| `parawing` | Parawing | Amber |
+
+Source of truth for defaults and colours: `src/utils/sports.js`.
+
 ## Default preferences by sport
 
-| Sport | Min wind (kt) | Max gust (kt) | Min air (°C) | Min water (°C) |
-|---|---|---|---|---|
-| wingfoiling | 12 | 25 | 10 | 8 |
-| sailing | 8 | 30 | 5 | — |
-| kitesurfing | 14 | 28 | 12 | 10 |
+| Sport | Min wind (kt) | Max gust (kt) | Min air (°C) | Min water (°C) | Waves (default) |
+|---|---|---|---|---|---|
+| wingfoiling | 12 | 25 | 10 | 8 | flat |
+| sailing | 8 | 30 | 5 | — | any |
+| kitesurfing | 14 | 28 | 12 | 10 | small |
+| windsurfing | 10 | 28 | 8 | 8 | small |
+| kitefoiling | 12 | 25 | 10 | 8 | flat |
+| parawing | 10 | 22 | 10 | 8 | flat |
 
 (— = no default water temp gate)
 

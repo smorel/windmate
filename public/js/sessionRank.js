@@ -20,8 +20,11 @@ const WindmateSessionRank = (() => {
 
   const WAVE_PREF_BY_SPORT = {
     wingfoiling: 'flat',
-    kitesurfing: 'small',
     sailing: 'any',
+    kitesurfing: 'small',
+    windsurfing: 'small',
+    kitefoiling: 'flat',
+    parawing: 'flat',
   };
 
   function normalizeOrder(order) {

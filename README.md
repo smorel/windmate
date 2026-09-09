@@ -1,6 +1,6 @@
 # Windmate
 
-Your wind mate — spot forecasts, session planning, and heads-ups for wingfoiling, kitesurfing, and sailing.
+Your wind mate — spot forecasts, session planning, and heads-ups for wingfoiling, kitesurfing, sailing, windsurfing, kitefoiling, and parawing.
 
 Windmate helps you decide **where** and **when** to get on the water — and whether a spot is actually **worth the drive**. It combines community spots from [iGetwind](https://igetwind.com/), multi-model wind forecasts, rideability rules (wind, gusts, rain, temperature), live observations, and a dark dashboard tuned for quick session decisions.
 

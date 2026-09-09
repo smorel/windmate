@@ -2,7 +2,7 @@ const express = require('express');
 
 const { getPreferences, updatePreferences } = require('../db');
 
-const { SPORT_DEFAULTS } = require('../utils/sports');
+const { SPORT_DEFAULTS, VALID_SPORTS } = require('../utils/sports');
 const { parseRankCriteriaOrder, VALID_RANK_CRITERIA } = require('../utils/rankCriteria');
 const { parseFavoriteSpotIds } = require('../utils/favoriteSpots');
 const { parseSearchRadiusKm } = require('../utils/searchRadius');
@@ -10,7 +10,6 @@ const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 
 
 
-const VALID_SPORTS = Object.keys(SPORT_DEFAULTS);
 
 
 

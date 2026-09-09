@@ -11,6 +11,10 @@ const SPORT_COLORS = {
 let userLocation = { ...MONTREAL };
 let rideabilityData = null;
 let observationsData = null;
+let horizonSummary = null;
+let sportProfiles = [];
+let activeSport = 'wingfoiling';
+let settingsSportTab = 'wingfoiling';
 let locating = false;
 let selectedDayDate = null;
 
@@ -24,7 +28,13 @@ const els = {
   manualLng: document.getElementById('manual-lng'),
   manualLocBtn: document.getElementById('manual-loc-btn'),
   prefsForm: document.getElementById('prefs-form'),
-  sport: document.getElementById('sport'),
+  sportSelector: document.getElementById('sport-selector'),
+  watchlistStrip: document.getElementById('watchlist-strip'),
+  mySportsList: document.getElementById('my-sports-list'),
+  sportSettingsTabs: document.getElementById('sport-settings-tabs'),
+  sportSettingsHint: document.getElementById('sport-settings-hint'),
+  alertEnabled: document.getElementById('alert-enabled'),
+  alertDaysPreset: document.getElementById('alert-days-preset'),
   minWind: document.getElementById('min-wind'),
   maxGust: document.getElementById('max-gust'),
   searchRadius: document.getElementById('search-radius'),
@@ -272,7 +282,38 @@ function getSearchRadiusKm() {
   if (!Number.isNaN(fromInput)) {
     return Math.min(300, Math.max(5, fromInput));
   }
-  return rideabilityData?.preferences?.radius_km ?? 80;
+  const profile = sportProfiles.find((p) => p.sport === activeSport);
+  return profile?.radius_km ?? rideabilityData?.preferences?.radius_km ?? 80;
+}
+
+function getActiveProfile() {
+  return sportProfiles.find((p) => p.sport === activeSport) ?? rideabilityData?.preferences;
+}
+
+function getSettingsProfile() {
+  return sportProfiles.find((p) => p.sport === settingsSportTab) ?? getActiveProfile();
+}
+
+const SPORT_DISPLAY_NAMES = {
+  wingfoiling: 'Wingfoiling',
+  sailing: 'Sailing',
+  kitesurfing: 'Kitesurfing',
+  windsurfing: 'Windsurfing',
+  kitefoiling: 'Kitefoiling',
+  parawing: 'Parawing',
+};
+
+function alertDaysPresetFromSchedule(schedule) {
+  const days = schedule?.days_of_week ?? [0, 1, 2, 3, 4, 5, 6];
+  if (days.length === 2 && days.includes(0) && days.includes(6)) return 'weekends';
+  if (days.length === 5 && !days.includes(0) && !days.includes(6)) return 'weekdays';
+  return 'any';
+}
+
+function alertScheduleFromPreset(preset) {
+  if (preset === 'weekends') return { days_of_week: [0, 6] };
+  if (preset === 'weekdays') return { days_of_week: [1, 2, 3, 4, 5] };
+  return { days_of_week: [0, 1, 2, 3, 4, 5, 6] };
 }
 
 function prefsForRanking(basePrefs) {
@@ -298,9 +339,10 @@ function getMinRideableWindowHours(prefs) {
   );
 }
 
-function buildPreferencesPayload() {
+function buildSportProfilePayload() {
+  const schedulePatch = alertScheduleFromPreset(els.alertDaysPreset?.value ?? 'any');
+  const current = getSettingsProfile();
   return {
-    sport: els.sport.value,
     min_wind_knots: parseInt(els.minWind.value, 10),
     max_gust_knots: parseInt(els.maxGust.value, 10),
     min_air_temp_c: els.minAir.value === '' ? null : parseFloat(els.minAir.value),
@@ -308,8 +350,15 @@ function buildPreferencesPayload() {
     offshore_wind_ok: els.offshoreWind?.value === '1' ? 1 : 0,
     min_rideable_window_hours: getMinRideableWindowHours(),
     rank_criteria_order: getRankCriteriaOrder(),
-    favorite_spot_ids: favoriteSpotIds,
     radius_km: getSearchRadiusKm(),
+    alert_enabled: els.alertEnabled?.checked ? 1 : 0,
+    alert_schedule: {
+      ...(current?.alert_schedule ?? {}),
+      ...schedulePatch,
+      horizon_days: current?.alert_schedule?.horizon_days ?? 7,
+      today_alerts: current?.alert_schedule?.today_alerts ?? true,
+      min_session_score: current?.alert_schedule?.min_session_score ?? 0.55,
+    },
   };
 }
 
@@ -363,11 +412,11 @@ async function persistPreferences({ fullRefresh = true } = {}) {
 
   persistPrefsPromise = (async () => {
     try {
-      const updated = await api('/api/preferences', {
+      const updated = await api(`/api/preferences/sports/${settingsSportTab}`, {
         method: 'PUT',
-        body: JSON.stringify(buildPreferencesPayload()),
+        body: JSON.stringify(buildSportProfilePayload()),
       });
-      syncPreferencesState(updated);
+      applyFullPreferences(updated);
       if (fullRefresh) {
         await refreshDashboard({ silent: true });
       } else {
@@ -386,8 +435,30 @@ async function persistPreferences({ fullRefresh = true } = {}) {
   return persistPrefsPromise;
 }
 
+async function persistSportEnabled(sport, enabled) {
+  try {
+    const updated = await api(`/api/preferences/sports/${sport}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled: enabled ? 1 : 0 }),
+    });
+    applyFullPreferences(updated);
+    await refreshDashboard({ silent: true });
+  } catch (err) {
+    setSettingsSaveStatus(err.message, true);
+  }
+}
+
+async function switchActiveSport(sport) {
+  activeSport = sport;
+  const updated = await api('/api/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ active_sport: sport }),
+  });
+  applyFullPreferences(updated);
+  await refreshDashboard({ silent: true });
+}
+
 function bindPreferencesAutoSave() {
-  els.sport.addEventListener('change', () => schedulePreferencesSave({ fullRefresh: true, delayMs: 0 }));
   for (const input of [els.searchRadius, els.minWind, els.maxGust, els.minAir, els.minWater, els.minRideableWindow]) {
     if (!input) continue;
     input.addEventListener('input', () => schedulePreferencesSave({ fullRefresh: true }));
@@ -397,7 +468,114 @@ function bindPreferencesAutoSave() {
     syncOffshoreHint(els.offshoreWind.value === '1');
     schedulePreferencesSave({ fullRefresh: true, delayMs: 0 });
   });
+  els.alertEnabled?.addEventListener('change', () =>
+    schedulePreferencesSave({ fullRefresh: true, delayMs: 0 })
+  );
+  els.alertDaysPreset?.addEventListener('change', () =>
+    schedulePreferencesSave({ fullRefresh: true, delayMs: 0 })
+  );
   els.prefsForm.addEventListener('submit', (e) => e.preventDefault());
+}
+
+function renderMySports() {
+  if (!els.mySportsList) return;
+  const allSports = Object.keys(SPORT_DISPLAY_NAMES);
+  els.mySportsList.innerHTML = allSports
+    .map((sport) => {
+      const profile = sportProfiles.find((p) => p.sport === sport);
+      const checked = profile?.enabled ? 'checked' : '';
+      return `<label class="flex items-center gap-2 text-sm text-slate-300">
+        <input type="checkbox" data-my-sport="${sport}" ${checked} />
+        <span>${SPORT_DISPLAY_NAMES[sport]}</span>
+      </label>`;
+    })
+    .join('');
+
+  els.mySportsList.querySelectorAll('[data-my-sport]').forEach((input) => {
+    input.addEventListener('change', () => {
+      persistSportEnabled(input.dataset.mySport, input.checked);
+    });
+  });
+}
+
+function renderSportSettingsTabs() {
+  if (!els.sportSettingsTabs) return;
+  const enabled = sportProfiles.filter((p) => p.enabled);
+  els.sportSettingsTabs.innerHTML = enabled
+    .map((p) => {
+      const active = p.sport === settingsSportTab ? 'sport-tab--active' : '';
+      return `<button type="button" class="sport-tab text-xs px-3 py-1.5 rounded-lg border border-base-border ${active}" data-settings-sport="${p.sport}">${SPORT_DISPLAY_NAMES[p.sport] ?? p.sport}</button>`;
+    })
+    .join('');
+
+  els.sportSettingsTabs.querySelectorAll('[data-settings-sport]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      settingsSportTab = btn.dataset.settingsSport;
+      loadSettingsFormForSport(settingsSportTab);
+      renderSportSettingsTabs();
+    });
+  });
+
+  if (els.sportSettingsHint) {
+    const profile = sportProfiles.find((p) => p.sport === settingsSportTab);
+    const name = SPORT_DISPLAY_NAMES[settingsSportTab] ?? settingsSportTab;
+    const alertPreset = alertDaysPresetFromSchedule(profile?.alert_schedule);
+    const alertNote =
+      alertPreset === 'weekends'
+        ? ' Alert emails: weekends only.'
+        : alertPreset === 'weekdays'
+          ? ' Alert emails: weekdays only.'
+          : '';
+    els.sportSettingsHint.textContent = `Editing ${name} — switch sport on the dashboard.${alertNote}`;
+  }
+}
+
+function loadSettingsFormForSport(sport) {
+  const profile = sportProfiles.find((p) => p.sport === sport);
+  if (!profile) return;
+  settingsSportTab = sport;
+  els.minWind.value = profile.min_wind_knots;
+  els.maxGust.value = profile.max_gust_knots;
+  els.minAir.value = profile.min_air_temp_c ?? '';
+  els.minWater.value = profile.min_water_temp_c ?? '';
+  if (els.searchRadius) els.searchRadius.value = profile.radius_km ?? 80;
+  if (els.minRideableWindow) {
+    els.minRideableWindow.value = getMinRideableWindowHours(profile);
+  }
+  if (els.offshoreWind) {
+    els.offshoreWind.value = profile.offshore_wind_ok ? '1' : '0';
+    syncOffshoreHint(profile.offshore_wind_ok);
+  }
+  if (els.alertEnabled) els.alertEnabled.checked = Boolean(profile.alert_enabled);
+  if (els.alertDaysPreset) {
+    els.alertDaysPreset.value = alertDaysPresetFromSchedule(profile.alert_schedule);
+  }
+  rankCriteriaOrder = WindmateSessionRank.normalizeOrder(profile.rank_criteria_order);
+  renderRankCriteriaList(rankCriteriaOrder);
+}
+
+function applyFullPreferences(prefs) {
+  sportProfiles = prefs.sport_profiles ?? sportProfiles;
+  activeSport = prefs.active_sport ?? activeSport;
+  settingsSportTab = sportProfiles.some((p) => p.sport === settingsSportTab && p.enabled)
+    ? settingsSportTab
+    : activeSport;
+  const activeProfile = sportProfiles.find((p) => p.sport === activeSport);
+  favoriteSpotIds = normalizeFavoriteSpotIds(
+    activeProfile?.favorite_spot_ids ?? prefs.favorite_spot_ids
+  );
+  syncPreferencesState(prefs);
+  renderMySports();
+  renderSportSettingsTabs();
+  loadSettingsFormForSport(settingsSportTab);
+  WindmateSportSelector.setState({
+    profiles: sportProfiles.map((p) => ({
+      ...p,
+      display_name: SPORT_DISPLAY_NAMES[p.sport],
+    })),
+    activeSport,
+    summary: horizonSummary,
+  });
 }
 
 function isAnyModalOpen() {
@@ -413,6 +591,9 @@ function syncModalOpenClass() {
 
 function openSettingsModal() {
   if (!els.settingsModal) return;
+  settingsSportTab = activeSport;
+  loadSettingsFormForSport(settingsSportTab);
+  renderSportSettingsTabs();
   els.settingsModal.classList.remove('hidden');
   syncModalOpenClass();
   els.settingsBtn?.setAttribute('aria-expanded', 'true');
@@ -570,16 +751,7 @@ function renderRankCriteriaList(order) {
 
 async function loadPreferences() {
   const prefs = await api('/api/preferences');
-  els.sport.value = prefs.sport;
-  els.minWind.value = prefs.min_wind_knots;
-  els.maxGust.value = prefs.max_gust_knots;
-  els.minAir.value = prefs.min_air_temp_c ?? '';
-  els.minWater.value = prefs.min_water_temp_c ?? '';
-  if (els.searchRadius) els.searchRadius.value = prefs.radius_km ?? 80;
-  if (els.minRideableWindow) {
-    els.minRideableWindow.value = getMinRideableWindowHours(prefs);
-  }
-  syncPreferencesState(prefs);
+  applyFullPreferences(prefs);
 }
 
 function setDashboardLoading(message) {
@@ -592,23 +764,47 @@ async function refreshDashboard({ silent = false } = {}) {
   if (!silent) {
     setDashboardLoading(WindmateCopy.loading.dashboard);
   }
-  const radius = getSearchRadiusKm();
-  const query = `lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&limit=12`;
+  const profile = getActiveProfile();
+  const radius = profile?.radius_km ?? getSearchRadiusKm();
+  const sport = activeSport;
+  const query = `lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&limit=12&sport=${sport}`;
   try {
-    const [rideRes, obsRes] = await Promise.all([
+    await WindmateWatchlist.load();
+    const watchedIds = WindmateWatchlist.getWatchedSpotIdsForToday(sport);
+    const watchedQuery = watchedIds.length ? `&watchedSpotIds=${watchedIds.join(',')}` : '';
+
+    const [rideRes, obsRes, summaryRes] = await Promise.all([
       api(`/api/rideability?${query}`),
-      api(`/api/observations?${query}`).catch(() => ({ spots: [] })),
+      api(`/api/observations?${query}${watchedQuery}`).catch(() => ({ spots: [] })),
+      api(`/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}`).catch(
+        () => null
+      ),
     ]);
     rideabilityData = rideRes;
     observationsData = obsRes;
+    horizonSummary = summaryRes;
+    activeSport = rideabilityData.preferences?.sport ?? activeSport;
     rideabilityData.preferences = prefsForRanking(rideabilityData.preferences);
     rankCriteriaOrder = rideabilityData.preferences.rank_criteria_order;
     favoriteSpotIds = normalizeFavoriteSpotIds(rideabilityData.preferences.favorite_spot_ids);
+    WindmateSportSelector.setState({
+      profiles: sportProfiles.map((p) => ({
+        ...p,
+        display_name: SPORT_DISPLAY_NAMES[p.sport],
+      })),
+      activeSport,
+      summary: horizonSummary,
+    });
     renderRankCriteriaList(rankCriteriaOrder);
     renderMatePicks(rideabilityData);
     renderModelLegend(rideabilityData);
     renderHorizonPlanner(rideabilityData);
     renderRideabilityMatrix(rideabilityData, observationsData);
+    WindmateWatchlist.renderStrip(els.watchlistStrip, {
+      activeSport,
+      observationsBySpot: WindmateObservations.mapBySpotId(observationsData),
+      prefs: prefsForRanking(rideabilityData.preferences),
+    });
   } catch (err) {
     const msg = WindmateCopy.errors.loadFailed(err.message);
     els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
@@ -786,6 +982,19 @@ function favoriteToggleNeedsFullRefresh(spotId, wasFavorite) {
   return false;
 }
 
+async function persistFavorites({ fullRefresh = true } = {}) {
+  const updated = await api(`/api/preferences/sports/${activeSport}`, {
+    method: 'PUT',
+    body: JSON.stringify({ favorite_spot_ids: favoriteSpotIds }),
+  });
+  applyFullPreferences(updated);
+  if (fullRefresh) {
+    await refreshDashboard({ silent: true });
+  } else {
+    applyRankOrderToMatrix();
+  }
+}
+
 function toggleFavorite(spotId) {
   const wasFavorite = isFavoriteSpot(spotId);
   const next = new Set(favoriteSpotIds);
@@ -797,12 +1006,7 @@ function toggleFavorite(spotId) {
   }
 
   const fullRefresh = favoriteToggleNeedsFullRefresh(spotId, wasFavorite);
-  if (fullRefresh) {
-    schedulePreferencesSave({ fullRefresh: true, delayMs: 0 });
-  } else {
-    applyRankOrderToMatrix();
-    schedulePreferencesSave({ fullRefresh: false, delayMs: 0 });
-  }
+  persistFavorites({ fullRefresh }).catch((err) => console.error(err));
 
   if (els.spotSearchResults && !els.spotSearchResults.classList.contains('hidden')) {
     const q = els.spotSearchInput?.value.trim();
@@ -1095,14 +1299,30 @@ function renderHorizonWindBlock(spots, dateStr, prefs, sportColor, rideableMax) 
     </div>`;
 }
 
-function scrollSpotListToTop({ behavior = 'smooth' } = {}) {
+/** Space to leave below the sticky horizon planner when scrolling matrix cards into view. */
+function getMatrixScrollOffset(extra = 16) {
   const sticky = document.querySelector('.horizon-planner-sticky');
+  return sticky ? sticky.offsetHeight + extra : extra;
+}
+
+function scrollToSpot(spotId, { behavior = 'smooth' } = {}) {
+  const card = els.rideabilityMatrix?.querySelector(`[data-spot-id="${spotId}"]`);
+  if (!card) return false;
+
+  const offset = getMatrixScrollOffset();
+  const top = card.getBoundingClientRect().top + window.scrollY - offset;
+
+  window.scrollTo({ top: Math.max(0, top), behavior });
+  card.classList.add('spot-card--highlight');
+  window.setTimeout(() => card.classList.remove('spot-card--highlight'), 2200);
+  return true;
+}
+
+function scrollSpotListToTop({ behavior = 'smooth' } = {}) {
   const firstSpot = els.rideabilityMatrix?.firstElementChild;
   if (!firstSpot) return;
 
-  const stickyRect = sticky?.getBoundingClientRect();
-  const stickyActive = stickyRect && stickyRect.top <= 1;
-  const offset = stickyActive ? stickyRect.height + 12 : 12;
+  const offset = getMatrixScrollOffset();
   const firstTop = firstSpot.getBoundingClientRect().top;
 
   if (firstTop >= offset && firstTop < window.innerHeight) return;
@@ -1111,12 +1331,28 @@ function scrollSpotListToTop({ behavior = 'smooth' } = {}) {
   window.scrollTo({ top: Math.max(0, top), behavior });
 }
 
-function selectDay(dateStr) {
+function selectDay(dateStr, { scroll = 'top', spotId = null } = {}) {
   selectedDayDate = dateStr;
   if (!rideabilityData) return;
   renderHorizonPlanner(rideabilityData);
   renderRideabilityMatrix(rideabilityData, observationsData);
-  scrollSpotListToTop();
+  if (scroll === 'spot' && spotId) {
+    // Wait for matrix layout after re-render before measuring scroll offset.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollToSpot(spotId));
+    });
+  } else {
+    scrollSpotListToTop();
+  }
+}
+
+async function goToWatchedSession({ spotId, sessionDate, sport }) {
+  if (!spotId || !sessionDate) return;
+  selectedDayDate = sessionDate;
+  if (sport && sport !== activeSport) {
+    await switchActiveSport(sport);
+  }
+  selectDay(sessionDate, { scroll: 'spot', spotId });
 }
 
 function renderHorizonPlanner(data) {
@@ -1482,6 +1718,17 @@ function renderRideabilityMatrix(data, observations) {
         : '';
 
       const favoriteBtn = renderFavoriteButton(spot);
+      const watched = WindmateWatchlist.isWatched(
+        spot.id,
+        selectedDayDate,
+        data.preferences.sport
+      );
+      const watchBtn = WindmateWatchlist.renderWatchButton(
+        spot.id,
+        selectedDayDate,
+        data.preferences.sport,
+        watched
+      );
       const windowStatsLine = renderEfficientWindowStats(entry, selectedDayDate, data.preferences);
 
       return `
@@ -1492,6 +1739,7 @@ function renderRideabilityMatrix(data, observations) {
               <span class="spot-title">
                 <span class="spot-name">${spot.name}</span>
                 ${favoriteBtn}
+                ${watchBtn}
               </span>
               ${rankBanners}
             </h3>
@@ -1515,6 +1763,7 @@ function renderRideabilityMatrix(data, observations) {
     .join('');
 
   WindmateObservations.bindToggles(els.rideabilityMatrix, obsBySpot, data.preferences);
+  WindmateWatchlist.bindWatchButtons(els.rideabilityMatrix, data.preferences.sport);
 }
 
 if (els.locateBtn) {
@@ -1535,6 +1784,9 @@ els.manualLocBtn.addEventListener('click', () => {
   initSettingsModal();
   initSpotSearch();
   initFavoriteToggles();
+  WindmateSportSelector.init(els.sportSelector, { onSwitch: switchActiveSport });
+  WindmateWatchlist.setOnChange(() => refreshDashboard({ silent: true }));
+  WindmateWatchlist.setOnNavigate(goToWatchedSession);
   setDashboardLoading(WindmateCopy.loading.dashboard);
   els.locationStatus.textContent = WindmateCopy.geo.locating;
   await loadPreferences();

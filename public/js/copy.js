@@ -161,6 +161,28 @@ const WindmateCopy = {
 
   observations: {
     noCurrent: "Can't tell you what's happening right now — forecast's still below",
+    mismatch: {
+      go: 'Go',
+      caution: 'Caution',
+      no_go: 'No go',
+      unknown: 'Unknown',
+    },
+    mismatchMessage(mismatch, current) {
+      if (mismatch.state === 'go') {
+        return `Looking good mate — ${Math.round(current?.windSpeed ?? 0)} kt, forecast nailed it.`;
+      }
+      if (mismatch.state === 'caution') {
+        const forecastKt =
+          current?.deltaKt != null
+            ? Math.round((current.windSpeed - current.deltaKt) * 10) / 10
+            : '?';
+        return `Forecast said ${forecastKt} kt — only seeing ${Math.round(current?.windSpeed ?? 0)}. Might be thin.`;
+      }
+      if (mismatch.state === 'no_go') {
+        return "Don't bother mate — forecast oversold it.";
+      }
+      return "Can't tell you what's happening right now — don't trust forecast alone.";
+    },
     showCurve: "Today's curve ▾",
     hideCurve: "Hide curve ▴",
     windowTemp: (airMin, airMax, waterMin, waterMax) => {

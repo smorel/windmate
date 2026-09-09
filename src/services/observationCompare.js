@@ -1,12 +1,13 @@
-const { isWeatherBlocked } = require('./weatherHazards');
-const { isTempOk } = require('./temperature');
+const { computeMismatch } = require('./mismatch');
 
 /**
  * @param {object[]} actual
  * @param {object[]} forecastHours today's forecast hourly rideability objects
  * @param {{ min_wind_knots: number, max_gust_knots: number, min_air_temp_c?: number|null, min_water_temp_c?: number|null }} prefs
+ * @param {object|null} [current]
+ * @param {{ escalated?: boolean }} [options]
  */
-function compareToday(actual, forecastHours, prefs) {
+function compareToday(actual, forecastHours, prefs, current = null, options = {}) {
   const forecastByTime = new Map(forecastHours.map((h) => [h.time.slice(0, 16), h]));
   const deltas = [];
   let forecastRideable = 0;
@@ -30,11 +31,16 @@ function compareToday(actual, forecastHours, prefs) {
     ? Math.round((deltas.reduce((a, b) => a + b, 0) / deltas.length) * 10) / 10
     : null;
 
-  return {
+  const base = {
     hoursCompared: deltas.length,
     avgDeltaKt,
     forecastRideableHours: forecastRideable,
     actualRideableHours: actualRideable,
+  };
+
+  return {
+    ...base,
+    mismatch: computeMismatch(current, forecastHours, base, prefs, options),
   };
 }
 

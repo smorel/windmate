@@ -18,17 +18,18 @@ const { todayFromHourlyTimes } = require('../utils/forecastTime');
  * @param {object} prefs
  * @param {object} forecast
  */
-async function fetchSpotObservations(db, spot, prefs, forecast) {
+async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
+  const ttlMs = options.ttlMs ?? OBSERVATION_CACHE_TTL_MS;
   const cached = db.prepare(
     'SELECT fetched_at, data FROM observation_cache WHERE spot_id = ?'
   ).get(spot.id);
 
-  if (cached && Date.now() - cached.fetched_at < OBSERVATION_CACHE_TTL_MS) {
+  if (cached && Date.now() - cached.fetched_at < ttlMs) {
     return { ...JSON.parse(cached.data), cached: true };
   }
 
   try {
-    const obs = await buildSpotObservation(db, spot, prefs, forecast);
+    const obs = await buildSpotObservation(db, spot, prefs, forecast, options);
     db.prepare(`
       INSERT INTO observation_cache (spot_id, fetched_at, data)
       VALUES (?, ?, ?)
@@ -43,7 +44,7 @@ async function fetchSpotObservations(db, spot, prefs, forecast) {
   }
 }
 
-async function buildSpotObservation(db, spot, prefs, forecast) {
+async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
   let current = null;
   let actual = [];
   let source = null;
@@ -91,7 +92,9 @@ async function buildSpotObservation(db, spot, prefs, forecast) {
   const warnings = computeSessionWarnings(forecastHours, prefs);
   const rideableHours = forecastHours.filter((h) => h.rideable);
   const summary = {
-    ...compareToday(actual, forecastHours, prefs),
+    ...compareToday(actual, forecastHours, prefs, current, {
+      escalated: Boolean(options.escalated),
+    }),
     tempSummary: buildTempSummary(rideableHours),
   };
 

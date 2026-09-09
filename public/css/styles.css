@@ -867,3 +867,155 @@ body.modal-open {
 @media (max-width: 640px) {
   .hour-block { height: 30px; }
 }
+
+/* Go / no-go pill */
+.go-no-go-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.go-no-go-pill--go { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.go-no-go-pill--caution { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.go-no-go-pill--no_go { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.go-no-go-pill--unknown { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+.live-strip--caution { border-color: rgba(245, 158, 11, 0.35); }
+.live-strip--no-go { border-color: rgba(239, 68, 68, 0.35); }
+
+/* Sport selector */
+.sport-selector { position: relative; max-width: 20rem; }
+.sport-selector-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid #1a2235;
+  background: #0f1422;
+  color: #e2e8f0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sport-selector-trigger--single { cursor: default; }
+.sport-selector-chevron { margin-left: auto; color: #64748b; font-size: 0.75rem; }
+.sport-dot { width: 8px; height: 8px; border-radius: 9999px; flex-shrink: 0; }
+.sport-dot--green { background: #34d399; }
+.sport-dot--gray { background: #475569; }
+.sport-selector-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  border-radius: 0.75rem;
+  border: 1px solid #1a2235;
+  background: #0f1422;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.sport-selector-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+.sport-selector-option:hover { background: rgba(148, 163, 184, 0.08); }
+.sport-selector-option--active { background: rgba(148, 163, 184, 0.06); }
+
+/* Watchlist */
+.watchlist-strip-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2dd4bf;
+  margin-bottom: 0.75rem;
+}
+.watchlist-strip-icon {
+  display: inline-flex;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: #2dd4bf;
+}
+.watch-status-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+}
+.watch-status--on-track { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+.watch-status--degrading { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+.watch-status--at-risk { background: rgba(245, 158, 11, 0.15); color: #fb923c; }
+.watch-status--no-go { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.watch-status--unknown { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+.watch-mismatch-banner {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  font-size: 0.75rem;
+}
+.watchlist-card--today { border-color: rgba(16, 185, 129, 0.35); }
+.watchlist-card--clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.watchlist-card--clickable:hover {
+  border-color: rgba(45, 212, 191, 0.45);
+  background: rgba(15, 23, 42, 0.55);
+}
+.watchlist-card--clickable:focus-visible {
+  outline: 2px solid rgba(45, 212, 191, 0.6);
+  outline-offset: 2px;
+}
+.spot-card--highlight {
+  border-color: rgba(45, 212, 191, 0.65) !important;
+  box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.35);
+}
+.watch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+.watch-btn-icon {
+  width: 1rem;
+  height: 1rem;
+}
+.watch-btn:hover {
+  color: #2dd4bf;
+  transform: scale(1.08);
+}
+.watch-btn--on {
+  color: #2dd4bf;
+}
+.sport-tab { background: #0f1422; color: #94a3b8; }
+.sport-tab--active { color: #e2e8f0; border-color: rgba(16, 185, 129, 0.45); }

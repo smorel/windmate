@@ -16,8 +16,8 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 | [session-watchlist-design](./2026-09-08-session-watchlist-design.md) | **~5%** — favorites only; no spot+date watchlist |
 | [spot-local-intel-design](./2026-09-09-spot-local-intel-design.md) | **0%** — spec only (social, parking, access, water hazards) |
 | [departure-planner-design](./2026-09-09-departure-planner-design.md) | **0%** — spec only (leave-by + Google Maps drive) |
-| [per-sport-preferences-alerts](./2026-09-09-per-sport-preferences-alerts-design.md) | **0%** — spec only (sport profiles, horizon alerts) |
-| [sport-selector](./2026-09-09-sport-selector-design.md) | **0%** — spec only (dashboard dropdown + horizon dots) |
+| [per-sport-preferences-alerts](./2026-09-09-per-sport-preferences-alerts-design.md) | **~85%** — profiles, settings tabs, horizon cron; no auth gate for email |
+| [sport-selector](./2026-09-09-sport-selector-design.md) | **~90%** — dropdown + horizon-summary API; v2 day label pending |
 | [session-lift-share](./2026-09-09-session-lift-share-design.md) | **0%** — spec only (watched-session lift matching + email intro) |
 | [session-watcher-count](./2026-09-09-session-watcher-count-design.md) | **0%** — spec only (banded social proof on matrix cards) |
 
@@ -70,19 +70,19 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 - Air/water temp on hours, tooltips, live strip
 - Source badges, live dots, storm-hour matrix outline
 - Module layout per spec (`observations.js`, `weatherHazards.js`, etc.)
+- **Go/no-go state machine** (`mismatch.js`) — `go` / `caution` / `no_go` / `unknown`
+- **Go/no-go pill** on live strip + escalated banner for watched sessions
 
 ### 🟡 Partial
 
-- **Forecast vs actual mismatch** — data computed; no `go` / `caution` / `no_go` state machine
-- **Go/no-go pill** on live strip — not built
+- Temp-below-min distinct matrix block style (blue tint) — tooltip/dot only
 - Temp-below-min distinct matrix block style (blue tint) — tooltip/dot only
 - Loading skeleton per live strip
 - Windy weather warnings supplement
 
 ### ❌ Not done
 
-- Watched-session escalation (2 min TTL, planner banners) — needs watchlist
-- Session-day morning mismatch email for watched sessions
+- Session-day morning mismatch email for watched sessions (digest includes live line when configured)
 - Multi-model curve overlay (spec: out of scope — OK)
 
 ---
@@ -125,28 +125,26 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 
 ### ✅ Done
 
-- *(none for watchlist core)*
+- `watched_sessions` table (single-user local install)
+- `GET/POST/DELETE /api/watchlist`, `GET /api/watchlist/today`
+- ★ watch on matrix card (spot + selected day)
+- Pin strip above Horizon Planner with status pills
+- Session-day panel with live strip + go/no-go banner (escalated mismatch)
+- `watchlistStatus.js` — `last_status`, `status_snapshot`, trend detection
+- Daily watchlist digest cron + midnight purge (`watchlistDigest.js`)
+- `sport` per watched session; 2 min observation TTL for watched spots on session day
+- Env: `WATCHLIST_DIGEST_EMAIL_HOUR`, `WATCHLIST_PURGE_HOUR`, `WATCHED_OBSERVATION_TTL_MS`
 
 **Related (not watchlist):** favorites (`favorite_spot_ids`), search, out-of-radius inclusion via favorites.
 
 ### 🟡 Partial
 
-- Live strip on matrix today — not tied to watched session dates
-- Favorites pin spots in matrix — not planner date pins
+- Email requires SMTP + verified account not yet wired (local digest logs to console)
+- Planner day-cell star (matrix ★ only today)
 
-### ❌ Not done (v1)
+### ❌ Not done (v1 gaps)
 
-- `watched_sessions` table
-- `GET/POST/DELETE /api/watchlist`, `GET /api/watchlist/today`
-- Star on planner day → add watch
-- Pin strip above Horizon Planner
-- Session-day expanded panel
-- Mismatch banners escalated for watched sessions
-- Daily watchlist status digest email (on track / degrading / no_go)
-- `last_status`, `status_snapshot`, trend detection
-- Auto-purge rows when `session_date < today` (no past watches)
-- `sport` per watched session; status pill on planner card
-- Env: `WATCHLIST_DIGEST_EMAIL_HOUR`, `WATCHLIST_PURGE_HOUR`, `WATCHED_OBSERVATION_TTL_MS`
+- Cloud sync / multi-user `user_id` on watched sessions
 
 ### ❌ Not done (v2 ground truth)
 
@@ -262,14 +260,15 @@ Aligns with [user priorities](./2026-09-08-windwatch-design.md#user-priorities):
 | Live strip (all matrix days) | ✅ |
 | Session warnings (storm/fade) | ✅ |
 | Watchlist (spot + date) | ❌ |
-| Go/no-go pill | ❌ |
-| Offshore / water quality / level | ❌ |
-| Server `sessionRank` | ❌ |
+| Go/no-go pill | ✅ |
+| Offshore / water quality / level | 🟡 offshore only |
+| Server `sessionRank` | 🟡 used in alert/watchlist qualification |
 | Webcams / community | ❌ |
 | Spot local intel (parking, access, social) | ❌ |
 | Departure planner (leave-by + drive time) | ❌ |
 | Min consecutive hours (settings) | ✅ |
-| Per-sport profiles | ❌ |
-| Dashboard sport selector + horizon dots | ❌ |
+| Per-sport profiles | ✅ |
+| Dashboard sport selector + horizon dots | ✅ |
+| Session watchlist (spot + date) | ✅ |
 | Session lift share (driver opt-in, request, accept, email intro) | ❌ |
 | Session watcher count bands (matrix cards) | ❌ |

@@ -20,21 +20,27 @@ function createRideabilityRouter(db) {
   router.get('/', async (req, res) => {
     const lat = parseFloat(req.query.lat);
     const lng = parseFloat(req.query.lng);
-    const radius = parseFloat(req.query.radius ?? process.env.DEFAULT_RADIUS_KM ?? 50);
     const limit = parseInt(req.query.limit ?? process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10);
 
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
       return res.status(400).json({ error: 'lat and lng query parameters are required' });
     }
 
-    const prefs = getPreferences(db);
+    const sport = req.query.sport;
+    const prefs = getPreferences(db, sport);
+    if (!prefs) return res.status(500).json({ error: 'Preferences not configured' });
+
+    const effectiveRadius =
+      req.query.radius != null && req.query.radius !== ''
+        ? parseFloat(req.query.radius)
+        : prefs.radius_km;
     const sportColor = SPORT_COLORS[prefs.sport] ?? SPORT_COLORS.wingfoiling;
 
     const nearbySpots = selectDashboardSpots(
       getAllSpots(db),
       lat,
       lng,
-      radius,
+      effectiveRadius,
       limit,
       prefs.favorite_spot_ids
     );
@@ -45,7 +51,7 @@ function createRideabilityRouter(db) {
         sportColor,
         modelColors: MODEL_COLORS,
         weatherProvider: getProvider(),
-        radius_km: radius,
+        radius_km: effectiveRadius,
         center: { lat, lng },
         spots: [],
       });
@@ -120,7 +126,7 @@ function createRideabilityRouter(db) {
         sportColor,
         modelColors: MODEL_COLORS,
         weatherProvider: getProvider(),
-        radius_km: radius,
+        radius_km: effectiveRadius,
         center: { lat, lng },
         spots: results,
       });

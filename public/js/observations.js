@@ -44,7 +44,15 @@ const WindmateObservations = (() => {
       .join('');
   }
 
-  function renderLiveStrip(spot, obsEntry, rideEntry, prefs) {
+  function renderGoNoGoPill(mismatch) {
+    if (!mismatch?.state) return '';
+    const labels = WindmateCopy.observations.mismatch;
+    const label = labels[mismatch.state] ?? mismatch.state;
+    const cls = `go-no-go-pill go-no-go-pill--${mismatch.state}`;
+    return `<span class="${cls}" role="status">${label}</span>`;
+  }
+
+  function renderLiveStrip(spot, obsEntry, rideEntry, prefs, options = {}) {
     const spotId = spot.id;
     const current = obsEntry?.current;
     const warnings = rideEntry?.warnings ?? obsEntry?.today?.warnings ?? [];
@@ -54,10 +62,20 @@ const WindmateObservations = (() => {
       return new Date(h.time).getHours() === new Date(current.observedAt).getHours();
     });
 
+    const hasCurveData =
+      (obsEntry?.today?.actual?.length ?? 0) > 0 || (obsEntry?.today?.forecast?.length ?? 0) > 0;
+
     if (!current) {
+      const curveToggle = hasCurveData
+        ? `<button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}">
+            ${expanded.has(spotId) ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
+          </button>
+          <div id="curve-${spotId}" class="${expanded.has(spotId) ? '' : 'hidden'} mt-3"></div>`
+        : '';
       return `
         <div class="live-strip live-strip--empty mb-3 p-3 rounded-lg bg-base border border-base-border">
           <div class="text-xs text-slate-500">${WindmateCopy.observations.noCurrent}</div>
+          ${curveToggle}
           ${warningLines}
         </div>`;
     }
@@ -88,17 +106,25 @@ const WindmateObservations = (() => {
           )}</div>`
         : '';
 
+    const mismatch = obsEntry?.today?.summary?.mismatch;
+    const pill = renderGoNoGoPill(mismatch);
+    const escalatedBanner =
+      options.escalated && mismatch && (mismatch.state === 'caution' || mismatch.state === 'no_go')
+        ? `<div class="watch-mismatch-banner mt-2">${WindmateCopy.observations.mismatchMessage(mismatch, current)}</div>`
+        : '';
+
     return `
-      <div class="live-strip mb-3 p-3 rounded-lg bg-base border border-base-border">
+      <div class="live-strip mb-3 p-3 rounded-lg bg-base border border-base-border ${mismatch?.state === 'no_go' ? 'live-strip--no-go' : mismatch?.state === 'caution' ? 'live-strip--caution' : ''}">
         <div class="live-strip-content min-w-0">
           <div class="flex flex-wrap items-center gap-2 text-xs text-slate-300">
             <span class="live-dot ${dotClass(current, forecastHour)}"></span>
             <span class="font-semibold text-emerald-400">LIVE</span>
+            ${pill}
             <span>${Math.round(current.windSpeed)} kt ${current.direction} · gusts ${Math.round(current.gusts)} kt${tempSegment(current)}${stationMeta}</span>
             <span class="text-slate-500">· ${formatUpdated(current.observedAt)}</span>
             <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 sm:ml-auto">${sourceBadge(current.source)}</span>
           </div>
-          ${delta}${hazard}${windowSummary}
+          ${delta}${hazard}${windowSummary}${escalatedBanner}
         </div>
         <button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}">
           ${expanded.has(spotId) ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}

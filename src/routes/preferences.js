@@ -1,187 +1,123 @@
 const express = require('express');
-
-const { getPreferences, updatePreferences } = require('../db');
-
+const {
+  getFullPreferences,
+  getPreferences,
+  updateGlobalPreferences,
+  updateSportProfile,
+  getSportProfile,
+} = require('../db');
 const { SPORT_DEFAULTS, VALID_SPORTS } = require('../utils/sports');
 const { parseRankCriteriaOrder, VALID_RANK_CRITERIA } = require('../utils/rankCriteria');
 const { parseFavoriteSpotIds } = require('../utils/favoriteSpots');
 const { parseSearchRadiusKm } = require('../utils/searchRadius');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 
-
-
-
-
-
 function parseNullableFloat(value) {
-
   if (value === null || value === undefined || value === '') return null;
-
   const n = parseFloat(value);
-
   return Number.isNaN(n) ? null : n;
-
 }
 
-
-
 function createPreferencesRouter(db) {
-
   const router = express.Router();
 
-
-
   router.get('/', (_req, res) => {
-
-    res.json(getPreferences(db));
-
+    res.json(getFullPreferences(db));
   });
 
-
-
   router.put('/', (req, res) => {
+    const current = getFullPreferences(db);
 
-    const current = getPreferences(db);
-
-    const sport = req.body.sport ?? current.sport;
-
-    const sportChanged = sport !== current.sport;
-
-
-
-    if (!VALID_SPORTS.includes(sport)) {
-
-      return res.status(400).json({ error: `sport must be one of: ${VALID_SPORTS.join(', ')}` });
-
+    if (req.body.active_sport !== undefined) {
+      if (!VALID_SPORTS.includes(req.body.active_sport)) {
+        return res.status(400).json({ error: `active_sport must be one of: ${VALID_SPORTS.join(', ')}` });
+      }
+      const profile = getSportProfile(db, req.body.active_sport);
+      if (!profile?.enabled) {
+        return res.status(400).json({ error: 'Cannot activate a disabled sport' });
+      }
     }
 
+    const activeSport = req.body.active_sport ?? current.active_sport;
+    if (req.body.favorite_spot_ids !== undefined) {
+      updateSportProfile(db, activeSport, {
+        favorite_spot_ids: parseFavoriteSpotIds(req.body.favorite_spot_ids),
+      });
+    }
 
+    const updated = updateGlobalPreferences(db, {
+      active_sport: activeSport,
+      alerts_master_enabled:
+        req.body.alerts_master_enabled !== undefined
+          ? req.body.alerts_master_enabled
+          : current.alerts_master_enabled,
+    });
+
+    res.json(updated);
+  });
+
+  router.put('/sports/:sport', (req, res) => {
+    const sport = req.params.sport;
+    if (!VALID_SPORTS.includes(sport)) {
+      return res.status(400).json({ error: `Invalid sport: ${sport}` });
+    }
+
+    const current = getSportProfile(db, sport);
+    if (!current) return res.status(404).json({ error: 'Sport profile not found' });
 
     const defaults = SPORT_DEFAULTS[sport];
+    const body = req.body;
 
-    const min_wind_knots = parseInt(
-
-      req.body.min_wind_knots ?? (sportChanged ? defaults.min_wind_knots : current.min_wind_knots),
-
-      10
-
-    );
-
-    const max_gust_knots = parseInt(
-
-      req.body.max_gust_knots ?? (sportChanged ? defaults.max_gust_knots : current.max_gust_knots),
-
-      10
-
-    );
-
-
-
-    const min_air_temp_c =
-
-      req.body.min_air_temp_c !== undefined
-
-        ? parseNullableFloat(req.body.min_air_temp_c)
-
-        : sportChanged
-
-          ? defaults.min_air_temp_c
-
-          : current.min_air_temp_c;
-
-
-
-    const min_water_temp_c =
-
-      req.body.min_water_temp_c !== undefined
-
-        ? parseNullableFloat(req.body.min_water_temp_c)
-
-        : sportChanged
-
-          ? defaults.min_water_temp_c
-
-          : current.min_water_temp_c;
-
-
-
-    if (Number.isNaN(min_wind_knots) || Number.isNaN(max_gust_knots)) {
-
-      return res.status(400).json({ error: 'min_wind_knots and max_gust_knots must be integers' });
-
-    }
-
-    if (min_wind_knots < 0 || max_gust_knots < min_wind_knots) {
-
-      return res.status(400).json({ error: 'Invalid wind thresholds' });
-
-    }
-
-    let rank_criteria_order = parseRankCriteriaOrder(current.rank_criteria_order);
-    if (req.body.rank_criteria_order !== undefined) {
-      rank_criteria_order = parseRankCriteriaOrder(req.body.rank_criteria_order);
-      if (rank_criteria_order.length !== VALID_RANK_CRITERIA.size) {
+    if (body.rank_criteria_order !== undefined) {
+      const order = parseRankCriteriaOrder(body.rank_criteria_order);
+      if (order.length !== VALID_RANK_CRITERIA.size) {
         return res.status(400).json({ error: 'rank_criteria_order must include each ranking criterion once' });
       }
     }
 
-    let favorite_spot_ids = parseFavoriteSpotIds(current.favorite_spot_ids);
-    if (req.body.favorite_spot_ids !== undefined) {
-      favorite_spot_ids = parseFavoriteSpotIds(req.body.favorite_spot_ids);
+    const min_wind_knots = body.min_wind_knots !== undefined
+      ? parseInt(body.min_wind_knots, 10)
+      : current.min_wind_knots;
+    const max_gust_knots = body.max_gust_knots !== undefined
+      ? parseInt(body.max_gust_knots, 10)
+      : current.max_gust_knots;
+
+    if (Number.isNaN(min_wind_knots) || Number.isNaN(max_gust_knots)) {
+      return res.status(400).json({ error: 'min_wind_knots and max_gust_knots must be integers' });
+    }
+    if (min_wind_knots < 0 || max_gust_knots < min_wind_knots) {
+      return res.status(400).json({ error: 'Invalid wind thresholds' });
     }
 
-    let radius_km = parseSearchRadiusKm(current.radius_km);
-    if (req.body.radius_km !== undefined) {
-      radius_km = parseSearchRadiusKm(req.body.radius_km);
+    try {
+      updateSportProfile(db, sport, {
+        enabled: body.enabled,
+        min_wind_knots,
+        max_gust_knots,
+        min_air_temp_c:
+          body.min_air_temp_c !== undefined ? parseNullableFloat(body.min_air_temp_c) : current.min_air_temp_c,
+        min_water_temp_c:
+          body.min_water_temp_c !== undefined ? parseNullableFloat(body.min_water_temp_c) : current.min_water_temp_c,
+        offshore_wind_ok: body.offshore_wind_ok,
+        wave_preference: body.wave_preference,
+        min_foil_depth_cm: body.min_foil_depth_cm,
+        radius_km: body.radius_km !== undefined ? parseSearchRadiusKm(body.radius_km) : current.radius_km,
+        min_rideable_window_hours:
+          body.min_rideable_window_hours !== undefined
+            ? parseMinRideableWindowHours(body.min_rideable_window_hours)
+            : current.min_rideable_window_hours,
+        rank_criteria_order: body.rank_criteria_order,
+        alert_enabled: body.alert_enabled,
+        alert_schedule: body.alert_schedule,
+        favorite_spot_ids: body.favorite_spot_ids,
+      });
+      res.json(getFullPreferences(db));
+    } catch (err) {
+      res.status(400).json({ error: err.message });
     }
-
-    let offshore_wind_ok = current.offshore_wind_ok ? 1 : 0;
-    if (req.body.offshore_wind_ok !== undefined) {
-      offshore_wind_ok = req.body.offshore_wind_ok ? 1 : 0;
-    } else if (sportChanged) {
-      offshore_wind_ok = defaults.offshore_wind_ok ? 1 : 0;
-    }
-
-    let min_rideable_window_hours = parseMinRideableWindowHours(current.min_rideable_window_hours);
-    if (req.body.min_rideable_window_hours !== undefined) {
-      min_rideable_window_hours = parseMinRideableWindowHours(req.body.min_rideable_window_hours);
-    }
-
-    const updated = updatePreferences(db, {
-
-      sport,
-
-      min_wind_knots,
-
-      max_gust_knots,
-
-      min_air_temp_c,
-
-      min_water_temp_c,
-
-      rank_criteria_order,
-
-      favorite_spot_ids,
-
-      radius_km,
-
-      offshore_wind_ok,
-
-      min_rideable_window_hours,
-
-    });
-
-    res.json(updated);
-
   });
 
-
-
   return router;
-
 }
 
-
-
-module.exports = { createPreferencesRouter };
-
+module.exports = { createPreferencesRouter, getPreferencesForSport: getPreferences };

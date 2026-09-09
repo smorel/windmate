@@ -10,19 +10,32 @@ function createObservationsRouter(db) {
   router.get('/', async (req, res) => {
     const lat = parseFloat(req.query.lat);
     const lng = parseFloat(req.query.lng);
-    const radius = parseFloat(req.query.radius ?? process.env.DEFAULT_RADIUS_KM ?? 50);
     const limit = parseInt(req.query.limit ?? process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10);
 
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
       return res.status(400).json({ error: 'lat and lng required' });
     }
 
-    const prefs = getPreferences(db);
+    const sport = req.query.sport;
+    const prefs = getPreferences(db, sport);
+    if (!prefs) return res.status(500).json({ error: 'Preferences not configured' });
+
+    const effectiveRadius =
+      req.query.radius != null && req.query.radius !== ''
+        ? parseFloat(req.query.radius)
+        : prefs.radius_km;
+    const watchedSpotIds = new Set(
+      (req.query.watchedSpotIds ?? '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean)
+    );
+
     const nearbySpots = selectDashboardSpots(
       getAllSpots(db),
       lat,
       lng,
-      radius,
+      effectiveRadius,
       limit,
       prefs.favorite_spot_ids
     );
@@ -30,7 +43,7 @@ function createObservationsRouter(db) {
     if (!nearbySpots.length) {
       return res.json({
         spots: [],
-        radius_km: radius,
+        radius_km: effectiveRadius,
         center: { lat, lng },
       });
     }
@@ -40,7 +53,14 @@ function createObservationsRouter(db) {
         nearbySpots.map(async (spot) => {
           try {
             const forecast = await fetchForecast(db, spot.id, spot);
-            return await fetchSpotObservations(db, spot, prefs, forecast);
+            const escalated = watchedSpotIds.has(spot.id);
+            const ttlMs = escalated
+              ? parseInt(process.env.WATCHED_OBSERVATION_TTL_MS ?? '120000', 10)
+              : undefined;
+            return await fetchSpotObservations(db, spot, prefs, forecast, {
+              escalated,
+              ttlMs,
+            });
           } catch {
             return {
               spot: {
@@ -68,7 +88,7 @@ function createObservationsRouter(db) {
 
       res.json({
         spots: results,
-        radius_km: radius,
+        radius_km: effectiveRadius,
         center: { lat, lng },
       });
     } catch (err) {

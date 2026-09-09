@@ -35,4 +35,52 @@ const SPORT_COLORS = {
   parawing: { name: 'Amber', hex: '#f59e0b', tailwind: 'amber' },
 };
 
-module.exports = { VALID_SPORTS, SPORT_DEFAULTS, SPORT_WAVE_DEFAULTS, SPORT_COLORS };
+const SPORT_DISPLAY_NAMES = {
+  wingfoiling: 'Wingfoiling',
+  sailing: 'Sailing',
+  kitesurfing: 'Kitesurfing',
+  windsurfing: 'Windsurfing',
+  kitefoiling: 'Kitefoiling',
+  parawing: 'Parawing',
+};
+
+const DEFAULT_RANK_ORDER_BY_SPORT = {
+  wingfoiling: ['proximity', 'rideability', 'bestWindow', 'wind', 'onshore', 'waveMatch'],
+  parawing: ['proximity', 'rideability', 'bestWindow', 'wind', 'onshore', 'waveMatch'],
+  kitefoiling: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'waveMatch'],
+  kitesurfing: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'waveMatch'],
+  windsurfing: ['rideability', 'proximity', 'bestWindow', 'onshore', 'wind', 'waveMatch'],
+  sailing: ['wind', 'bestWindow', 'waveMatch', 'rideability', 'proximity', 'onshore'],
+};
+
+const DEFAULT_ALERT_SCHEDULE = {
+  horizon_days: 7,
+  days_of_week: [0, 1, 2, 3, 4, 5, 6],
+  today_alerts: true,
+  min_session_score: 0.55,
+};
+
+const DEFAULT_ALERT_SCHEDULE_BY_SPORT = {
+  wingfoiling: DEFAULT_ALERT_SCHEDULE,
+  parawing: DEFAULT_ALERT_SCHEDULE,
+  kitefoiling: DEFAULT_ALERT_SCHEDULE,
+  kitesurfing: DEFAULT_ALERT_SCHEDULE,
+  windsurfing: DEFAULT_ALERT_SCHEDULE,
+  sailing: {
+    horizon_days: 7,
+    days_of_week: [0, 6],
+    today_alerts: true,
+    min_session_score: 0.6,
+  },
+};
+
+module.exports = {
+  VALID_SPORTS,
+  SPORT_DEFAULTS,
+  SPORT_WAVE_DEFAULTS,
+  SPORT_COLORS,
+  SPORT_DISPLAY_NAMES,
+  DEFAULT_RANK_ORDER_BY_SPORT,
+  DEFAULT_ALERT_SCHEDULE,
+  DEFAULT_ALERT_SCHEDULE_BY_SPORT,
+};

@@ -46,6 +46,8 @@
       </div>
     </header>
 
+    <div id="sport-selector" class="sport-selector mb-4"></div>
+
     <div id="spot-search" class="spot-search relative">
       <label for="spot-search-input" class="sr-only">Search spots</label>
       <input
@@ -74,6 +76,7 @@
     </section>
 
     <section class="dashboard-planner">
+      <div id="watchlist-strip" class="watchlist-strip hidden mb-6"></div>
       <h2 class="text-lg font-semibold text-white mb-4">Horizon Planner</h2>
       <div class="horizon-planner-sticky">
         <div id="horizon-planner" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"></div>
@@ -116,22 +119,18 @@
       </header>
       <div class="settings-modal-body">
         <form id="prefs-form" class="space-y-6">
+          <div class="pt-1 border-b border-base-border pb-5">
+            <h3 class="text-sm font-semibold text-white mb-2">My sports</h3>
+            <p class="text-xs text-slate-500 mb-3">Pick the sports you ride — only these show on the dashboard.</p>
+            <div id="my-sports-list" class="grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+          </div>
+          <div id="sport-settings-tabs" class="flex flex-wrap gap-2"></div>
+          <p id="sport-settings-hint" class="text-[10px] text-slate-500">Using your wingfoil settings — switch sport on the dashboard.</p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label class="block sm:col-span-2">
               <span class="text-xs uppercase tracking-wide text-slate-400">Search radius (km)</span>
               <input id="search-radius" type="number" min="5" max="300" step="5" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
               <span class="text-[10px] text-slate-500">Nearby spots within this range; favorites can be farther</span>
-            </label>
-            <label class="block sm:col-span-2">
-              <span class="text-xs uppercase tracking-wide text-slate-400">Sport</span>
-              <select id="sport" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white">
-                <option value="wingfoiling">Wingfoiling</option>
-                <option value="sailing">Sailing</option>
-                <option value="kitesurfing">Kitesurfing</option>
-                <option value="windsurfing">Windsurfing</option>
-                <option value="kitefoiling">Kitefoiling</option>
-                <option value="parawing">Parawing</option>
-              </select>
             </label>
             <label class="block">
               <span class="text-xs uppercase tracking-wide text-slate-400">Min wind (kt)</span>
@@ -162,6 +161,21 @@
               <span class="text-xs uppercase tracking-wide text-slate-400">Min session window (hrs)</span>
               <input id="min-rideable-window" type="number" min="1" max="24" step="1" value="2" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
               <span class="text-[10px] text-slate-500">Consecutive rideable hours needed to count as a session window</span>
+            </label>
+          </div>
+          <div class="pt-5 border-t border-base-border">
+            <h3 class="text-sm font-semibold text-white mb-2">Alerts</h3>
+            <label class="flex items-center gap-2 mb-3">
+              <input id="alert-enabled" type="checkbox" class="rounded border-base-border" />
+              <span class="text-sm text-slate-300">Email me when a good session appears</span>
+            </label>
+            <label class="block mb-3">
+              <span class="text-xs uppercase tracking-wide text-slate-400">Days to alert</span>
+              <select id="alert-days-preset" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white">
+                <option value="any">Any day</option>
+                <option value="weekends">Weekends only</option>
+                <option value="weekdays">Weekdays only</option>
+              </select>
             </label>
           </div>
           <div class="pt-5 border-t border-base-border">
@@ -199,6 +213,8 @@
   <script src="/js/weatherHazards.js"></script>
   <script src="/js/spotMap.js"></script>
   <script src="/js/observations.js"></script>
+  <script src="/js/sportSelector.js"></script>
+  <script src="/js/watchlist.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

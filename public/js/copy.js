@@ -83,17 +83,6 @@ const WindmateCopy = {
     ariaEmpty: (name, dayLabel) => `Forecast map for ${name}, ${dayLabel}`,
   },
 
-  picks: {
-    intro: (count) =>
-      `Found ${count} rideable spot${count === 1 ? '' : 's'} nearby — here's what I'd do today:`,
-    session: (name, hours, wind, direction, timeRange = '') =>
-      `<strong>${name}</strong> — ${hours} rideable hr${hours === 1 ? '' : 's'} today${timeRange}, up to ${wind} kt ${direction}`,
-    quiet:
-      "Quiet one today mate — nothing hits your wind thresholds. Best bet follows your ranking order below.",
-    bestWind: (name, wind, direction, dist) =>
-      `Best bet: <strong>${name}</strong> (${dist} km) — up to ${wind} kt ${direction}`,
-  },
-
   horizon: {
     modelsAgree: (agreeing, total) => `${agreeing}/${total} models back me up`,
     spotsWithWindows: (count) =>
@@ -241,5 +230,24 @@ const WindmateCopy = {
     noTraffic: (drive) => `~${drive} min — no live traffic data.`,
     checkLive: 'Check live before you leave.',
     openMaps: 'Open in Google Maps',
+  },
+
+  spotIntel: {
+    drawerTitle: 'Spot Details',
+    mediaTitle: 'Spot photos & videos',
+    sportLabel: (sport) => sport.replace(/_/g, ' '),
+    loading: 'Loading spot media…',
+    empty: 'Nothing cached for this spot yet — try Google Images or Videos below.',
+    morePhotosHint: 'Want more? Search on Google:',
+    searchImages: 'Google Images',
+    searchVideos: 'Google Videos',
+    moreOnGoogle: 'More on Google',
+    openMedia: 'Open media',
+    openImageSource: 'View original',
+    openVideoSource: 'Watch on source',
+    counter: (current, total) => `${current} / ${total}`,
+    closeModal: 'Close media viewer',
+    prevMedia: 'Previous',
+    nextMedia: 'Next',
   },
 };

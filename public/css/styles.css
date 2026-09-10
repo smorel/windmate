@@ -1491,3 +1491,326 @@ body.modal-open {
 .departure-plan-group--banner-only .departure-line__maps:hover {
   color: #f8fafc;
 }
+
+/* Spot local intel drawer (matrix cards) */
+.spot-intel-drawer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #1a2235;
+}
+
+.spot-intel-drawer__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.35rem 0;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.spot-intel-drawer__toggle:hover {
+  color: #e2e8f0;
+}
+
+.spot-intel-drawer__chevron {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.spot-intel-drawer__panel {
+  padding-top: 0.75rem;
+}
+
+.spot-intel-media__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.spot-intel-media__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.spot-intel-media__sport {
+  font-size: 0.65rem;
+  color: #64748b;
+  text-transform: capitalize;
+}
+
+.spot-intel-media__strip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.spot-intel-media__tile {
+  position: relative;
+  flex: 0 0 auto;
+  width: 7.5rem;
+  height: 5rem;
+  padding: 0;
+  border: 1px solid #1a2235;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #0b0f19;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+
+.spot-intel-media__tile:hover {
+  border-color: #2d3a52;
+  box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.25);
+}
+
+.spot-intel-media__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.spot-intel-media__play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  background: rgba(2, 6, 23, 0.25);
+}
+
+.spot-intel-media__duration {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.3rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  background: rgba(2, 6, 23, 0.75);
+  color: #e2e8f0;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+.spot-intel-media__footer {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.spot-intel-media__google-hint {
+  font-size: 0.65rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.spot-intel-media__more,
+.spot-intel-media__link {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #34d399;
+  text-decoration: none;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.spot-intel-media__more:hover,
+.spot-intel-media__link:hover {
+  text-decoration: underline;
+}
+
+.spot-intel-media__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.spot-intel-media__empty-copy {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.spot-intel-media__loading {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+/* Spot media lightbox */
+.spot-media-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.spot-media-modal.hidden {
+  display: none;
+}
+
+.spot-media-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.88);
+  backdrop-filter: blur(6px);
+}
+
+.spot-media-modal__frame {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 56rem);
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.spot-media-modal__close {
+  position: absolute;
+  top: -0.25rem;
+  right: 0;
+  z-index: 2;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid #1a2235;
+  background: rgba(15, 20, 34, 0.92);
+  color: #94a3b8;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.spot-media-modal__close:hover {
+  color: #f8fafc;
+  border-color: #2d3a52;
+}
+
+.spot-media-modal__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  border: 1px solid #1a2235;
+  background: rgba(15, 20, 34, 0.92);
+  color: #e2e8f0;
+  font-size: 1.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.spot-media-modal__nav:hover:not(:disabled) {
+  border-color: #34d399;
+  color: #34d399;
+}
+
+.spot-media-modal__nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.spot-media-modal__nav--prev {
+  left: 0.5rem;
+}
+
+.spot-media-modal__nav--next {
+  right: 0.5rem;
+}
+
+.spot-media-modal__stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 12rem;
+  max-height: calc(100vh - 8rem);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: #0b0f19;
+  border: 1px solid #1a2235;
+}
+
+.spot-media-modal__image,
+.spot-media-modal__video {
+  max-width: 100%;
+  max-height: calc(100vh - 8rem);
+  width: auto;
+  height: auto;
+  display: block;
+}
+
+.spot-media-modal__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.25rem;
+}
+
+.spot-media-modal__caption {
+  font-size: 0.875rem;
+  color: #e2e8f0;
+}
+
+.spot-media-modal__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.spot-media-modal__counter {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.spot-media-modal__source {
+  font-size: 0.75rem;
+  color: #34d399;
+  text-decoration: none;
+}
+
+.spot-media-modal__source:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .spot-intel-media__tile {
+    width: 6.5rem;
+    height: 4.25rem;
+  }
+
+  .spot-media-modal__nav--prev {
+    left: 0.25rem;
+  }
+
+  .spot-media-modal__nav--next {
+    right: 0.25rem;
+  }
+}

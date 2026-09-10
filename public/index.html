@@ -6,7 +6,7 @@
   <title>Windmate</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="/css/styles.css?v=7" />
+  <link rel="stylesheet" href="/css/styles.css?v=8" />
   <script>
     tailwind.config = {
       theme: {
@@ -91,11 +91,6 @@
         <div id="spot-map-container" class="spot-map-container"></div>
       </div>
     </div>
-
-    <section id="mate-picks" class="hidden bg-base-card border border-base-border rounded-xl p-5">
-      <h2 class="text-lg font-semibold text-white mb-2">Mate's picks today</h2>
-      <div id="mate-picks-content" class="space-y-2 text-sm text-slate-300"></div>
-    </section>
 
     <section class="dashboard-planner">
       <h2 class="text-lg font-semibold text-white mb-4">Horizon Planner</h2>
@@ -256,7 +251,24 @@
     </div>
   </div>
 
-  <script src="/js/copy.js"></script>
+  <div id="spot-media-modal" class="spot-media-modal hidden" role="dialog" aria-modal="true" aria-label="Spot media viewer">
+    <div class="spot-media-modal__backdrop" data-close-media-modal tabindex="-1"></div>
+    <div class="spot-media-modal__frame">
+      <button type="button" class="spot-media-modal__close" data-close-media-modal aria-label="Close media viewer">×</button>
+      <button type="button" class="spot-media-modal__nav spot-media-modal__nav--prev" data-media-prev aria-label="Previous">‹</button>
+      <button type="button" class="spot-media-modal__nav spot-media-modal__nav--next" data-media-next aria-label="Next">›</button>
+      <div class="spot-media-modal__stage" data-media-stage></div>
+      <div class="spot-media-modal__meta">
+        <p class="spot-media-modal__caption" data-media-caption></p>
+        <div class="spot-media-modal__actions">
+          <span class="spot-media-modal__counter" data-media-counter></span>
+          <a class="spot-media-modal__source hidden" data-media-source target="_blank" rel="noopener"></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/copy.js?v=2"></script>
   <script src="/js/forecastTime.js"></script>
   <script src="/js/windColors.js"></script>
   <script src="/js/waveColors.js"></script>
@@ -270,6 +282,7 @@
   <script src="/js/sportSelector.js"></script>
   <script src="/js/watchlist.js"></script>
   <script src="/js/departure.js?v=11"></script>
+  <script src="/js/spotIntel.js?v=3"></script>
   <script src="/js/app.js?v=8"></script>
 </body>
 </html>

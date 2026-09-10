@@ -48,8 +48,6 @@ const els = {
   modelLegend: document.getElementById('model-legend'),
   legendBtn: document.getElementById('legend-btn'),
   legendModal: document.getElementById('legend-modal'),
-  matePicks: document.getElementById('mate-picks'),
-  matePicksContent: document.getElementById('mate-picks-content'),
   settingsBtn: document.getElementById('settings-btn'),
   settingsModal: document.getElementById('settings-modal'),
   settingsSaveStatus: document.getElementById('settings-save-status'),
@@ -332,7 +330,6 @@ function applyRankOrderToMatrix() {
   const prefs = prefsForRanking(rideabilityData.preferences);
   rankCriteriaOrder = prefs.rank_criteria_order;
   const payload = { ...rideabilityData, preferences: prefs };
-  renderMatePicks(payload);
   renderRideabilityMatrix(payload, observationsData);
   refreshWatchlistDepartures();
 }
@@ -585,7 +582,8 @@ function applyFullPreferences(prefs) {
 function isAnyModalOpen() {
   return (
     !els.settingsModal?.classList.contains('hidden') ||
-    !els.legendModal?.classList.contains('hidden')
+    !els.legendModal?.classList.contains('hidden') ||
+    !document.getElementById('spot-media-modal')?.classList.contains('hidden')
   );
 }
 
@@ -660,7 +658,10 @@ function initSettingsModal() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (!els.legendModal?.classList.contains('hidden')) {
+    const mediaModal = document.getElementById('spot-media-modal');
+    if (mediaModal && !mediaModal.classList.contains('hidden')) {
+      WindmateSpotIntel.closeMediaModal();
+    } else if (!els.legendModal?.classList.contains('hidden')) {
       closeLegendModal();
     } else if (!els.settingsModal?.classList.contains('hidden')) {
       closeSettingsModal();
@@ -800,7 +801,6 @@ async function refreshDashboard({ silent = false } = {}) {
       summary: horizonSummary,
     });
     renderRankCriteriaList(rankCriteriaOrder);
-    renderMatePicks(rideabilityData);
     renderModelLegend(rideabilityData);
     renderHorizonPlanner(rideabilityData);
     renderRideabilityMatrix(rideabilityData, observationsData);
@@ -827,54 +827,7 @@ async function refreshDashboard({ silent = false } = {}) {
     const msg = WindmateCopy.errors.loadFailed(err.message);
     els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
     els.rideabilityMatrix.innerHTML = `<p class="text-red-400">${msg}</p>`;
-    els.matePicks.classList.add('hidden');
   }
-}
-
-function renderMatePicks(data) {
-  if (!els.matePicks || !els.matePicksContent) return;
-
-  if (!data.spots.length) {
-    els.matePicks.classList.add('hidden');
-    return;
-  }
-
-  els.matePicks.classList.remove('hidden');
-
-  const today = WindmateForecastTime.forecastTodayFromRideability(data);
-  const prefs = prefsForRanking(data.preferences);
-  const rankedRows = sortSpotsForDay(data.spots, today, prefs, getSearchRadiusKm());
-  const withSessions = rankedRows.filter((row) => row.rideableCount > 0);
-
-  if (withSessions.length > 0) {
-    const top = withSessions.slice(0, 3);
-    els.matePicksContent.innerHTML =
-      `<p class="text-slate-400 mb-3">${WindmateCopy.picks.intro(withSessions.length)}</p>` +
-      top
-        .map((row) => {
-          const entry = row.entry;
-          const windowHours = getEfficientWindowHours(entry, today, prefs);
-          const dayHours = getSpotDayData(entry, today)?.hours ?? entry.today ?? [];
-          const peak = dayHours.reduce(
-            (best, h) =>
-              h.rideable && h.windSpeed > (best?.windSpeed ?? 0) ? h : best,
-            null
-          );
-          const timeRange = WindmateForecastTime.formatWindowTimeRange(windowHours);
-          const windowCount = windowHours.length || row.rideableCount;
-          return `<p>${WindmateCopy.picks.session(
-            entry.spot.name,
-            windowCount,
-            Math.round(peak?.windSpeed ?? 0),
-            peak?.direction ?? '—',
-            timeRange
-          )}</p>`;
-        })
-        .join('');
-    return;
-  }
-
-  els.matePicksContent.innerHTML = `<p class="text-slate-400">${WindmateCopy.picks.quiet}</p>`;
 }
 
 function renderRideLegend() {
@@ -1979,10 +1932,9 @@ function renderRideabilityMatrix(data, observations) {
         data.preferences.sport,
         watched
       );
-      const windowStatsLine =
-        sessionVerdict?.reason
-          ? ''
-          : renderEfficientWindowStats(entry, selectedDayDate, data.preferences);
+      const windowStatsLine = verdictBanner
+        ? ''
+        : renderEfficientWindowStats(entry, selectedDayDate, data.preferences);
 
       return `
         <div class="bg-base-card border border-base-border rounded-xl p-5" data-spot-id="${spot.id}">
@@ -2023,6 +1975,7 @@ function renderRideabilityMatrix(data, observations) {
               <path class="departure-plan-stroke__shape"></path>
             </svg>
           </div>
+          ${WindmateSpotIntel.renderDrawer(spot.id, data.preferences.sport, spot.name)}
         </div>`;
     })
     .join('');
@@ -2053,6 +2006,7 @@ function renderRideabilityMatrix(data, observations) {
     data.preferences.sport,
     sessionVerdictBySpot
   );
+  WindmateSpotIntel.bindDrawers(els.rideabilityMatrix, data.preferences.sport);
 }
 
 if (els.locateBtn) {
@@ -2071,6 +2025,7 @@ els.manualLocBtn.addEventListener('click', () => {
   initRankCriteriaSection();
   initLegendModal();
   initSettingsModal();
+  WindmateSpotIntel.init();
   initSpotMapPicker();
   initSpotSearch();
   initFavoriteToggles();

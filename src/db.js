@@ -73,6 +73,7 @@ function initDb() {
   migrateDb(db);
   seedPreferences(db);
   seedMontrealIdealDirections(db);
+  purgePlaceholderIntelCache(db);
   return db;
 }
 
@@ -193,6 +194,18 @@ function migrateDb(db) {
   migrateSportFavorites(db);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS spot_intel_cache (
+      spot_id TEXT PRIMARY KEY REFERENCES spots(id),
+      fetched_at INTEGER NOT NULL,
+      signals TEXT,
+      headline TEXT,
+      overall_level TEXT,
+      valid_for_date TEXT,
+      media_gallery TEXT
+    )
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS travel_time_cache (
       origin_lat REAL NOT NULL,
       origin_lng REAL NOT NULL,
@@ -281,6 +294,13 @@ function seedPreferences(db) {
     DEFAULT_SEARCH_RADIUS_KM,
     defaults.offshore_wind_ok
   );
+}
+
+/** Drop cached galleries that used placeholder stock photos or low-quality matches. */
+function purgePlaceholderIntelCache(db) {
+  db.prepare(`DELETE FROM spot_intel_cache WHERE media_gallery LIKE '%picsum.photos%'`).run();
+  db.prepare(`DELETE FROM spot_intel_cache WHERE media_gallery LIKE '%WTMTL%'`).run();
+  db.prepare(`DELETE FROM spot_intel_cache WHERE media_gallery LIKE '%wikimedia_commons%'`).run();
 }
 
 /** Merge ideal wind directions from Montreal seed onto synced spots by proximity. */
@@ -678,6 +698,38 @@ function updateWatchedSessionStatus(db, id, patch) {
   );
 }
 
+function getSpotIntelCache(db, spotId) {
+  return db
+    .prepare(
+      `SELECT spot_id, fetched_at, signals, headline, overall_level, valid_for_date, media_gallery
+       FROM spot_intel_cache WHERE spot_id = ?`
+    )
+    .get(spotId);
+}
+
+function setSpotIntelCache(db, spotId, row) {
+  db.prepare(`
+    INSERT INTO spot_intel_cache (
+      spot_id, fetched_at, signals, headline, overall_level, valid_for_date, media_gallery
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(spot_id) DO UPDATE SET
+      fetched_at = excluded.fetched_at,
+      signals = excluded.signals,
+      headline = excluded.headline,
+      overall_level = excluded.overall_level,
+      valid_for_date = excluded.valid_for_date,
+      media_gallery = excluded.media_gallery
+  `).run(
+    spotId,
+    row.fetched_at ?? Date.now(),
+    row.signals ?? null,
+    row.headline ?? null,
+    row.overall_level ?? null,
+    row.valid_for_date ?? null,
+    row.media_gallery ?? null
+  );
+}
+
 function getObservationCache(db, spotId) {
   return db.prepare('SELECT fetched_at, data FROM observation_cache WHERE spot_id = ?').get(spotId);
 }
@@ -782,6 +834,8 @@ module.exports = {
   getSpotById,
   getSpotsByIds,
   insertManualSpot,
+  getSpotIntelCache,
+  setSpotIntelCache,
   getObservationCache,
   setObservationCache,
   getWatchedSessions,

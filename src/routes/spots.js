@@ -3,10 +3,12 @@ const { v4: uuidv4 } = require('uuid');
 const { haversineKm } = require('../utils/geo');
 const {
   getAllSpots,
+  getSpotById,
   getPreferences,
   getSpotsByIds,
   insertManualSpot,
 } = require('../db');
+const { getSpotIntel } = require('../services/spotIntel');
 const { searchSpots } = require('../utils/spotSelection');
 const { parseFavoriteSpotIds } = require('../utils/favoriteSpots');
 const {
@@ -126,6 +128,20 @@ function createSpotsRouter(db) {
       res.status(201).json(formatSpotForMap(created, favSet));
     } catch (err) {
       res.status(500).json({ error: err.message ?? 'Spot creation failed' });
+    }
+  });
+
+  router.get('/:spotId/intel', async (req, res) => {
+    try {
+      const spot = getSpotById(db, req.params.spotId);
+      if (!spot) {
+        return res.status(404).json({ error: 'Spot not found' });
+      }
+      const sport = req.query.sport ?? getPreferences(db)?.sport ?? 'wingfoiling';
+      const intel = await getSpotIntel(db, spot.id, sport);
+      res.json(intel);
+    } catch (err) {
+      res.status(500).json({ error: err.message ?? 'Spot intel failed' });
     }
   });
 

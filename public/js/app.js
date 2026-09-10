@@ -2044,7 +2044,10 @@ function renderRideabilityMatrix(data, observations) {
             obsEntry,
             entry,
             prefsForRanking(data.preferences),
-            sessionVerdict ? { sessionGoNoGo: sessionVerdict, suppressVerdictBanner: true } : {}
+            {
+              curveKey: `matrix:${spot.id}`,
+              ...(sessionVerdict ? { sessionGoNoGo: sessionVerdict, suppressVerdictBanner: true } : {}),
+            }
           )
         : '';
 

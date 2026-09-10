@@ -87,6 +87,8 @@ const WindmateObservations = (() => {
 
   function renderLiveStrip(spot, obsEntry, rideEntry, prefs, options = {}) {
     const spotId = spot.id;
+    const curveKey = options.curveKey ?? `spot:${spotId}`;
+    const curveExpanded = expanded.has(curveKey);
     const current = obsEntry?.current;
     const warnings = rideEntry?.warnings ?? obsEntry?.today?.warnings ?? [];
     const warningLines = renderWarningLines(warnings, prefs);
@@ -100,10 +102,10 @@ const WindmateObservations = (() => {
 
     if (!current) {
       const curveToggle = hasCurveData
-        ? `<button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}">
-            ${expanded.has(spotId) ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
+        ? `<button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}" data-curve-key="${curveKey}">
+            ${curveExpanded ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
           </button>
-          <div class="curve-panel ${expanded.has(spotId) ? '' : 'hidden'} mt-3" data-spot-id="${spotId}"></div>`
+          <div class="curve-panel ${curveExpanded ? '' : 'hidden'} mt-3" data-spot-id="${spotId}" data-curve-key="${curveKey}"></div>`
         : '';
       return `
         <div class="live-strip live-strip--empty mb-3 p-3 rounded-lg bg-base border border-base-border">
@@ -164,10 +166,10 @@ const WindmateObservations = (() => {
           </div>
           ${delta}${hazard}${windowSummary}${verdictBanner}
         </div>
-        <button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}">
-          ${expanded.has(spotId) ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
+        <button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}" data-curve-key="${curveKey}">
+          ${curveExpanded ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
         </button>
-        <div class="curve-panel ${expanded.has(spotId) ? '' : 'hidden'} mt-3" data-spot-id="${spotId}"></div>
+        <div class="curve-panel ${curveExpanded ? '' : 'hidden'} mt-3" data-spot-id="${spotId}" data-curve-key="${curveKey}"></div>
         ${warningLines}
       </div>`;
   }
@@ -219,6 +221,130 @@ const WindmateObservations = (() => {
       .join('');
   }
 
+  function fractionalHourFromTime(time) {
+    const d = new Date(time);
+    return d.getHours() + d.getMinutes() / 60;
+  }
+
+  function formatFractionalHour(hour) {
+    const h = Math.floor(hour) % 24;
+    const m = Math.round((hour - Math.floor(hour)) * 60) % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  function roundKt(value) {
+    return Math.round(value * 10) / 10;
+  }
+
+  /** Linear sample of wind/gust along the day axis; null if series empty or hour past last point. */
+  function sampleSeriesAtHour(points, hour, allowBeyondLast = false) {
+    if (!points?.length) return null;
+    const sorted = [...points].sort(
+      (a, b) => fractionalHourFromTime(a.time) - fractionalHourFromTime(b.time)
+    );
+    const samples = sorted.map((p) => ({
+      h: fractionalHourFromTime(p.time),
+      wind: p.windSpeed,
+      gust: p.gusts ?? p.windSpeed,
+    }));
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    if (hour < first.h) {
+      return { wind: first.wind, gust: first.gust };
+    }
+    if (hour > last.h) {
+      if (!allowBeyondLast) return null;
+      return { wind: last.wind, gust: last.gust };
+    }
+    for (let i = 0; i < samples.length - 1; i++) {
+      const a = samples[i];
+      const b = samples[i + 1];
+      if (hour >= a.h && hour <= b.h) {
+        const span = b.h - a.h;
+        const t = span > 0 ? (hour - a.h) / span : 0;
+        return {
+          wind: a.wind + t * (b.wind - a.wind),
+          gust: a.gust + t * (b.gust - a.gust),
+        };
+      }
+    }
+    return { wind: last.wind, gust: last.gust };
+  }
+
+  function bindCurveHover(chartRoot, layout) {
+    const svg = chartRoot.querySelector('svg');
+    const hit = chartRoot.querySelector('.curve-hit-area');
+    const crosshair = chartRoot.querySelector('.curve-crosshair');
+    const tooltip = chartRoot.querySelector('.curve-chart-tooltip');
+    if (!svg || !hit || !crosshair || !tooltip) return;
+
+    const { pad, innerW, innerH, height, actual, forecast } = layout;
+
+    const hide = () => {
+      crosshair.setAttribute('opacity', '0');
+      tooltip.classList.add('curve-chart-tooltip--hidden');
+    };
+
+    const hourFromClientX = (clientX) => {
+      const rect = svg.getBoundingClientRect();
+      const localX = ((clientX - rect.left) / rect.width) * layout.width;
+      const clamped = Math.max(pad.l, Math.min(pad.l + innerW, localX));
+      return ((clamped - pad.l) / innerW) * 24;
+    };
+
+    hit.addEventListener('mousemove', (e) => {
+      const hour = hourFromClientX(e.clientX);
+      const rect = svg.getBoundingClientRect();
+      const viewBoxW = layout.width;
+      const localX = ((e.clientX - rect.left) / rect.width) * viewBoxW;
+      const x = Math.max(pad.l, Math.min(pad.l + innerW, localX));
+
+      crosshair.setAttribute('x1', String(x));
+      crosshair.setAttribute('x2', String(x));
+      crosshair.setAttribute('y1', String(pad.t));
+      crosshair.setAttribute('y2', String(pad.t + innerH));
+      crosshair.setAttribute('opacity', '1');
+
+      const actualSample = sampleSeriesAtHour(actual, hour, false);
+      const forecastSample = sampleSeriesAtHour(forecast, hour, true);
+      const lines = [
+        `<div class="curve-chart-tooltip__time">${WindmateCopy.observations.curveTooltipTime(formatFractionalHour(hour))}</div>`,
+      ];
+      if (actualSample) {
+        lines.push(
+          `<div>${WindmateCopy.observations.curveTooltipActual(
+            roundKt(actualSample.wind),
+            roundKt(actualSample.gust)
+          )}</div>`
+        );
+      }
+      if (forecastSample) {
+        lines.push(
+          `<div>${WindmateCopy.observations.curveTooltipForecast(
+            roundKt(forecastSample.wind),
+            roundKt(forecastSample.gust)
+          )}</div>`
+        );
+      }
+      tooltip.innerHTML = lines.join('');
+      tooltip.classList.remove('curve-chart-tooltip--hidden');
+
+      const chartRect = chartRoot.getBoundingClientRect();
+      let left = e.clientX - chartRect.left + 12;
+      let top = e.clientY - chartRect.top - 8;
+      const tipW = tooltip.offsetWidth || 160;
+      const tipH = tooltip.offsetHeight || 48;
+      if (left + tipW > chartRect.width - 4) left = e.clientX - chartRect.left - tipW - 12;
+      if (top < 4) top = 4;
+      if (top + tipH > chartRect.height - 4) top = chartRect.height - tipH - 4;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    });
+
+    hit.addEventListener('mouseleave', hide);
+    chartRoot.addEventListener('mouseleave', hide);
+  }
+
   function renderHazardBands(warnings, xForHour, pad, innerH, innerW) {
     const barW = Math.max(innerW / 24, 8);
     return warnings
@@ -268,6 +394,12 @@ const WindmateObservations = (() => {
       .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForHour(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
       .join(' ');
 
+    const actualGustPath = actual
+      .map((p, i) =>
+        `${i === 0 ? 'M' : 'L'}${xForHour(p.time).toFixed(1)},${yForSpeed(p.gusts ?? p.windSpeed).toFixed(1)}`
+      )
+      .join(' ');
+
     const forecastPath = forecast
       .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForHour(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
       .join(' ');
@@ -314,28 +446,40 @@ const WindmateObservations = (() => {
       .join('');
 
     container.innerHTML = `
-      <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto" role="img" aria-label="Forecast vs actual wind curve in knots">
-        <text x="${pad.l - 8}" y="${pad.t - 4}" class="fill-slate-500" font-size="9" text-anchor="end">kt</text>
-        <line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + innerH}" stroke="#334155" stroke-width="1"/>
-        <line x1="${pad.l}" y1="${pad.t + innerH}" x2="${pad.l + innerW}" y2="${pad.t + innerH}" stroke="#334155" stroke-width="1"/>
-        ${yAxis}
-        <rect x="${pad.l}" y="${bandTop}" width="${innerW}" height="${Math.max(0, bandBottom - bandTop)}" fill="rgba(16,185,129,0.08)"/>
-        ${rideableWindowBands}
-        ${weatherBlocks}
-        ${hazardBands}
-        <path d="${forecastGustPath}" fill="none" stroke="#f59e0b" stroke-width="1.75" stroke-dasharray="3 4" opacity="0.9"/>
-        <path d="${forecastPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/>
-        ${actualPath ? `<path d="${actualPath}" fill="none" stroke="#10b981" stroke-width="2.5"/>` : ''}
-        <text x="${pad.l}" y="${height - 4}" class="fill-slate-500" font-size="10">00:00</text>
-        <text x="${pad.l + innerW / 2}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">12:00</text>
-        <text x="${pad.l + innerW}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="end">23:00</text>
-      </svg>
-      <div class="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500 mt-1">
-        <span><span class="inline-block w-4 border-t-2 border-emerald-500 align-middle mr-1"></span>Actual wind</span>
-        <span><span class="inline-block w-4 border-t-2 border-dashed border-slate-500 align-middle mr-1"></span>Forecast wind</span>
-        <span><span class="inline-block w-4 border-t-2 border-dashed border-amber-500 align-middle mr-1"></span>Forecast gusts</span>
-        <span><span class="inline-block w-3 h-3 rounded-sm bg-emerald-500/25 border border-emerald-500/40 align-middle mr-1"></span>${WindmateCopy.observations.rideableWindow}</span>
+      <div class="curve-chart relative">
+        <div class="curve-chart-tooltip curve-chart-tooltip--hidden" aria-hidden="true"></div>
+        <svg viewBox="0 0 ${width} ${height}" class="w-full h-auto" role="img" aria-label="Forecast vs actual wind curve in knots">
+          <text x="${pad.l - 8}" y="${pad.t - 4}" class="fill-slate-500" font-size="9" text-anchor="end">kt</text>
+          <line x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + innerH}" stroke="#334155" stroke-width="1"/>
+          <line x1="${pad.l}" y1="${pad.t + innerH}" x2="${pad.l + innerW}" y2="${pad.t + innerH}" stroke="#334155" stroke-width="1"/>
+          ${yAxis}
+          <rect x="${pad.l}" y="${bandTop}" width="${innerW}" height="${Math.max(0, bandBottom - bandTop)}" fill="rgba(16,185,129,0.08)"/>
+          ${rideableWindowBands}
+          ${weatherBlocks}
+          ${hazardBands}
+          <path d="${forecastGustPath}" fill="none" stroke="#f59e0b" stroke-width="1.75" stroke-dasharray="3 4" opacity="0.9"/>
+          <path d="${forecastPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/>
+          ${actualGustPath ? `<path d="${actualGustPath}" fill="none" stroke="#6ee7b7" stroke-width="1.75" stroke-dasharray="2 3" opacity="0.95"/>` : ''}
+          ${actualPath ? `<path d="${actualPath}" fill="none" stroke="#10b981" stroke-width="2.5"/>` : ''}
+          <line class="curve-crosshair" x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + innerH}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>
+          <rect class="curve-hit-area" x="${pad.l}" y="${pad.t}" width="${innerW}" height="${innerH}" fill="transparent"/>
+          <text x="${pad.l}" y="${height - 4}" class="fill-slate-500" font-size="10">00:00</text>
+          <text x="${pad.l + innerW / 2}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">12:00</text>
+          <text x="${pad.l + innerW}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="end">23:00</text>
+        </svg>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500 mt-1">
+          <span><span class="inline-block w-4 border-t-2 border-emerald-500 align-middle mr-1"></span>Actual wind</span>
+          <span><span class="inline-block w-4 border-t-2 border-dashed border-emerald-300 align-middle mr-1"></span>${WindmateCopy.observations.actualGusts}</span>
+          <span><span class="inline-block w-4 border-t-2 border-dashed border-slate-500 align-middle mr-1"></span>Forecast wind</span>
+          <span><span class="inline-block w-4 border-t-2 border-dashed border-amber-500 align-middle mr-1"></span>Forecast gusts</span>
+          <span><span class="inline-block w-3 h-3 rounded-sm bg-emerald-500/25 border border-emerald-500/40 align-middle mr-1"></span>${WindmateCopy.observations.rideableWindow}</span>
+        </div>
       </div>`;
+
+    const chartRoot = container.querySelector('.curve-chart');
+    if (chartRoot) {
+      bindCurveHover(chartRoot, { width, height, pad, innerW, innerH, actual, forecast });
+    }
   }
 
   function curveWarningsFor(spotId, observationsBySpot, warningsBySpot) {
@@ -353,7 +497,8 @@ const WindmateObservations = (() => {
   function refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot) {
     root.querySelectorAll('.curve-panel').forEach((panel) => {
       const spotId = panel.dataset.spotId;
-      if (!spotId || !expanded.has(spotId)) return;
+      const curveKey = panel.dataset.curveKey ?? spotId;
+      if (!spotId || !curveKey || !expanded.has(curveKey)) return;
       const obs = observationsBySpot.get(spotId);
       if (!obs) return;
       renderCurve(panel, obs, prefs, curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot));
@@ -365,19 +510,20 @@ const WindmateObservations = (() => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const spotId = btn.dataset.spotId;
+        const curveKey = btn.dataset.curveKey ?? spotId;
         const strip = btn.closest('.live-strip');
         const panel = strip?.querySelector('.curve-panel');
-        const opening = !expanded.has(spotId);
-        if (opening) expanded.add(spotId);
-        else expanded.delete(spotId);
+        const opening = !expanded.has(curveKey);
+        if (opening) expanded.add(curveKey);
+        else expanded.delete(curveKey);
         syncAutoRefresh();
         const obs = observationsBySpot.get(spotId);
-        btn.textContent = expanded.has(spotId)
+        btn.textContent = expanded.has(curveKey)
           ? WindmateCopy.observations.hideCurve
           : WindmateCopy.observations.showCurve;
         if (panel) {
-          panel.classList.toggle('hidden', !expanded.has(spotId));
-          if (expanded.has(spotId)) {
+          panel.classList.toggle('hidden', !expanded.has(curveKey));
+          if (expanded.has(curveKey)) {
             renderCurve(
               panel,
               obs,

@@ -260,6 +260,10 @@ const WindmateCopy = {
     showCurve: "Today's curve ▾",
     hideCurve: "Hide curve ▴",
     rideableWindow: 'Rideable window',
+    actualGusts: 'Actual gusts',
+    curveTooltipTime: (time) => time,
+    curveTooltipActual: (windKt, gustKt) => `Actual ${windKt} kt · gusts ${gustKt} kt`,
+    curveTooltipForecast: (windKt, gustKt) => `Forecast ${windKt} kt · gusts ${gustKt} kt`,
     windowTemp: (airMin, airMax, waterMin, waterMax) => {
       let line = `Best window temps · ${airMin}–${airMax}°C air`;
       if (waterMin != null) line += ` · ${waterMin}–${waterMax}°C water`;

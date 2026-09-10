@@ -181,6 +181,7 @@ const WindmateWatchlist = (() => {
     const liveStrip =
       isToday && obs
         ? WindmateObservations.renderLiveStrip(session.spot, obs, null, prefs, {
+            curveKey: `watch:${session.id}`,
             sessionGoNoGo: verdict,
             suppressVerdictBanner: true,
           })

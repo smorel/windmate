@@ -192,7 +192,7 @@ function analyzeMixedRideability(
 
     const days = summarizeByDay(hourly);
 
-    const today = days[0]?.date ?? localDateString();
+    const today = localDateString();
 
     const todayHours = hourly.filter((h) => h.time.startsWith(today));
 

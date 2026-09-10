@@ -115,7 +115,7 @@ function createRideabilityRouter(db) {
             daylightByDate
           );
           const days = summarizeByDay(hourly);
-          const today = days[0]?.date ?? localDateString();
+          const today = localDateString();
           const todayHours = hourly.filter((h) => h.time.startsWith(today));
           const rideableTodayHours = todayHours.filter((h) => h.rideable);
 

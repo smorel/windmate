@@ -1476,7 +1476,7 @@ function renderHorizonPlanner(data) {
   const sportColor = SPORT_COLORS[data.preferences.sport] ?? SPORT_COLORS.wingfoiling;
 
   if (!selectedDayDate || !days.some((d) => d.date === selectedDayDate)) {
-    selectedDayDate = days[0]?.date ?? null;
+    selectedDayDate = WindmateForecastTime.defaultPlannerDayDate(days);
   }
 
   els.horizonPlanner.innerHTML = days
@@ -1861,10 +1861,9 @@ function renderRideabilityMatrix(data, observations) {
     return;
   }
 
-  const forecastToday = WindmateForecastTime.forecastTodayFromRideability(data);
   const horizonDays = data.spots[0]?.days?.slice(0, 7) ?? [];
   if (!selectedDayDate || !horizonDays.some((d) => d.date === selectedDayDate)) {
-    selectedDayDate = horizonDays[0]?.date ?? forecastToday;
+    selectedDayDate = WindmateForecastTime.defaultPlannerDayDate(horizonDays);
   }
 
   const viewingToday = isForecastToday(selectedDayDate, data);

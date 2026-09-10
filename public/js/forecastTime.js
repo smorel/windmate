@@ -72,9 +72,15 @@ const WindmateForecastTime = (() => {
     return `${y}-${mo}-${d}`;
   }
 
-  /** First day in rideability payload = today at the spot (Open-Meteo spot timezone). */
-  function forecastTodayFromRideability(data) {
-    return data?.spots?.[0]?.days?.[0]?.date ?? localDateString();
+  /** Calendar today in the browser — matches watchlist / GO·NO-GO (not days[0], which can be yesterday). */
+  function forecastTodayFromRideability(_data) {
+    return localDateString();
+  }
+
+  function defaultPlannerDayDate(days) {
+    const today = localDateString();
+    if (days?.some((d) => d.date === today)) return today;
+    return days?.[0]?.date ?? today;
   }
 
   return {
@@ -85,5 +91,6 @@ const WindmateForecastTime = (() => {
     sessionWarningMessage,
     localDateString,
     forecastTodayFromRideability,
+    defaultPlannerDayDate,
   };
 })();

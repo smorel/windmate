@@ -12,6 +12,12 @@ Beyond wind and waves, the product roadmap covers **local ground truth**: social
   </a>
 </p>
 
+<p align="center">
+  <a href="assets/session-day.png">
+    <img src="assets/session-day.png" alt="Windmate Session day — Go/No-Go, Live observations" width="720">
+  </a>
+</p>
+
 <p align="center"><em>Click the screenshot for the full-size view.</em></p>
 
 ## What it does

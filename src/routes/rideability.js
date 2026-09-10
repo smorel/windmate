@@ -29,6 +29,7 @@ function createRideabilityRouter(db) {
     }
 
     const sport = req.query.sport;
+    const skipCache = req.query.refresh === '1' || req.query.refresh === 'true';
     const prefs = getPreferences(db, sport);
     if (!prefs) return res.status(500).json({ error: 'Preferences not configured' });
 
@@ -62,8 +63,8 @@ function createRideabilityRouter(db) {
     try {
       const settled = await Promise.allSettled(
         nearbySpots.map(async (spot) => {
-          const forecast = await fetchForecast(db, spot.id, spot);
-          const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
+          const forecast = await fetchForecast(db, spot.id, spot, { skipCache });
+          const contextData = await fetchOpenMeteoContext(db, spot.id, spot, { skipCache });
           const contextByTime = buildContextByTime(contextData);
           const daylightByDate = buildDaylightByDate(contextData);
 

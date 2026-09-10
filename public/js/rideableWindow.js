@@ -84,7 +84,9 @@ const WindmateRideableWindow = (() => {
       reporting += 1;
       if (!hour.rideable) return false;
     }
-    return reporting > 0;
+    if (reporting === 0) return false;
+    if (today && WindmateForecastTime.isElapsedLocalDayHour(key, today, now)) return false;
+    return true;
   }
 
   function parseMinHours(value, fallback = DEFAULT_MIN_HOURS) {
@@ -219,7 +221,11 @@ const WindmateRideableWindow = (() => {
     if (!consensusHours.length) {
       const hours = timeline ?? [];
       return longestWindow(
-        hours.map((hour) => ({ rideable: hour.rideable === true })),
+        hours.map((hour) => ({
+          rideable:
+            hour.rideable === true &&
+            WindmateForecastTime.isSessionPlanningHour(hourTimeKey(hour.time), dateStr),
+        })),
         minConsecutive
       );
     }

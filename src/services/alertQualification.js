@@ -68,9 +68,9 @@ function hasHorizonOpportunity(
  * Build rideability entry for a spot (shared by horizon summary and alerts).
  * @param {import('better-sqlite3').Database} db
  */
-async function buildSpotRideabilityEntry(db, spot, prefs) {
-  const forecast = await fetchForecast(db, spot.id, spot);
-  const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
+async function buildSpotRideabilityEntry(db, spot, prefs, options = {}) {
+  const forecast = await fetchForecast(db, spot.id, spot, options);
+  const contextData = await fetchOpenMeteoContext(db, spot.id, spot, options);
   const contextByTime = buildContextByTime(contextData);
   const daylightByDate = buildDaylightByDate(contextData);
 

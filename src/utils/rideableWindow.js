@@ -88,7 +88,9 @@ function allReportingModelsRideable(indexedByKey, key, options) {
     reporting += 1;
     if (!hour.rideable) return false;
   }
-  return reporting > 0;
+  if (reporting === 0) return false;
+  if (today && isElapsedLocalDayHour(key, today, now)) return false;
+  return true;
 }
 
 function parseMinRideableWindowHours(value, fallback = DEFAULT_MIN_RIDEABLE_WINDOW_HOURS) {

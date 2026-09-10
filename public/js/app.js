@@ -44,6 +44,7 @@ const els = {
   offshoreWindHint: document.getElementById('offshore-wind-hint'),
   minRideableWindow: document.getElementById('min-rideable-window'),
   horizonPlanner: document.getElementById('horizon-planner'),
+  refreshCountdown: document.getElementById('refresh-countdown'),
   rideabilityMatrix: document.getElementById('rideability-matrix'),
   modelLegend: document.getElementById('model-legend'),
   legendBtn: document.getElementById('legend-btn'),
@@ -70,6 +71,13 @@ let savePrefsTimer = null;
 let persistPrefsPromise = null;
 let spotSearchTimer = null;
 let spotSearchRequestId = 0;
+
+const HOUR_MS = 60 * 60 * 1000;
+let hourlyRefreshTimer = null;
+let refreshCountdownTimer = null;
+let nextHourlyRefreshAt = 0;
+let hourlyRefreshInFlight = false;
+let lastDashboardFetchAt = 0;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -765,14 +773,126 @@ function setDashboardLoading(message) {
   els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${message}</p>`;
 }
 
-function observationsQueryString() {
+function observationsQueryString({ bypassCache = false } = {}) {
   const profile = getActiveProfile();
   const radius = profile?.radius_km ?? getSearchRadiusKm();
   const sport = activeSport;
   const query = `lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&limit=12&sport=${sport}`;
   const watchedIds = WindmateWatchlist.getWatchedSpotIdsForToday(sport);
   const watchedQuery = watchedIds.length ? `&watchedSpotIds=${watchedIds.join(',')}` : '';
-  return { query, watchedQuery };
+  const refreshQuery = bypassCache ? '&refresh=1' : '';
+  return { query, watchedQuery, refreshQuery };
+}
+
+function msUntilNextLocalHour() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setMinutes(0, 0, 0);
+  next.setHours(next.getHours() + 1);
+  return Math.max(0, next.getTime() - now.getTime());
+}
+
+function formatRefreshCountdown(ms) {
+  const totalSec = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function setRefreshCountdownLayoutActive(active) {
+  document.body.classList.toggle('refresh-countdown-active', active);
+}
+
+function renderRefreshCountdownBanner() {
+  const el = els.refreshCountdown;
+  if (!el) return;
+
+  if (hourlyRefreshInFlight) {
+    el.hidden = false;
+    setRefreshCountdownLayoutActive(true);
+    el.classList.add('refresh-countdown-banner--updating');
+    el.innerHTML = `<span class="refresh-countdown-banner__pill">
+      <span>${WindmateCopy.refreshCountdown.label}</span>
+      <span class="refresh-countdown-banner__time">${WindmateCopy.refreshCountdown.updating}</span>
+    </span>`;
+    return;
+  }
+
+  if (!nextHourlyRefreshAt) {
+    el.hidden = true;
+    setRefreshCountdownLayoutActive(false);
+    el.classList.remove('refresh-countdown-banner--updating');
+    el.textContent = '';
+    return;
+  }
+
+  const remaining = nextHourlyRefreshAt - Date.now();
+  el.hidden = false;
+  setRefreshCountdownLayoutActive(true);
+  el.classList.remove('refresh-countdown-banner--updating');
+  const time = formatRefreshCountdown(remaining);
+  el.innerHTML = `<span class="refresh-countdown-banner__pill">
+    <span>${WindmateCopy.refreshCountdown.label}</span>
+    <span class="refresh-countdown-banner__time" aria-label="${time} remaining">${time}</span>
+  </span>`;
+}
+
+function markNextHourlyRefreshDeadline() {
+  nextHourlyRefreshAt = Date.now() + msUntilNextLocalHour();
+  renderRefreshCountdownBanner();
+}
+
+function startRefreshCountdownTicker() {
+  if (refreshCountdownTimer) clearInterval(refreshCountdownTimer);
+  refreshCountdownTimer = setInterval(() => {
+    if (!nextHourlyRefreshAt && !hourlyRefreshInFlight) return;
+    renderRefreshCountdownBanner();
+  }, 1000);
+}
+
+async function runHourlyDashboardRefresh() {
+  if (hourlyRefreshInFlight) return;
+  hourlyRefreshInFlight = true;
+  renderRefreshCountdownBanner();
+  try {
+    if (!document.hidden) {
+      await refreshDashboard({ silent: true, bypassCache: true });
+    }
+  } finally {
+    hourlyRefreshInFlight = false;
+    markNextHourlyRefreshDeadline();
+  }
+}
+
+function restoreScrollAfterSilentRefresh(scrollY) {
+  if (scrollY == null) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      window.scrollTo(0, scrollY);
+    });
+  });
+}
+
+function scheduleHourlyDashboardRefresh() {
+  if (hourlyRefreshTimer) clearTimeout(hourlyRefreshTimer);
+  markNextHourlyRefreshDeadline();
+  hourlyRefreshTimer = setTimeout(() => {
+    hourlyRefreshTimer = null;
+    void runHourlyDashboardRefresh().then(() => scheduleHourlyDashboardRefresh());
+  }, msUntilNextLocalHour());
+}
+
+function initHourlyDashboardRefresh() {
+  startRefreshCountdownTicker();
+  scheduleHourlyDashboardRefresh();
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (Date.now() - lastDashboardFetchAt >= HOUR_MS) {
+      void runHourlyDashboardRefresh().then(() => scheduleHourlyDashboardRefresh());
+      return;
+    }
+    scheduleHourlyDashboardRefresh();
+  });
 }
 
 function rebindObservationToggles(obsBySpot, matrixPrefs) {
@@ -822,20 +942,24 @@ async function refreshLiveObservations() {
   }
 }
 
-async function refreshDashboard({ silent = false } = {}) {
+async function refreshDashboard({ silent = false, bypassCache = false } = {}) {
+  const viewingToday =
+    selectedDayDate != null && selectedDayDate === WindmateForecastTime.localDateString();
+  const scrollY = silent ? window.scrollY : null;
+
   if (!silent) {
     setDashboardLoading(WindmateCopy.loading.dashboard);
   }
   try {
     await WindmateWatchlist.load();
-    const { query, watchedQuery } = observationsQueryString();
+    const { query, watchedQuery, refreshQuery } = observationsQueryString({ bypassCache });
 
     const [rideRes, obsRes, summaryRes] = await Promise.all([
-      api(`/api/rideability?${query}`),
-      api(`/api/observations?${query}${watchedQuery}`).catch(() => ({ spots: [] })),
-      api(`/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}`).catch(
-        () => null
-      ),
+      api(`/api/rideability?${query}${refreshQuery}`),
+      api(`/api/observations?${query}${watchedQuery}${refreshQuery}`).catch(() => ({ spots: [] })),
+      api(
+        `/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}${refreshQuery}`
+      ).catch(() => null),
     ]);
     rideabilityData = rideRes;
     observationsData = obsRes;
@@ -854,8 +978,13 @@ async function refreshDashboard({ silent = false } = {}) {
     });
     renderRankCriteriaList(rankCriteriaOrder);
     renderModelLegend(rideabilityData);
+    if (viewingToday) {
+      selectedDayDate = WindmateForecastTime.localDateString();
+    }
     renderHorizonPlanner(rideabilityData);
     applyObservationsToUi(observationsData);
+    lastDashboardFetchAt = Date.now();
+    restoreScrollAfterSilentRefresh(scrollY);
   } catch (err) {
     const msg = WindmateCopy.errors.loadFailed(err.message);
     els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
@@ -955,7 +1084,7 @@ function resolveDepartureWindowForSession(session) {
   const dayHours = getSpotDayData(entry, session.session_date)?.hours ?? [];
   if (!dayHours.length) return null;
 
-  const pick = WindmateSessionRank.pickBestQualifyingWindow(
+  const pick = WindmateSessionRank.pickDepartureQualifyingWindow(
     entry,
     session.session_date,
     prefsForRanking(rideabilityData.preferences),
@@ -1630,10 +1759,41 @@ function criterionColor(hour, criterion) {
   return WindmateWaveColors.forHour(hour);
 }
 
-function criterionHourBlockClass(timelineSlot, modelHoursAtSlot) {
+function isMatrixSessionPlanningHour(time, dateStr) {
+  return WindmateForecastTime.isSessionPlanningHour(
+    WindmateRideableWindow.hourTimeKey(time),
+    dateStr
+  );
+}
+
+function isMatrixNightHour(hour) {
+  return hour != null && hour.daylightOk === false;
+}
+
+function isMatrixNightSlot(timelineSlot, modelHoursAtSlot) {
+  if (isMatrixNightHour(timelineSlot)) return true;
+  const present = (modelHoursAtSlot ?? []).filter((hour) => hour != null);
+  if (!present.length) return false;
+  return present.every((hour) => hour.daylightOk === false);
+}
+
+function matrixEmptyHourSegments(segmentCount) {
+  const count = Math.max(1, segmentCount);
+  return Array.from({ length: count }, () => '<div class="hour-block-seg hour-block-seg--empty"></div>').join(
+    ''
+  );
+}
+
+function criterionHourBlockClass(timelineSlot, modelHoursAtSlot, dateStr) {
   const classes = ['hour-block'];
+  if (isMatrixNightSlot(timelineSlot, modelHoursAtSlot)) {
+    classes.push('hour-block--night');
+    return classes.join(' ');
+  }
+  const elapsed = dateStr && !isMatrixSessionPlanningHour(timelineSlot.time, dateStr);
+  if (elapsed) classes.push('hour-block--elapsed');
   const present = modelHoursAtSlot.filter((hour) => hour != null);
-  const anyRideable = present.some((hour) => hour.rideable);
+  const anyRideable = !elapsed && present.some((hour) => hour.rideable);
   if (anyRideable) classes.push('rideable');
   if (anyRideable && !timelineSlot.inRideableWindow) classes.push('rideable-isolated');
   if (!anyRideable && present.some((hour) => hour.offshoreBlocked && hour.windOk)) {
@@ -1731,6 +1891,7 @@ function renderMatrixRainOverlay(hours) {
 
   return hours
     .map((hour, index) => {
+      if (isMatrixNightHour(hour)) return '';
       if (!WindmateWeatherHazards.hasForecastRain(hour)) return '';
       const left = (index / count) * 100;
       const width = (1 / count) * 100;
@@ -1739,17 +1900,24 @@ function renderMatrixRainOverlay(hours) {
     .join('');
 }
 
-function renderDirectionRow(hours) {
+function renderDirectionRow(hours, dateStr) {
   if (!hours?.length) return '';
 
   const blocks = hours
     .map((hour) => {
+      if (isMatrixNightHour(hour)) {
+        return '<div class="matrix-direction matrix-direction--night" aria-hidden="true"></div>';
+      }
       const exposure = hour.windExposure ?? 'unknown';
       const exposureLabel = WindmateCopy.direction.exposure[exposure] ?? exposure;
       const hourLabel = hour.time.slice(11, 16);
       const title = `${hourLabel} ${hour.direction} · ${exposureLabel}`;
       const tip = escapeHtml(title);
-      return `<div class="matrix-direction matrix-direction--${exposure}"><span>${hour.direction}</span><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
+      const elapsed =
+        dateStr && !isMatrixSessionPlanningHour(hour.time, dateStr)
+          ? ' matrix-direction--elapsed'
+          : '';
+      return `<div class="matrix-direction matrix-direction--${exposure}${elapsed}"><span>${hour.direction}</span><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
     })
     .join('');
 
@@ -1774,11 +1942,36 @@ function buildAlignedModels(timelineHours, modelEntries, getModelHours, windowMa
   }));
 }
 
-function renderCriterionSegments(modelHoursAtSlot, criterion) {
+function hourHasMatrixConditionData(hour) {
+  if (hour == null) return false;
+  return hour.windSpeed != null || hour.gusts != null || hour.waveHeightM != null;
+}
+
+/** Same gate as tooltips: wind/weather/temp OK but direction blocked offshore. */
+function isOffshoreBlockedMatrixHour(hour) {
+  return (
+    hour != null &&
+    hour.windOk &&
+    hour.weatherOk &&
+    hour.tempOk &&
+    hour.offshoreBlocked
+  );
+}
+
+function matrixOffshoreBlockedSegmentHtml() {
+  return '<div class="hour-block-seg hour-block-seg--offshore" aria-hidden="true"></div>';
+}
+
+function renderCriterionSegments(modelHoursAtSlot, criterion, elapsed, night) {
+  if (night) return matrixEmptyHourSegments(modelHoursAtSlot.length);
   return modelHoursAtSlot
     .map((hour) => {
       if (hour == null) return '';
-      if (!hour.rideable) {
+      const showSegment = elapsed ? hourHasMatrixConditionData(hour) : hour.rideable;
+      if (!showSegment) {
+        if (isOffshoreBlockedMatrixHour(hour)) {
+          return matrixOffshoreBlockedSegmentHtml();
+        }
         return '<div class="hour-block-seg hour-block-seg--empty"></div>';
       }
       const color = criterionColor(hour, criterion);
@@ -1791,6 +1984,9 @@ function renderProbabilitySegments(modelHoursAtSlot, slotAgreement) {
   return modelHoursAtSlot
     .map((hour) => {
       if (hour == null || !hour.rideable) {
+        if (isOffshoreBlockedMatrixHour(hour)) {
+          return matrixOffshoreBlockedSegmentHtml();
+        }
         return '<div class="hour-block-seg hour-block-seg--empty"></div>';
       }
       const hasMeteo = WindmateForecastProbability.hasMeteoForecastProbability(hour);
@@ -1889,9 +2085,15 @@ function renderProbabilityRow(timelineHours, modelEntries, getModelHours, window
   const blocks = timelineSlots
     .map((slot, index) => {
       const modelHoursAtSlot = probAligned.map((model) => model.hours[index]);
+      const night = isMatrixNightSlot(slot, modelHoursAtSlot);
       const slotAgreement =
         hourlyAgreement.get(WindmateRideableWindow.hourTimeKey(slot.time)) ?? 0;
-      const segments = renderProbabilitySegments(modelHoursAtSlot, slotAgreement);
+      const segments = night
+        ? matrixEmptyHourSegments(modelHoursAtSlot.length)
+        : renderProbabilitySegments(modelHoursAtSlot, slotAgreement);
+      if (night) {
+        return `<div class="hour-block hour-block--probability hour-block--night" aria-hidden="true"><div class="hour-block-segments">${segments}</div></div>`;
+      }
       const modelHours = probAligned.map((model) => ({
         label: model.label,
         hour: model.hours[index],
@@ -1914,7 +2116,7 @@ function renderProbabilityRow(timelineHours, modelEntries, getModelHours, window
     </div>`;
 }
 
-function renderCriterionRow(timelineHours, alignedModels, criterion, label, windowMaps) {
+function renderCriterionRow(timelineHours, alignedModels, criterion, label, windowMaps, dateStr) {
   if (!timelineHours?.length) {
     return `<div class="text-xs text-slate-500 py-1">${WindmateCopy.empty.noModelData(label)}</div>`;
   }
@@ -1928,8 +2130,13 @@ function renderCriterionRow(timelineHours, alignedModels, criterion, label, wind
   const blocks = timelineSlots
     .map((slot, index) => {
       const modelHoursAtSlot = alignedModels.map((model) => model.hours[index]);
-      const cls = criterionHourBlockClass(slot, modelHoursAtSlot);
-      const segments = renderCriterionSegments(modelHoursAtSlot, criterion);
+      const night = isMatrixNightSlot(slot, modelHoursAtSlot);
+      const elapsed = !night && dateStr && !isMatrixSessionPlanningHour(slot.time, dateStr);
+      const cls = criterionHourBlockClass(slot, modelHoursAtSlot, dateStr);
+      const segments = renderCriterionSegments(modelHoursAtSlot, criterion, elapsed, night);
+      if (night) {
+        return `<div class="${cls}" aria-hidden="true"><div class="hour-block-segments">${segments}</div></div>`;
+      }
       const modelHours = alignedModels.map((model) => ({
         label: model.label,
         hour: model.hours[index],
@@ -2010,6 +2217,7 @@ function matrixScoreDisplayValue(windowScore) {
 }
 
 function renderWindowScoreRow(timelineHours, entry, dateStr, prefs) {
+  const planningHour = (time) => isMatrixSessionPlanningHour(time, dateStr);
   if (!timelineHours?.length) return '';
 
   const { byStartTime, sessionWindowHours, weights, order } = WindmateSessionRank.scoreWindowsByStartHour(
@@ -2026,6 +2234,9 @@ function renderWindowScoreRow(timelineHours, entry, dateStr, prefs) {
   const blocks = timelineHours
     .map((hour) => {
       const key = WindmateRideableWindow.hourTimeKey(hour.time);
+      if (!planningHour(hour.time) || isMatrixNightHour(hour)) {
+        return '<div class="matrix-score-cell matrix-score-cell--inactive" aria-hidden="true"></div>';
+      }
       const scored = byStartTime.get(key);
       if (!scored) {
         return '<div class="matrix-score-cell" aria-hidden="true"></div>';
@@ -2109,7 +2320,14 @@ function renderCriterionMatrixRows(
 
   const criteriaHtml = criteria
     .map((criterion) =>
-      renderCriterionRow(timelineHours, alignedModels, criterion.key, criterion.label, windowMaps)
+      renderCriterionRow(
+        timelineHours,
+        alignedModels,
+        criterion.key,
+        criterion.label,
+        windowMaps,
+        dateStr
+      )
     )
     .join('');
 
@@ -2166,7 +2384,7 @@ function renderRideabilityMatrix(data, observations) {
       const rideableCount = getConsensusRideableHours(entry, selectedDayDate, data.preferences);
       const rankBanners = WindmateSessionRank.renderBanners(row.topReasons);
 
-      const directionRow = renderDirectionRow(dayHours);
+      const directionRow = renderDirectionRow(dayHours, selectedDayDate);
       const modelEntries = Object.entries(models ?? {}).filter(([, model]) => !model.error);
       const windowMaps =
         modelEntries.length > 0
@@ -2187,7 +2405,7 @@ function renderRideabilityMatrix(data, observations) {
       );
 
       const matrixPrefs = prefsForRanking(data.preferences);
-      const departurePick = WindmateSessionRank.pickBestQualifyingWindow(
+      const departurePick = WindmateSessionRank.pickDepartureQualifyingWindow(
         entry,
         selectedDayDate,
         matrixPrefs,
@@ -2362,5 +2580,6 @@ els.manualLocBtn.addEventListener('click', () => {
   await loadPreferences();
   els.locationStatus.textContent = WindmateCopy.geo.defaultMontreal;
   await refreshDashboard();
+  initHourlyDashboardRefresh();
   initGeolocation();
 })();

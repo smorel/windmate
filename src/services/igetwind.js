@@ -8,6 +8,7 @@ const JSON_HEADERS = {
 };
 
 const { haversineKm, degreesToCompass } = require('../utils/geo');
+const { normalizeHourlyTimestamp } = require('../utils/forecastTime');
 const { normalizeMeteoProbability } = require('../utils/forecastProbabilityHour');
 
 /** @returns {Promise<{ spots: object[] }>} */
@@ -64,6 +65,68 @@ function createHourSlot() {
     windProb: null,
     hasWind: false,
     hasGust: false,
+    hasDirection: false,
+  };
+}
+
+function lerpAngleDeg(fromDeg, toDeg, t) {
+  const delta = ((toDeg - fromDeg + 540) % 360) - 180;
+  return ((fromDeg + delta * t + 360) % 360);
+}
+
+/** iGetwind leaves direction at 0 when WDIR is missing (not a real north wind). */
+function isPlaceholderDirection(directionDeg, windSpeed) {
+  return (windSpeed ?? 0) > 0 && (directionDeg ?? 0) === 0;
+}
+
+function fillDirectionGaps(directions, hasDirection) {
+  const n = directions.length;
+  const out = directions.map((d) => d ?? 0);
+  const known = hasDirection.map(Boolean);
+
+  for (let i = 0; i < n; i += 1) {
+    if (known[i]) continue;
+
+    let prev = -1;
+    for (let j = i - 1; j >= 0; j -= 1) {
+      if (known[j]) {
+        prev = j;
+        break;
+      }
+    }
+    let next = -1;
+    for (let k = i + 1; k < n; k += 1) {
+      if (known[k]) {
+        next = k;
+        break;
+      }
+    }
+
+    if (prev >= 0 && next >= 0) {
+      const t = (i - prev) / (next - prev);
+      out[i] = lerpAngleDeg(out[prev], out[next], t);
+    } else if (prev >= 0) {
+      out[i] = out[prev];
+    } else if (next >= 0) {
+      out[i] = out[next];
+    }
+  }
+
+  return out;
+}
+
+/** Repair cached or legacy hourly rows (placeholder 0° direction, odd timestamps). */
+function repairIgetwindHourly(hourly) {
+  if (!hourly?.time?.length) return hourly;
+
+  const winds = hourly.wind_speed_10m ?? [];
+  const dirs = hourly.wind_direction_10m ?? [];
+  const hasDirection = dirs.map((d, i) => !isPlaceholderDirection(d, winds[i]));
+
+  return {
+    ...hourly,
+    time: hourly.time.map((t) => normalizeHourlyTimestamp(t)),
+    wind_direction_10m: fillDirectionGaps(dirs, hasDirection),
   };
 }
 
@@ -138,6 +201,34 @@ function dropOrFillMissingWindSamples(byTime, times) {
       }
     }
 
+    if (!hour.hasDirection) {
+      let prev = -1;
+      for (let j = i - 1; j >= 0; j -= 1) {
+        if (byTime.get(times[j]).hasDirection) {
+          prev = j;
+          break;
+        }
+      }
+      let next = -1;
+      for (let k = i + 1; k < times.length; k += 1) {
+        if (byTime.get(times[k]).hasDirection) {
+          next = k;
+          break;
+        }
+      }
+
+      if (prev >= 0 && next >= 0) {
+        const t = (i - prev) / (next - prev);
+        const a = byTime.get(times[prev]).direction;
+        const b = byTime.get(times[next]).direction;
+        hour.direction = lerpAngleDeg(a, b, t);
+      } else if (prev >= 0) {
+        hour.direction = byTime.get(times[prev]).direction;
+      } else if (next >= 0) {
+        hour.direction = byTime.get(times[next]).direction;
+      }
+    }
+
     kept.push(key);
   }
 
@@ -153,6 +244,12 @@ function normalizeWindData(modelBlock, modelId) {
 
   for (const row of modelBlock.winddata) {
     const iso = row.t.replace(' ', 'T');
+    if (row.ty === 'WINDP') {
+      if (!byTime.has(iso)) continue;
+      const prob = normalizeMeteoProbability(row.v);
+      if (prob != null) byTime.get(iso).windProb = prob;
+      continue;
+    }
     if (!byTime.has(iso)) {
       byTime.set(iso, createHourSlot());
     }
@@ -160,14 +257,12 @@ function normalizeWindData(modelBlock, modelId) {
     if (row.ty === 'WIND') {
       hour.wind = Math.max(hour.wind, row.v * MS_TO_KNOTS);
       hour.hasWind = true;
-    } else if (row.ty === 'WINDP') {
-      const prob = normalizeMeteoProbability(row.v);
-      if (prob != null) hour.windProb = prob;
     } else if (row.ty === 'GUST') {
       hour.gust = Math.max(hour.gust, row.v * MS_TO_KNOTS);
       hour.hasGust = true;
     } else if (row.ty === 'WDIR') {
       hour.direction = row.v;
+      hour.hasDirection = true;
     }
   }
 
@@ -175,7 +270,7 @@ function normalizeWindData(modelBlock, modelId) {
   const times = dropOrFillMissingWindSamples(byTime, sortedTimes);
   const hasWindProbability = times.some((t) => byTime.get(t).windProb != null);
   const hourly = {
-    time: times,
+    time: times.map((t) => normalizeHourlyTimestamp(t)),
     wind_speed_10m: times.map((t) => byTime.get(t).wind),
     wind_gusts_10m: times.map((t) => byTime.get(t).gust || byTime.get(t).wind),
     wind_direction_10m: times.map((t) => byTime.get(t).direction),
@@ -260,6 +355,8 @@ module.exports = {
   fetchNearestStation,
   fetchModelForecast,
   normalizeWindData,
+  repairIgetwindHourly,
+  isPlaceholderDirection,
   spotProfileUrl,
   delay,
   IGETWIND_BASE,

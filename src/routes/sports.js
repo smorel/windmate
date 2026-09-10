@@ -16,6 +16,7 @@ function createSportsRouter(db) {
       return res.status(400).json({ error: 'lat and lng query parameters are required' });
     }
 
+    const skipCache = req.query.refresh === '1' || req.query.refresh === 'true';
     const global = getGlobalPreferences(db);
     const profiles = getSportProfiles(db).filter((p) => p.enabled);
 
@@ -35,7 +36,7 @@ function createSportsRouter(db) {
         const rideabilityBySpotId = new Map();
         await Promise.all(
           spots.map(async (spot) => {
-            const entry = await buildSpotRideabilityEntry(db, spot, profile);
+            const entry = await buildSpotRideabilityEntry(db, spot, profile, { skipCache });
             rideabilityBySpotId.set(spot.id, entry);
           })
         );

@@ -1,5 +1,6 @@
 const { hourTimeKey } = require('../utils/rideableWindow');
 const { localDateString, currentLocalHourStartKey } = require('../utils/forecastTime');
+const { isPlaceholderDirection } = require('./igetwind');
 
 function mergeHourlySeries(prevHourly, nextHourly, today, cutoverKey) {
   if (!nextHourly?.time?.length) return nextHourly;
@@ -36,7 +37,13 @@ function mergeHourlySeries(prevHourly, nextHourly, today, cutoverKey) {
       if (prev) {
         wind_speed_10m.push(Math.max(prev.wind, nextWind));
         wind_gusts_10m.push(Math.max(prev.gust, nextGust));
-        wind_direction_10m.push(nextDir || prev.dir);
+        const dir =
+          isPlaceholderDirection(nextDir, nextWind) && prev
+            ? prev.dir
+            : nextDir !== 0
+              ? nextDir
+              : prev?.dir ?? nextDir;
+        wind_direction_10m.push(dir);
         if (trackProb) {
           wind_probability_10m.push(
             nextHourly.wind_probability_10m?.[i] ?? prev.prob ?? null

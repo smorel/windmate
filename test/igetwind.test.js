@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeWindData } = require('../src/services/igetwind');
+const { normalizeWindData, repairIgetwindHourly } = require('../src/services/igetwind');
 
 describe('normalizeWindData WINDP', () => {
   it('parses WINDP as wind probability, not wind speed', () => {
@@ -54,6 +54,51 @@ describe('normalizeWindData partial hours', () => {
     };
     const { hourly } = normalizeWindData(block, 'gfs');
     assert.equal(hourly.time.length, 0);
+  });
+
+  it('interpolates direction when WIND is present but WDIR is missing', () => {
+    const block = {
+      winddata: [
+        { ty: 'WIND', t: '2026-09-10 11:00', v: 10 },
+        { ty: 'GUST', t: '2026-09-10 11:00', v: 12 },
+        { ty: 'WDIR', t: '2026-09-10 11:00', v: 260 },
+        { ty: 'WIND', t: '2026-09-10 12:00', v: 10 },
+        { ty: 'GUST', t: '2026-09-10 12:00', v: 12 },
+        { ty: 'WIND', t: '2026-09-10 13:00', v: 10 },
+        { ty: 'GUST', t: '2026-09-10 13:00', v: 12 },
+        { ty: 'WDIR', t: '2026-09-10 13:00', v: 280 },
+      ],
+    };
+    const { hourly } = normalizeWindData(block, 'hrrr');
+    assert.equal(hourly.wind_direction_10m[1], 270);
+  });
+
+  it('repairs legacy cached hours with placeholder 0° direction', () => {
+    const hourly = {
+      time: ['2026-09-10T12:00:00', '2026-09-10T13:00:00', '2026-09-10T14:00:00'],
+      wind_speed_10m: [14, 10.5, 15],
+      wind_gusts_10m: [20, 15, 22],
+      wind_direction_10m: [270, 0, 268],
+    };
+    const repaired = repairIgetwindHourly(hourly);
+    assert.equal(repaired.time[1], '2026-09-10T13:00');
+    assert.equal(repaired.wind_direction_10m[1], 269);
+  });
+
+  it('does not create an hour from WINDP-only rows', () => {
+    const block = {
+      winddata: [
+        { ty: 'WIND', t: '2026-09-10 11:00', v: 8 },
+        { ty: 'GUST', t: '2026-09-10 11:00', v: 10 },
+        { ty: 'WDIR', t: '2026-09-10 11:00', v: 270 },
+        { ty: 'WINDP', t: '2026-09-10 12:00', v: 40 },
+        { ty: 'WIND', t: '2026-09-10 13:00', v: 9 },
+        { ty: 'GUST', t: '2026-09-10 13:00', v: 11 },
+        { ty: 'WDIR', t: '2026-09-10 13:00', v: 275 },
+      ],
+    };
+    const { hourly } = normalizeWindData(block, 'hrrr');
+    assert.deepEqual(hourly.time, ['2026-09-10T11:00', '2026-09-10T13:00']);
   });
 
   it('uses neighbor wind when gust is missing at a timestep', () => {

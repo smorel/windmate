@@ -257,7 +257,7 @@ function computeExcitement({ rideableCount, factors, prefs, windowHours, peakWin
 }
 
 function computeExcitementFromEntry(entry, dateStr, prefs, radiusKm) {
-  const { metrics } = computeRawMetrics(entry, dateStr, prefs, radiusKm);
+  const metrics = computeRawMetrics(entry, dateStr, prefs, radiusKm);
   const factors = factorsFromMetrics(metrics);
 
   return computeExcitement({

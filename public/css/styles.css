@@ -3,7 +3,12 @@
   --blur-day-5: blur(1px);
   --blur-day-6: blur(1.5px);
   --blur-day-7: blur(2px);
-  --z-horizon-sticky: 20;
+  --page-max-width: 80rem;
+  --page-inline-inset: max(1rem, calc((100vw - min(100vw, var(--page-max-width))) / 2 + 1rem));
+  --refresh-countdown-reserve: 2.25rem;
+  --z-horizon-sticky: 27;
+  --z-refresh-chrome: 28;
+  --z-refresh-countdown: 30;
   --z-matrix-card-tooltip: 25;
   --z-matrix-tooltip: 40;
 }
@@ -12,6 +17,28 @@
 .horizon-day-5 { filter: var(--blur-day-5); opacity: 0.85; }
 .horizon-day-6 { filter: var(--blur-day-6); opacity: 0.78; }
 .horizon-day-7 { filter: var(--blur-day-7); opacity: 0.7; }
+
+body.refresh-countdown-active {
+  padding-top: calc(var(--refresh-countdown-reserve) + env(safe-area-inset-top, 0px));
+}
+
+body.refresh-countdown-active::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--refresh-countdown-reserve) + env(safe-area-inset-top, 0px));
+  background: #0b0f19;
+  border-bottom: 1px solid #1a2235;
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.35);
+  z-index: var(--z-refresh-chrome);
+  pointer-events: none;
+}
+
+body.refresh-countdown-active .horizon-planner-sticky {
+  top: calc(var(--refresh-countdown-reserve) + env(safe-area-inset-top, 0px));
+}
 
 .horizon-planner-sticky {
   position: sticky;
@@ -23,6 +50,42 @@
   background: #0b0f19;
   border-bottom: 1px solid #1a2235;
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
+}
+
+.refresh-countdown-banner {
+  position: fixed;
+  top: max(0.5rem, env(safe-area-inset-top, 0px));
+  right: calc(var(--page-inline-inset) + env(safe-area-inset-right, 0px));
+  z-index: var(--z-refresh-countdown);
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.refresh-countdown-banner__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #94a3b8;
+  background: rgba(15, 20, 34, 0.92);
+  border: 1px solid #1a2235;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(2, 6, 23, 0.35);
+}
+
+.refresh-countdown-banner__time {
+  font-variant-numeric: tabular-nums;
+  color: #cbd5e1;
+  min-width: 2.75rem;
+  text-align: right;
+}
+
+.refresh-countdown-banner--updating .refresh-countdown-banner__time {
+  color: #6ee7b7;
 }
 
 .horizon-day-card {
@@ -142,6 +205,29 @@
   overflow: visible;
 }
 
+.hour-block--elapsed,
+.matrix-direction--elapsed {
+  opacity: 0.38;
+}
+
+.hour-block--night,
+.matrix-direction--night,
+.matrix-score-cell--inactive {
+  border-color: transparent;
+  background: transparent;
+  pointer-events: none;
+}
+
+.hour-block--night .hour-block-segments {
+  opacity: 0;
+}
+
+.hour-block--elapsed.rideable,
+.hour-block--elapsed.rideable-isolated {
+  outline: none;
+  box-shadow: none;
+}
+
 .hour-block {
   flex: 1;
   min-width: 0;
@@ -224,6 +310,17 @@
 
 .hour-block-seg--empty {
   background: rgba(15, 23, 42, 0.35);
+}
+
+.hour-block-seg--offshore {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(251, 191, 36, 0.12) 0 3px,
+      rgba(251, 191, 36, 0.42) 3px 6px
+    );
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  box-sizing: border-box;
 }
 
 .hour-block.rideable.rideable-isolated {
@@ -1256,6 +1353,17 @@ body.modal-open {
 .go-no-go-pill--unknown { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
 .live-strip--caution { border-color: rgba(245, 158, 11, 0.35); }
 .live-strip--no-go { border-color: rgba(239, 68, 68, 0.35); }
+
+.curve-now-marker {
+  stroke-width: 1.5;
+  opacity: 0.95;
+}
+
+.curve-now-marker__label {
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 
 .curve-chart-tooltip {
   position: absolute;

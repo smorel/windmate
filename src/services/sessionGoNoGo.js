@@ -10,7 +10,11 @@ const { explainMarginalSessionScore } = require('../utils/sessionScoreReasons');
 const { resolveWaveHeight } = require('./waves');
 const { computeSessionWarnings } = require('./weatherHazards');
 const { todayIsoDate } = require('../db');
-const { formatForecastClock, addForecastMinutes } = require('../utils/forecastTime');
+const {
+  formatForecastClock,
+  addForecastMinutes,
+  isSessionPlanningHour,
+} = require('../utils/forecastTime');
 
 const ON_TRACK_MIN_SCORE = parseFloat(process.env.WATCHLIST_STATUS_ON_TRACK_MIN_SCORE ?? '0.55');
 
@@ -73,8 +77,10 @@ function windowStatsRange(windowHours) {
   };
 }
 
-function rideableWindRange(hours) {
-  const rideable = hours.filter((h) => h.rideable);
+function rideableWindRange(hours, sessionDate) {
+  const rideable = hours.filter(
+    (h) => h.rideable && isSessionPlanningHour(hourTimeKey(h.time), sessionDate)
+  );
   if (!rideable.length) return null;
 
   let minWind = Infinity;
@@ -188,7 +194,7 @@ function computeSessionGoNoGo({
     prefs,
     prefs.radius_km ?? 50
   );
-  const windRange = rideableWindRange(hours);
+  const windRange = rideableWindRange(hours, sessionDate);
   const windowHourList = hoursInWindowSpan(hours, windowSpan);
   const windowStats = windowStatsRange(windowHourList);
   const allWarnings = computeSessionWarnings(hours, prefs);
@@ -208,7 +214,9 @@ function computeSessionGoNoGo({
     state = 'unknown';
     reasons.push('Forecast unavailable for this session');
   } else if (windowHours < minWindow) {
-    const scatteredRideable = hours.filter((h) => h.rideable).length;
+    const scatteredRideable = hours.filter(
+      (h) => h.rideable && isSessionPlanningHour(hourTimeKey(h.time), sessionDate)
+    ).length;
     if (windowHours > 0) {
       state = 'no_go';
       reasons.push(`Only ${windowHours} h rideable window — need ${minWindow} h for your setup`);

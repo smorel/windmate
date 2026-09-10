@@ -7,7 +7,9 @@ const {
   subtractForecastMinutes,
   addForecastMinutes,
   localDateString,
+  earliestFeasibleOnWaterStartKey,
 } = require('../utils/forecastTime');
+const { hourTimeKey } = require('../utils/rideableWindow');
 
 const DEFAULT_RIG_MINUTES = parseInt(process.env.DEFAULT_RIG_MINUTES ?? '20', 10);
 const DEFAULT_DEPARTURE_BUFFER_MINUTES = parseInt(
@@ -69,10 +71,84 @@ function remainingWindowHours(onWaterEnd) {
   return Math.max(0, Math.ceil(remainingMs / (60 * 60 * 1000)));
 }
 
+function hourStartMs(timeKey) {
+  const key = hourTimeKey(timeKey);
+  const ms = Date.parse(`${key}:00`);
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
+function isDepartureWindowStillFeasible(
+  now,
+  onWaterStart,
+  onWaterEnd,
+  driveMinutes,
+  rigMinutes,
+  bufferMinutes
+) {
+  const nowMs = now.getTime();
+  const startMs = hourStartMs(onWaterStart);
+  const endMs = hourStartMs(onWaterEnd);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return true;
+  if (nowMs >= endMs) return false;
+  if (nowMs >= startMs && nowMs < endMs) return true;
+
+  const earliest = earliestFeasibleOnWaterStartKey(now, driveMinutes, rigMinutes, bufferMinutes);
+  return hourTimeKey(earliest) <= hourTimeKey(onWaterStart);
+}
+
+function pickDepartureQualifyingWindow(
+  rideEntry,
+  dateStr,
+  prefs,
+  timelineHours,
+  { driveMinutes, rigMinutes, bufferMinutes, now } = {}
+) {
+  const rig = rigMinutes ?? DEFAULT_RIG_MINUTES;
+  const buffer = bufferMinutes ?? DEFAULT_DEPARTURE_BUFFER_MINUTES;
+  const drive = driveMinutes ?? 45;
+  const asOf = now ?? new Date();
+
+  let pick = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
+  if (!pick || dateStr !== localDateString(asOf)) return pick;
+
+  const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours);
+
+  for (let attempt = 0; attempt < 8 && pick; attempt += 1) {
+    const { onWaterEnd } = trimWindowEndForHazards(dayHours, pick.run, prefs);
+    if (
+      isDepartureWindowStillFeasible(
+        asOf,
+        pick.run.start,
+        onWaterEnd,
+        drive,
+        rig,
+        buffer
+      )
+    ) {
+      return pick;
+    }
+
+    const notBefore = earliestFeasibleOnWaterStartKey(asOf, drive, rig, buffer);
+    const next = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
+      notBeforeHourKey: notBefore,
+    });
+    if (!next || hourTimeKey(next.run.start) === hourTimeKey(pick.run.start)) return null;
+    pick = next;
+  }
+
+  return pick;
+}
+
 async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs }) {
   const timelineHours = getDayHours(rideEntry, dateStr);
   const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours);
-  const windowPick = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
+  const dest = { lat: spot.latitude, lng: spot.longitude };
+  const haversineGuess = haversineDriveMinutes(origin, dest);
+  const windowPick = pickDepartureQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
+    driveMinutes: haversineGuess.driveMinutes,
+    rigMinutes: DEFAULT_RIG_MINUTES,
+    bufferMinutes: DEFAULT_DEPARTURE_BUFFER_MINUTES,
+  });
   if (!windowPick) {
     return {
       status: 'no_window',
@@ -95,9 +171,7 @@ async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs 
   const bufferMinutes = DEFAULT_DEPARTURE_BUFFER_MINUTES;
   const onWaterStart = run.start;
   const arriveAtSpot = subtractForecastMinutes(onWaterStart, rigMinutes);
-  const dest = { lat: spot.latitude, lng: spot.longitude };
 
-  const haversineGuess = haversineDriveMinutes(origin, dest);
   const leaveGuess = subtractForecastMinutes(arriveAtSpot, haversineGuess.driveMinutes);
   const drive = await getDriveDuration(db, origin, dest, leaveGuess);
   const leaveBy = subtractForecastMinutes(
@@ -141,6 +215,8 @@ module.exports = {
   buildDeparturePlan,
   trimWindowEndForHazards,
   resolveDepartureStatus,
+  pickDepartureQualifyingWindow,
+  isDepartureWindowStillFeasible,
   DEFAULT_RIG_MINUTES,
   DEFAULT_DEPARTURE_BUFFER_MINUTES,
 };

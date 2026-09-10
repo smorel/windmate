@@ -146,8 +146,14 @@ const WindmateSessionRank = (() => {
     return WAVE_PREF_BY_SPORT[prefs?.sport] ?? 'flat';
   }
 
+  function filterPlanningHours(hours, dateStr) {
+    return (hours ?? []).filter((h) =>
+      WindmateForecastTime.isSessionPlanningHour(hourTimeKey(h.time), dateStr)
+    );
+  }
+
   function computeRawMetrics(entry, dateStr, prefs) {
-    const hours = getDayHours(entry, dateStr);
+    const hours = filterPlanningHours(getDayHours(entry, dateStr), dateStr);
     const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
     const rideableHours = hours.filter((h) => h.rideable);
     const viableHours = hours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
@@ -189,7 +195,7 @@ const WindmateSessionRank = (() => {
 
   /** Absolute go/no-go factors (settings-based caps) — used for excitement stickers, not matrix rank. */
   function computeAbsoluteGoNoGoMetrics(entry, dateStr, prefs, radiusKm) {
-    const hours = getDayHours(entry, dateStr);
+    const hours = filterPlanningHours(getDayHours(entry, dateStr), dateStr);
     const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
     const rideableHours = hours.filter((h) => h.rideable);
     const viableHours = hours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
@@ -381,11 +387,20 @@ const WindmateSessionRank = (() => {
     return WindmateRideableWindow.hourTimeKey(time);
   }
 
+  function applyPlanningRideableToTimeline(timeline, dateStr) {
+    return (timeline ?? []).map((slot) => {
+      const key = hourTimeKey(slot.time);
+      const rideable =
+        slot.rideable === true && WindmateForecastTime.isSessionPlanningHour(key, dateStr);
+      return rideable === slot.rideable ? slot : { ...slot, rideable };
+    });
+  }
+
   function buildConsensusHours(entry, dateStr, timelineHours) {
     const timeline = timelineHours ?? getDayHours(entry, dateStr);
     const modelEntries = Object.entries(entry.models ?? {}).filter(([, model]) => !model.error);
     if (!modelEntries.length || !timeline.length) {
-      return timeline;
+      return applyPlanningRideableToTimeline(timeline, dateStr);
     }
 
     const indexed = modelEntries.map(([, model]) => {
@@ -755,9 +770,14 @@ const WindmateSessionRank = (() => {
     return best;
   }
 
-  function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours) {
+  function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, options = {}) {
     const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
-    const consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
+    let consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
+    if (options.notBeforeHourKey) {
+      const notBefore = hourTimeKey(options.notBeforeHourKey);
+      consensusHours = consensusHours.filter((hour) => hourTimeKey(hour.time) >= notBefore);
+    }
+    if (!consensusHours.length) return null;
     const windows = enumerateMinLengthWindows(consensusHours, minWindowHours);
     if (!windows.length) return null;
 
@@ -787,6 +807,79 @@ const WindmateSessionRank = (() => {
       metrics: best.metrics,
       sessionWindowHours: minWindowHours,
     };
+  }
+
+  const DEFAULT_DEPARTURE_DRIVE_ESTIMATE_MIN = 45;
+  const DEFAULT_DEPARTURE_RIG_MIN = 20;
+  const DEFAULT_DEPARTURE_BUFFER_MIN = 5;
+
+  function hourStartMs(timeKey) {
+    const key = hourTimeKey(timeKey);
+    const ms = Date.parse(`${key}:00`);
+    return Number.isFinite(ms) ? ms : NaN;
+  }
+
+  function isDepartureWindowStillFeasible(
+    now,
+    onWaterStart,
+    onWaterEnd,
+    driveMinutes,
+    rigMinutes,
+    bufferMinutes
+  ) {
+    const nowMs = now.getTime();
+    const startMs = hourStartMs(onWaterStart);
+    const endMs = hourStartMs(onWaterEnd);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) return true;
+    if (nowMs >= endMs) return false;
+    if (nowMs >= startMs && nowMs < endMs) return true;
+
+    const earliest = WindmateForecastTime.earliestFeasibleOnWaterStartKey(
+      now,
+      driveMinutes,
+      rigMinutes,
+      bufferMinutes
+    );
+    return hourTimeKey(earliest) <= hourTimeKey(onWaterStart);
+  }
+
+  function pickDepartureQualifyingWindow(
+    entry,
+    dateStr,
+    prefs,
+    timelineHours,
+    { driveMinutes, rigMinutes, bufferMinutes, now } = {}
+  ) {
+    const rig = rigMinutes ?? DEFAULT_DEPARTURE_RIG_MIN;
+    const buffer = bufferMinutes ?? DEFAULT_DEPARTURE_BUFFER_MIN;
+    const drive = driveMinutes ?? DEFAULT_DEPARTURE_DRIVE_ESTIMATE_MIN;
+    const asOf = now ?? new Date();
+
+    let pick = pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours);
+    if (!pick || dateStr !== WindmateForecastTime.localDateString(asOf)) return pick;
+
+    for (let attempt = 0; attempt < 8 && pick; attempt += 1) {
+      const onWaterEnd = WindmateForecastTime.addForecastMinutes(pick.run.end, 60);
+      if (
+        isDepartureWindowStillFeasible(asOf, pick.run.start, onWaterEnd, drive, rig, buffer)
+      ) {
+        return pick;
+      }
+
+      const notBefore = WindmateForecastTime.earliestFeasibleOnWaterStartKey(
+        asOf,
+        drive,
+        rig,
+        buffer
+      );
+      const next = pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, {
+        notBeforeHourKey: notBefore,
+      });
+      if (!next || hourTimeKey(next.run.start) === hourTimeKey(pick.run.start)) return null;
+      pick = next;
+    }
+
+    return pick;
   }
 
   function fillTrailingHourScores(byStartTime, consensusHours, minWindowHours) {
@@ -867,6 +960,7 @@ const WindmateSessionRank = (() => {
     departureWindowOrder,
     weightsForDepartureWindow,
     pickBestQualifyingWindow,
+    pickDepartureQualifyingWindow,
     scoreWindowsByStartHour,
     computeAbsoluteGoNoGoMetrics,
     computeSessionGoNoGoScore,

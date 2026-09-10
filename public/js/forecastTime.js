@@ -97,16 +97,60 @@ const WindmateForecastTime = (() => {
     return key < currentLocalHourStartKey(date);
   }
 
+  function isSessionPlanningHour(timeKey, sessionDate, date = new Date()) {
+    if (sessionDate !== localDateString(date)) return true;
+    return !isElapsedLocalDayHour(timeKey, sessionDate, date);
+  }
+
+  /** Wall-clock hour + fraction from forecast ISO (local spot time, not UTC Date). */
+  function fractionalHourFromForecastTime(isoTime) {
+    const parts = parseForecastParts(isoTime);
+    if (!parts) return 0;
+    return parts.h + parts.mi / 60;
+  }
+
+  /** Center of the hour slot [h, h+1) for hourly :00 buckets (matrix column alignment). */
+  function fractionalHourSlotCenter(isoTime) {
+    const parts = parseForecastParts(isoTime);
+    if (!parts) return 0;
+    const start = parts.h + parts.mi / 60;
+    const onHourMark = parts.mi === 0;
+    return onHourMark ? start + 0.5 : start;
+  }
+
+  function earliestFeasibleOnWaterStartKey(
+    now = new Date(),
+    driveMinutes = 0,
+    rigMinutes = 0,
+    bufferMinutes = 0
+  ) {
+    const leadMs = (driveMinutes + rigMinutes + bufferMinutes) * 60 * 1000;
+    const ready = new Date(now.getTime() + leadMs);
+    const y = ready.getFullYear();
+    const mo = String(ready.getMonth() + 1).padStart(2, '0');
+    const d = String(ready.getDate()).padStart(2, '0');
+    let h = ready.getHours();
+    if (ready.getMinutes() > 0 || ready.getSeconds() > 0 || ready.getMilliseconds() > 0) {
+      h += 1;
+    }
+    return `${y}-${mo}-${d}T${String(h).padStart(2, '0')}:00`;
+  }
+
   return {
+    parseForecastParts,
     formatForecastClock,
     addForecastMinutes,
     subtractForecastMinutes,
     formatWindowTimeRange,
     sessionWarningMessage,
+    fractionalHourFromForecastTime,
+    fractionalHourSlotCenter,
     localDateString,
     forecastTodayFromRideability,
     defaultPlannerDayDate,
     currentLocalHourStartKey,
     isElapsedLocalDayHour,
+    isSessionPlanningHour,
+    earliestFeasibleOnWaterStartKey,
   };
 })();

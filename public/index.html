@@ -6,7 +6,7 @@
   <title>Windmate</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="/css/styles.css?v=16" />
+  <link rel="stylesheet" href="/css/styles.css?v=24" />
   <script>
     tailwind.config = {
       theme: {
@@ -20,6 +20,13 @@
   </script>
 </head>
 <body class="bg-base text-slate-200 min-h-screen">
+  <div
+    id="refresh-countdown"
+    class="refresh-countdown-banner"
+    role="status"
+    aria-live="polite"
+    hidden
+  ></div>
   <div class="max-w-7xl mx-auto px-4 py-6 space-y-8">
     <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
@@ -268,24 +275,24 @@
     </div>
   </div>
 
-  <script src="/js/copy.js?v=3"></script>
+  <script src="/js/copy.js?v=4"></script>
   <script src="/js/forecastTime.js"></script>
   <script src="/js/windColors.js"></script>
   <script src="/js/waveColors.js"></script>
-  <script src="/js/rideableWindow.js?v=3"></script>
+  <script src="/js/rideableWindow.js?v=4"></script>
   <script src="/js/forecastProbability.js"></script>
-  <script src="/js/sessionRank.js?v=15"></script>
+  <script src="/js/sessionRank.js?v=16"></script>
   <script src="/js/sessionGoNoGo.js?v=2"></script>
   <script src="/js/sessionExcitement.js"></script>
   <script src="/js/weatherHazards.js"></script>
   <script src="/js/spotMap.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/js/spotMapPicker.js"></script>
-  <script src="/js/observations.js?v=2"></script>
+  <script src="/js/observations.js?v=3"></script>
   <script src="/js/sportSelector.js"></script>
   <script src="/js/watchlist.js"></script>
   <script src="/js/departure.js?v=11"></script>
   <script src="/js/spotIntel.js?v=3"></script>
-  <script src="/js/app.js?v=16"></script>
+  <script src="/js/app.js?v=20"></script>
 </body>
 </html>

@@ -41,6 +41,11 @@ function addForecastMinutes(isoTime, minutes) {
 }
 
 /** Local calendar date — avoid toISOString() UTC rollover in the evening (Americas). */
+/** Canonical hourly key from Open-Meteo / iGetwind (`YYYY-MM-DDTHH:MM`). */
+function normalizeHourlyTimestamp(isoTime) {
+  return String(isoTime).replace(' ', 'T').slice(0, 16);
+}
+
 function localDateString(date = new Date()) {
   const y = date.getFullYear();
   const mo = String(date.getMonth() + 1).padStart(2, '0');
@@ -70,13 +75,41 @@ function isElapsedLocalDayHour(timeKey, today, date = new Date()) {
   return key < currentLocalHourStartKey(date);
 }
 
+/** False for elapsed hours when `sessionDate` is the local calendar today (still rideable on future days). */
+function isSessionPlanningHour(timeKey, sessionDate, date = new Date()) {
+  if (sessionDate !== localDateString(date)) return true;
+  return !isElapsedLocalDayHour(timeKey, sessionDate, date);
+}
+
+/** Earliest on-water hour start after drive, rig, and leave buffer (rounds up to next hour). */
+function earliestFeasibleOnWaterStartKey(
+  now = new Date(),
+  driveMinutes = 0,
+  rigMinutes = 0,
+  bufferMinutes = 0
+) {
+  const leadMs = (driveMinutes + rigMinutes + bufferMinutes) * 60 * 1000;
+  const ready = new Date(now.getTime() + leadMs);
+  const y = ready.getFullYear();
+  const mo = String(ready.getMonth() + 1).padStart(2, '0');
+  const d = String(ready.getDate()).padStart(2, '0');
+  let h = ready.getHours();
+  if (ready.getMinutes() > 0 || ready.getSeconds() > 0 || ready.getMilliseconds() > 0) {
+    h += 1;
+  }
+  return `${y}-${mo}-${d}T${String(h).padStart(2, '0')}:00`;
+}
+
 module.exports = {
   parseForecastParts,
   formatForecastClock,
   addForecastMinutes,
   subtractForecastMinutes,
+  normalizeHourlyTimestamp,
   localDateString,
   todayFromHourlyTimes,
   currentLocalHourStartKey,
   isElapsedLocalDayHour,
+  isSessionPlanningHour,
+  earliestFeasibleOnWaterStartKey,
 };

@@ -8,7 +8,11 @@ const {
 } = require('../utils/rideableWindow');
 const { parseRankCriteriaOrder } = require('../utils/rankCriteria');
 const { SPORT_WAVE_DEFAULTS } = require('../utils/sports');
-const { localDateString, isElapsedLocalDayHour } = require('../utils/forecastTime');
+const {
+  localDateString,
+  isElapsedLocalDayHour,
+  isSessionPlanningHour,
+} = require('../utils/forecastTime');
 const { readMeteoForecastProbability } = require('../utils/forecastProbabilityHour');
 
 const DEFAULT_ORDER = [
@@ -130,7 +134,10 @@ function getModelDayHours(entry, modelId, dateStr) {
 function longestConsensusWindow(entry, dateStr, minWindowHours) {
   const modelEntries = Object.entries(entry.models ?? {}).filter(([, model]) => !model.error);
   if (!modelEntries.length) {
-    const hours = getDayHours(entry, dateStr);
+    const hours = filterPlanningHours(getDayHours(entry, dateStr), dateStr).map((hour) => ({
+      ...hour,
+      rideable: hour.rideable === true,
+    }));
     return longestRideableWindowSpan(hours, minWindowHours);
   }
 
@@ -168,8 +175,12 @@ function wavePreferenceFromPrefs(prefs) {
   return prefs?.wave_preference ?? SPORT_WAVE_DEFAULTS[prefs?.sport] ?? 'flat';
 }
 
+function filterPlanningHours(hours, dateStr) {
+  return (hours ?? []).filter((h) => isSessionPlanningHour(hourTimeKey(h.time), dateStr));
+}
+
 function computeRawMetrics(entry, dateStr, prefs, radiusKm) {
-  const hours = getDayHours(entry, dateStr);
+  const hours = filterPlanningHours(getDayHours(entry, dateStr), dateStr);
   const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
   const rideableHours = hours.filter((h) => h.rideable);
   const viableHours = hours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
@@ -286,11 +297,19 @@ function longestRideableBlockLength(hours, minWindowHours) {
   return Math.max(...enumerateRunsFromHours(hours, minWindowHours).map((run) => run.length), 0);
 }
 
+function applyPlanningRideableToTimeline(timeline, dateStr) {
+  return (timeline ?? []).map((slot) => {
+    const key = hourTimeKey(slot.time);
+    const rideable = slot.rideable === true && isSessionPlanningHour(key, dateStr);
+    return rideable === slot.rideable ? slot : { ...slot, rideable };
+  });
+}
+
 function buildConsensusHours(entry, dateStr, timelineHours) {
   const timeline = timelineHours ?? getDayHours(entry, dateStr);
   const modelEntries = Object.entries(entry.models ?? {}).filter(([, model]) => !model.error);
   if (!modelEntries.length || !timeline.length) {
-    return timeline;
+    return applyPlanningRideableToTimeline(timeline, dateStr);
   }
 
   const indexed = modelEntries.map(([, model]) => {
@@ -624,9 +643,14 @@ function pickBestDepartureWindow(scored, byStartTime) {
   return best;
 }
 
-function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours) {
+function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, options = {}) {
   const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
-  const consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
+  let consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
+  if (options.notBeforeHourKey) {
+    const notBefore = hourTimeKey(options.notBeforeHourKey);
+    consensusHours = consensusHours.filter((hour) => hourTimeKey(hour.time) >= notBefore);
+  }
+  if (!consensusHours.length) return null;
   const windows = enumerateMinLengthWindows(consensusHours, minWindowHours);
   if (!windows.length) return null;
 

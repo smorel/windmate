@@ -63,15 +63,30 @@ describe('mergeForecastElapsedToday', () => {
 });
 
 describe('allReportingModelsRideable', () => {
-  it('ignores elapsed models whose wind is below min when others still agree', () => {
-    const key = '2026-09-12T08:00';
+  it('requires every reporting model to agree on future hours today', () => {
+    const key = '2026-09-12T16:00';
     const now = new Date(2026, 8, 12, 15, 0, 0);
-    const low = new Map([[key, { rideable: false, windOk: false }]]);
+    const low = new Map([[key, { rideable: false, windOk: true }]]);
     const good = new Map([[key, { rideable: true, windOk: true }]]);
 
     assert.equal(
       allReportingModelsRideable([low, good], key, { today: '2026-09-12', now }),
+      false
+    );
+    assert.equal(
+      allReportingModelsRideable([good], key, { today: '2026-09-12', now }),
       true
+    );
+  });
+
+  it('never counts elapsed hours on today as rideable for session planning', () => {
+    const key = '2026-09-12T08:00';
+    const now = new Date(2026, 8, 12, 15, 0, 0);
+    const good = new Map([[key, { rideable: true, windOk: true }]]);
+
+    assert.equal(
+      allReportingModelsRideable([good], key, { today: '2026-09-12', now }),
+      false
     );
   });
 });

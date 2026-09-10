@@ -53,7 +53,7 @@ function createObservationsRouter(db) {
       const results = await Promise.all(
         nearbySpots.map(async (spot) => {
           try {
-            const forecast = await fetchForecast(db, spot.id, spot);
+            const forecast = await fetchForecast(db, spot.id, spot, { skipCache });
             const escalated = watchedSpotIds.has(spot.id);
             const ttlMs = escalated
               ? parseInt(process.env.WATCHED_OBSERVATION_TTL_MS ?? '120000', 10)

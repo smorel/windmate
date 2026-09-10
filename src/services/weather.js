@@ -1,7 +1,9 @@
 const CACHE_TTL_MS = 30 * 60 * 1000;
+/** Bump when hourly parsing changes so SQLite forecast_cache is refetched. */
+const FORECAST_CACHE_VERSION = 2;
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
-const { fetchModelForecast, normalizeWindData, delay } = require('./igetwind');
+const { fetchModelForecast, normalizeWindData, repairIgetwindHourly, delay } = require('./igetwind');
 const { getModelsForLocation, getPrimaryModel, getModelLabel } = require('../utils/models');
 const { mergeForecastElapsedToday } = require('./forecastMerge');
 
@@ -69,6 +71,38 @@ async function fetchMixedForecast(spot) {
 }
 
 /** Extract primary hourly series from cached mixed or legacy forecast blob. */
+function sanitizeForecastBlob(data) {
+  if (!data) return data;
+
+  const out = { ...data, cacheVersion: FORECAST_CACHE_VERSION };
+
+  if (out.models) {
+    out.models = { ...out.models };
+    for (const [modelId, model] of Object.entries(out.models)) {
+      if (!model?.hourly || modelId === 'open-meteo') continue;
+      out.models[modelId] = {
+        ...model,
+        hourly: repairIgetwindHourly(model.hourly),
+      };
+    }
+  } else if (out.hourly && out.provider === 'igetwind') {
+    out.hourly = repairIgetwindHourly(out.hourly);
+  }
+
+  return out;
+}
+
+function isForecastCacheFresh(cached) {
+  if (!cached) return false;
+  if (Date.now() - cached.fetched_at >= CACHE_TTL_MS) return false;
+  try {
+    const parsed = JSON.parse(cached.data);
+    return parsed.cacheVersion === FORECAST_CACHE_VERSION;
+  } catch {
+    return false;
+  }
+}
+
 function getPrimaryHourlyForecast(forecast) {
   if (forecast.models) {
     const primary = forecast.models[forecast.primaryModel];
@@ -85,13 +119,14 @@ function getPrimaryHourlyForecast(forecast) {
  * @param {string} spotId
  * @param {{ latitude: number, longitude: number }} spot
  */
-async function fetchForecast(db, spotId, spot) {
+async function fetchForecast(db, spotId, spot, options = {}) {
+  const skipCache = Boolean(options.skipCache);
   const cached = db.prepare(
     'SELECT fetched_at, data FROM forecast_cache WHERE spot_id = ?'
   ).get(spotId);
 
-  if (cached && Date.now() - cached.fetched_at < CACHE_TTL_MS) {
-    return { ...JSON.parse(cached.data), cached: true };
+  if (!skipCache && isForecastCacheFresh(cached)) {
+    return sanitizeForecastBlob(JSON.parse(cached.data));
   }
 
   const provider = getProvider();
@@ -106,8 +141,11 @@ async function fetchForecast(db, spotId, spot) {
       data = await fetchSingleModel(spot, model);
     }
 
-    const previousData = cached ? JSON.parse(cached.data) : null;
-    const merged = mergeForecastElapsedToday(previousData, data);
+    const previousData =
+      cached && JSON.parse(cached.data).cacheVersion === FORECAST_CACHE_VERSION
+        ? JSON.parse(cached.data)
+        : null;
+    const merged = sanitizeForecastBlob(mergeForecastElapsedToday(previousData, data));
 
     db.prepare(`
       INSERT INTO forecast_cache (spot_id, fetched_at, data)
@@ -118,7 +156,8 @@ async function fetchForecast(db, spotId, spot) {
     return { ...merged, cached: false };
   } catch (err) {
     if (cached) {
-      return { ...JSON.parse(cached.data), cached: true, stale: true };
+      const stale = sanitizeForecastBlob(JSON.parse(cached.data));
+      return { ...stale, cached: true, stale: true };
     }
     throw err;
   }
@@ -128,6 +167,8 @@ module.exports = {
   fetchForecast,
   fetchMixedForecast,
   getPrimaryHourlyForecast,
+  sanitizeForecastBlob,
   getProvider,
   CACHE_TTL_MS,
+  FORECAST_CACHE_VERSION,
 };

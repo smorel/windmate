@@ -78,12 +78,13 @@ async function fetchOpenMeteoContextRaw(spot) {
  * @param {string} spotId
  * @param {{ latitude: number, longitude: number }} spot
  */
-async function fetchOpenMeteoContext(db, spotId, spot) {
+async function fetchOpenMeteoContext(db, spotId, spot, options = {}) {
+  const skipCache = Boolean(options.skipCache);
   const cached = db.prepare(
     'SELECT fetched_at, data FROM context_cache WHERE spot_id = ?'
   ).get(spotId);
 
-  if (cached && Date.now() - cached.fetched_at < CONTEXT_CACHE_TTL_MS) {
+  if (!skipCache && cached && Date.now() - cached.fetched_at < CONTEXT_CACHE_TTL_MS) {
     return JSON.parse(cached.data);
   }
 

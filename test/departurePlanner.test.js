@@ -11,9 +11,11 @@ const {
 } = require('../src/services/sessionRank');
 const {
   resolveDepartureStatus,
+  pickDepartureQualifyingWindow,
   DEFAULT_RIG_MINUTES,
   DEFAULT_DEPARTURE_BUFFER_MINUTES,
 } = require('../src/services/departurePlanner');
+const { localDateString } = require('../src/utils/forecastTime');
 const { subtractForecastMinutes } = require('../src/utils/forecastTime');
 const { roundDepartureBucket, haversineDriveMinutes } = require('../src/services/travelTime');
 const {
@@ -420,5 +422,62 @@ describe('resolveDepartureStatus', () => {
       resolveDepartureStatus('2099-01-01', '2099-01-01T08:00', '2099-01-01T10:00', '2099-01-01T13:00'),
       'planned'
     );
+  });
+});
+
+describe('pickDepartureQualifyingWindow', () => {
+  it('limits window search to hours at or after notBefore', () => {
+    const hours = [
+      hour('2026-09-12T08:00', { windSpeed: 24 }),
+      hour('2026-09-12T09:00', { windSpeed: 24 }),
+      hour('2026-09-12T14:00', { windSpeed: 16 }),
+      hour('2026-09-12T15:00', { windSpeed: 16 }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 50,
+      rank_criteria_order: ['wind'],
+    };
+    const pick = pickBestQualifyingWindow(entry, '2026-09-12', prefs, hours, {
+      notBeforeHourKey: '2026-09-12T14:00',
+    });
+    assert.equal(pick.run.start, '2026-09-12T14:00');
+  });
+
+  it('re-picks the best window still reachable later on the session day', () => {
+    const hours = [
+      hour('2026-09-12T08:00', { windSpeed: 26 }),
+      hour('2026-09-12T09:00', { windSpeed: 26 }),
+      hour('2026-09-12T14:00', { windSpeed: 18 }),
+      hour('2026-09-12T15:00', { windSpeed: 18 }),
+      hour('2026-09-12T16:00', { windSpeed: 18 }),
+      hour('2026-09-12T17:00', { windSpeed: 22 }),
+      hour('2026-09-12T18:00', { windSpeed: 22 }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 50,
+      rank_criteria_order: ['wind'],
+    };
+    const morningBest = pickBestQualifyingWindow(entry, '2026-09-12', prefs, hours);
+    assert.equal(morningBest.run.start, '2026-09-12T08:00');
+
+    const now = new Date(2026, 8, 12, 15, 30);
+    const dateStr = localDateString(now);
+    const timeline = hours.map((h) => ({
+      ...h,
+      time: `${dateStr}T${h.time.slice(11)}`,
+    }));
+    const departurePick = pickDepartureQualifyingWindow(entry, dateStr, prefs, timeline, {
+      now,
+      driveMinutes: 30,
+      rigMinutes: DEFAULT_RIG_MINUTES,
+      bufferMinutes: DEFAULT_DEPARTURE_BUFFER_MINUTES,
+    });
+    assert.ok(departurePick);
+    assert.ok(departurePick.run.start >= `${dateStr}T17:00`);
+    assert.notEqual(departurePick.run.start, morningBest.run.start.replace('2026-09-12', dateStr));
   });
 });

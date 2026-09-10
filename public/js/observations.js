@@ -2,7 +2,9 @@
 const WindmateObservations = (() => {
   const expanded = new Set();
   const EXPANDED_REFRESH_MS = 5 * 60 * 1000;
+  const NOW_MARKER_REFRESH_MS = 60 * 1000;
   let autoRefreshTimer = null;
+  let nowMarkerTimer = null;
   let autoRefreshCallback = null;
 
   function clearAutoRefresh() {
@@ -12,15 +14,98 @@ const WindmateObservations = (() => {
     }
   }
 
+  function clearNowMarkerRefresh() {
+    if (nowMarkerTimer) {
+      clearInterval(nowMarkerTimer);
+      nowMarkerTimer = null;
+    }
+  }
+
+  function syncNowMarkerRefresh() {
+    clearNowMarkerRefresh();
+    if (!expanded.size) return;
+    nowMarkerTimer = setInterval(() => {
+      if (!expanded.size) {
+        clearNowMarkerRefresh();
+        return;
+      }
+      updateAllNowMarkers();
+    }, NOW_MARKER_REFRESH_MS);
+  }
+
+  function fractionalHourNow() {
+    const now = new Date();
+    return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+  }
+
+  function xFromDayHour(padL, innerW, hour) {
+    return padL + (hour / 24) * innerW;
+  }
+
+  function xFromDayFraction(padL, innerW, dayFraction) {
+    return xFromDayHour(padL, innerW, dayFraction);
+  }
+
+  function isTodayCurveDate(sessionDate, forecast) {
+    const today = WindmateForecastTime.localDateString();
+    const dateStr = sessionDate ?? forecast[0]?.time?.slice(0, 10);
+    return dateStr === today;
+  }
+
+  function nowMarkerBeaufortColor() {
+    const bf = WindmateWindColors.BEAUFORT.find((band) => band.force === 9);
+    return bf?.color ?? '#c64e36';
+  }
+
+  function nowMarkerLayout(padL, innerW) {
+    const hour = fractionalHourNow();
+    return {
+      x: xFromDayHour(padL, innerW, hour),
+      timeLabel: formatFractionalHour(hour),
+    };
+  }
+
+  function renderNowMarker(showNow, pad, innerH, innerW) {
+    if (!showNow) return '';
+    const color = nowMarkerBeaufortColor();
+    const { x, timeLabel } = nowMarkerLayout(pad.l, innerW);
+    const labelY = pad.t - 5;
+    return `<g class="curve-now-marker-group" pointer-events="none">
+      <text class="curve-now-marker__label" x="${x}" y="${labelY}" text-anchor="middle" fill="${color}">${timeLabel}</text>
+      <line class="curve-now-marker" x1="${x}" y1="${pad.t}" x2="${x}" y2="${pad.t + innerH}" stroke="${color}"/>
+    </g>`;
+  }
+
+  function updateAllNowMarkers() {
+    document.querySelectorAll('.curve-chart[data-curve-show-now="1"]').forEach((chartRoot) => {
+      const padL = Number(chartRoot.dataset.curvePadL);
+      const innerW = Number(chartRoot.dataset.curveInnerW);
+      const padT = Number(chartRoot.dataset.curvePadT);
+      const innerH = Number(chartRoot.dataset.curveInnerH);
+      if (!Number.isFinite(padL) || !Number.isFinite(innerW)) return;
+      const { x, timeLabel } = nowMarkerLayout(padL, innerW);
+      const line = chartRoot.querySelector('.curve-now-marker');
+      const label = chartRoot.querySelector('.curve-now-marker__label');
+      if (!line || !label) return;
+      line.setAttribute('x1', String(x));
+      line.setAttribute('x2', String(x));
+      line.setAttribute('y1', String(padT));
+      line.setAttribute('y2', String(padT + innerH));
+      label.setAttribute('x', String(x));
+      label.textContent = timeLabel;
+    });
+  }
+
   function syncAutoRefresh() {
     clearAutoRefresh();
+    syncNowMarkerRefresh();
     if (!expanded.size || !autoRefreshCallback) return;
     autoRefreshTimer = setInterval(() => {
       if (!expanded.size) {
         clearAutoRefresh();
         return;
       }
-      void autoRefreshCallback();
+      if (autoRefreshCallback) void autoRefreshCallback();
     }, EXPANDED_REFRESH_MS);
   }
 
@@ -199,7 +284,12 @@ const WindmateObservations = (() => {
     const primary = rideEntry.primaryModel;
     const dayHours = primary ? getModelDayHours(rideEntry, primary, dateStr) : [];
     if (!dayHours.length) return null;
-    const pick = WindmateSessionRank.pickBestQualifyingWindow(rideEntry, dateStr, prefs, dayHours);
+    const pick = WindmateSessionRank.pickDepartureQualifyingWindow(
+      rideEntry,
+      dateStr,
+      prefs,
+      dayHours
+    );
     if (!pick) return null;
     return {
       start: WindmateRideableWindow.hourTimeKey(pick.run.start),
@@ -224,21 +314,21 @@ const WindmateObservations = (() => {
     return hours.filter((hour) => hour.inRideableWindow);
   }
 
-  function renderRideableWindowBands(windowHours, xForHour, pad, innerH, innerW) {
+  function renderRideableWindowBands(windowHours, xSlotStart, pad, innerH, innerW) {
     const barW = innerW / 24;
     return windowHours
       .map((hour) => {
-        const x = xForHour(hour.time);
-        return `<rect x="${x - barW / 2}" y="${pad.t}" width="${barW}" height="${innerH}" fill="rgba(16,185,129,0.18)" stroke="#10b981" stroke-width="0.75" stroke-opacity="0.35"/>`;
+        const x = xSlotStart(hour.time);
+        return `<rect x="${x}" y="${pad.t}" width="${barW}" height="${innerH}" fill="rgba(16,185,129,0.18)" stroke="#10b981" stroke-width="0.75" stroke-opacity="0.35"/>`;
       })
       .join('');
   }
 
-  function renderPlannerWindowBand(plannerRange, xForHour, pad, innerH, innerW) {
+  function renderPlannerWindowBand(plannerRange, xSlotStart, pad, innerH, innerW) {
     if (!plannerRange?.start || !plannerRange?.endExclusive) return '';
     const barW = innerW / 24;
-    const x1 = xForHour(plannerRange.start) - barW / 2;
-    const x2 = xForHour(plannerRange.endExclusive) - barW / 2;
+    const x1 = xSlotStart(plannerRange.start);
+    const x2 = xSlotStart(plannerRange.endExclusive);
     const w = Math.max(x2 - x1, barW);
     const y1 = pad.t;
     const y2 = pad.t + innerH;
@@ -252,7 +342,34 @@ const WindmateObservations = (() => {
     return `data-spot-id="${spotId}" data-curve-key="${curveKey}"${dateAttr}`;
   }
 
+  const LIVE_NOW_TIME_KEY = '__live_now__';
+
   function fractionalHourFromTime(time) {
+    if (time === LIVE_NOW_TIME_KEY) return fractionalHourNow();
+    if (WindmateForecastTime.parseForecastParts(time)) {
+      return WindmateForecastTime.fractionalHourSlotCenter(time);
+    }
+    const d = new Date(time);
+    return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+  }
+
+  function actualSeriesThroughNow(actual, current, showNow) {
+    if (!showNow || !current) return actual;
+    const last = actual[actual.length - 1];
+    if (last && last.time === LIVE_NOW_TIME_KEY) return actual;
+    return [
+      ...actual,
+      {
+        time: LIVE_NOW_TIME_KEY,
+        windSpeed: current.windSpeed,
+        gusts: current.gusts ?? current.windSpeed,
+      },
+    ];
+  }
+
+  function fractionalHourSlotStart(time) {
+    const parts = WindmateForecastTime.parseForecastParts(time);
+    if (parts) return parts.h + parts.mi / 60;
     const d = new Date(time);
     return d.getHours() + d.getMinutes() / 60;
   }
@@ -376,16 +493,19 @@ const WindmateObservations = (() => {
     chartRoot.addEventListener('mouseleave', hide);
   }
 
-  function renderHazardBands(warnings, xForHour, pad, innerH, innerW) {
+  function renderHazardBands(warnings, pad, innerH, innerW) {
     const barW = Math.max(innerW / 24, 8);
     return warnings
       .filter((w) => w.eventTime)
       .map((w) => {
-        const x = xForHour(w.eventTime);
+        const center = WindmateForecastTime.parseForecastParts(w.eventTime)
+          ? WindmateForecastTime.fractionalHourSlotCenter(w.eventTime)
+          : fractionalHourFromTime(w.eventTime);
+        const x = xFromDayFraction(pad.l, innerW, center) - barW / 2;
         const fill =
           w.type === 'storm_approaching' ? 'rgba(239,68,68,0.22)' : 'rgba(251,191,36,0.2)';
         const stroke = w.type === 'storm_approaching' ? '#f87171' : '#fbbf24';
-        return `<rect x="${x - barW / 2}" y="${pad.t}" width="${barW}" height="${innerH}" fill="${fill}" stroke="${stroke}" stroke-width="0.75" stroke-opacity="0.45"/>`;
+        return `<rect x="${x}" y="${pad.t}" width="${barW}" height="${innerH}" fill="${fill}" stroke="${stroke}" stroke-width="0.75" stroke-opacity="0.45"/>`;
       })
       .join('');
   }
@@ -394,7 +514,7 @@ const WindmateObservations = (() => {
     if (!panel || !obsEntry) return;
     const container = panel;
 
-    const actual = obsEntry.today?.actual ?? [];
+    const actualRaw = obsEntry.today?.actual ?? [];
     const forecast = obsEntry.today?.forecast ?? [];
     const warnings = options.warnings ?? obsEntry.today?.warnings ?? [];
     const width = 640;
@@ -402,6 +522,10 @@ const WindmateObservations = (() => {
     const pad = { l: 44, r: 12, t: 16, b: 24 };
     const innerW = width - pad.l - pad.r;
     const innerH = height - pad.t - pad.b;
+
+    const sessionDate = options.sessionDate ?? forecast[0]?.time?.slice(0, 10);
+    const showNow = isTodayCurveDate(sessionDate, forecast);
+    const actual = actualSeriesThroughNow(actualRaw, obsEntry.current, showNow);
 
     const allSpeeds = [
       ...actual.map((p) => p.windSpeed),
@@ -415,55 +539,56 @@ const WindmateObservations = (() => {
     const minY = 0;
     const { ticks: yTicks, top: maxY } = buildYAxisTicks(rawMaxY);
 
-    const xForHour = (time) => {
-      const h = new Date(time).getHours() + new Date(time).getMinutes() / 60;
-      return pad.l + (h / 24) * innerW;
-    };
+    const xAtDayFraction = (dayFraction) => xFromDayFraction(pad.l, innerW, dayFraction);
+
+    const xSlotStart = (time) =>
+      xAtDayFraction(fractionalHourSlotStart(time));
+
+    const xForSeriesPoint = (time) =>
+      xAtDayFraction(fractionalHourFromTime(time));
     const yForSpeed = (speed) => pad.t + innerH - ((speed - minY) / (maxY - minY)) * innerH;
 
     const actualPath = actual
-      .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForHour(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
       .join(' ');
 
     const actualGustPath = actual
       .map((p, i) =>
-        `${i === 0 ? 'M' : 'L'}${xForHour(p.time).toFixed(1)},${yForSpeed(p.gusts ?? p.windSpeed).toFixed(1)}`
+        `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.gusts ?? p.windSpeed).toFixed(1)}`
       )
       .join(' ');
 
     const forecastPath = forecast
-      .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForHour(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
       .join(' ');
 
     const forecastGustPath = forecast
       .map((p, i) =>
-        `${i === 0 ? 'M' : 'L'}${xForHour(p.time).toFixed(1)},${yForSpeed(p.gusts ?? p.windSpeed).toFixed(1)}`
+        `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.gusts ?? p.windSpeed).toFixed(1)}`
       )
       .join(' ');
 
     const bandTop = yForSpeed(prefs.max_gust_knots);
     const bandBottom = yForSpeed(prefs.min_wind_knots);
-
-    const sessionDate = options.sessionDate ?? forecast[0]?.time?.slice(0, 10);
     const plannerRange =
       options.plannerRange ?? resolvePlannerWindowRange(options.rideEntry, sessionDate, prefs);
     const rideableWindowHours = qualifyingWindowHours(forecast, options.rideEntry, prefs);
     const rideableWindowBands = renderRideableWindowBands(
       rideableWindowHours,
-      xForHour,
+      xSlotStart,
       pad,
       innerH,
       innerW
     );
-    const plannerWindowBand = renderPlannerWindowBand(plannerRange, xForHour, pad, innerH, innerW);
-    const hazardBands = renderHazardBands(warnings, xForHour, pad, innerH, innerW);
+    const plannerWindowBand = renderPlannerWindowBand(plannerRange, xSlotStart, pad, innerH, innerW);
+    const hazardBands = renderHazardBands(warnings, pad, innerH, innerW);
 
     const weatherBlocks = forecast
       .filter((h) => WindmateWeatherHazards.hasForecastRain(h))
       .map((h) => {
-        const x = xForHour(h.time);
+        const x = xSlotStart(h.time);
         const w = innerW / 24;
-        return `<rect x="${x - w / 2}" y="${pad.t}" width="${w}" height="${innerH}" fill="rgba(127,29,29,0.2)"/>`;
+        return `<rect x="${x}" y="${pad.t}" width="${w}" height="${innerH}" fill="rgba(127,29,29,0.2)"/>`;
       })
       .join('');
 
@@ -497,11 +622,12 @@ const WindmateObservations = (() => {
           <path d="${forecastPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/>
           ${actualGustPath ? `<path d="${actualGustPath}" fill="none" stroke="#6ee7b7" stroke-width="1.75" stroke-dasharray="2 3" opacity="0.95"/>` : ''}
           ${actualPath ? `<path d="${actualPath}" fill="none" stroke="#10b981" stroke-width="2.5"/>` : ''}
+          ${renderNowMarker(showNow, pad, innerH, innerW)}
           <line class="curve-crosshair" x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + innerH}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>
           <rect class="curve-hit-area" x="${pad.l}" y="${pad.t}" width="${innerW}" height="${innerH}" fill="transparent"/>
-          <text x="${pad.l}" y="${height - 4}" class="fill-slate-500" font-size="10">00:00</text>
-          <text x="${pad.l + innerW / 2}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">12:00</text>
-          <text x="${pad.l + innerW}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="end">23:00</text>
+          <text x="${xAtDayFraction(0.5)}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">00:00</text>
+          <text x="${xAtDayFraction(12.5)}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">12:00</text>
+          <text x="${xAtDayFraction(23.5)}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">23:00</text>
         </svg>
         <div class="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500 mt-1">
           <span><span class="inline-block w-4 border-t-2 border-emerald-500 align-middle mr-1"></span>Actual wind</span>
@@ -519,6 +645,15 @@ const WindmateObservations = (() => {
 
     const chartRoot = container.querySelector('.curve-chart');
     if (chartRoot) {
+      if (showNow) {
+        chartRoot.dataset.curveShowNow = '1';
+        chartRoot.dataset.curvePadL = String(pad.l);
+        chartRoot.dataset.curveInnerW = String(innerW);
+        chartRoot.dataset.curvePadT = String(pad.t);
+        chartRoot.dataset.curveInnerH = String(innerH);
+      } else {
+        chartRoot.removeAttribute('data-curve-show-now');
+      }
       bindCurveHover(chartRoot, { width, height, pad, innerW, innerH, actual, forecast });
     }
   }

@@ -32,6 +32,11 @@ const WindmateCopy = {
     saved: 'Saved — refreshing your spots…',
   },
 
+  refreshCountdown: {
+    label: 'Forecast refresh',
+    updating: 'Updating…',
+  },
+
   legend: {
     button: 'Legend',
     title: 'Legend',
@@ -237,6 +242,7 @@ const WindmateCopy = {
     tooltipWrongDirection: 'offshore — not rideable with your settings',
     tooltipBlocked: 'not good for your setup',
     tooltipNight: 'night — not counted as rideable',
+    tooltipPastHour: 'past — no longer rideable today',
   },
 
   errors: {

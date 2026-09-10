@@ -1,4 +1,5 @@
 const { computeSessionScore, longestConsensusWindowLength, getDayHours } = require('./sessionRank');
+const { computeExcitementFromEntry } = require('./sessionExcitement');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 const { computeSessionGoNoGo, rideableWindRange } = require('./sessionGoNoGo');
 
@@ -72,11 +73,14 @@ function evaluateWatchlistStatus(session, rideEntry, prefs, observation = null) 
     snapshot.mismatch = observation.today.summary.mismatch;
   }
 
+  const excitement = computeExcitementFromEntry(rideEntry, dateStr, prefs, prefs.radius_km);
+
   return {
     status,
     statusTrend,
     snapshot,
     sessionGoNoGo,
+    excitement,
     summary: {
       score,
       windowHours,

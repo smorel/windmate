@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img">
+  <path d="M8 12 L56 8 L52 56 L12 52 Z" fill="#a855f7" stroke="#d8b4fe" stroke-width="2"/>
+  <text x="32" y="30" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="8" font-weight="700">AMAZING</text>
+  <text x="32" y="44" text-anchor="middle" fill="#f8fafc" font-family="system-ui,sans-serif" font-size="8" font-weight="700">GLASS</text>
+</svg>

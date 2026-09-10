@@ -239,6 +239,8 @@ function computeRawMetrics(entry, dateStr, prefs, radiusKm) {
     rideableCount,
     maxWind,
     maxDirectionWind,
+    maxRideableWind,
+    maxRideableGust,
   };
 }
 

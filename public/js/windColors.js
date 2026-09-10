@@ -75,5 +75,21 @@ const WindmateWindColors = (() => {
       </div>`;
   }
 
-  return { forSpeed, beaufortForSpeed, renderLegend, BEAUFORT };
+  /** Excitement sticker fill — Beaufort force mapped low → high */
+  const EXCITEMENT_TIER_FORCE = { cool: 3, nice: 5, amazing: 7, epic: 9 };
+
+  function colorForExcitementTier(tier) {
+    const force = EXCITEMENT_TIER_FORCE[tier];
+    if (force == null) return null;
+    const bf = BEAUFORT.find((b) => b.force === force);
+    return bf?.color ?? null;
+  }
+
+  return {
+    forSpeed,
+    beaufortForSpeed,
+    renderLegend,
+    colorForExcitementTier,
+    BEAUFORT,
+  };
 })();

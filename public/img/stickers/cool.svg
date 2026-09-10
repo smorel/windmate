@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <path d="M8 12 L56 8 L52 56 L12 52 Z" fill="url(#g)" stroke="#6ee7b7" stroke-width="2"/>
+  <text x="32" y="36" text-anchor="middle" fill="#ecfdf5" font-family="system-ui,sans-serif" font-size="11" font-weight="700">COOL</text>
+</svg>

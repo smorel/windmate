@@ -795,10 +795,14 @@ function applyObservationsToUi(obsRes) {
   renderRideabilityMatrix(rideabilityData, observationsData);
   const obsBySpot = WindmateObservations.mapBySpotId(observationsData);
   const matrixPrefs = prefsForRanking(rideabilityData.preferences);
+  const rideEntryBySpot = new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry]));
   WindmateWatchlist.renderStrip(els.watchlistStrip, {
     activeSport,
     observationsBySpot: obsBySpot,
     prefs: matrixPrefs,
+    rideEntryBySpot,
+    sportProfiles,
+    radiusKm: rideabilityData.radius_km ?? getSearchRadiusKm(),
   });
   rebindObservationToggles(obsBySpot, matrixPrefs);
   refreshWatchlistDepartures();
@@ -1503,14 +1507,23 @@ function renderHorizonPlanner(data) {
       const todayTag = isTodayCard
         ? '<span class="text-[10px] text-emerald-400 font-medium">Today</span>'
         : '';
+      const horizonExcitement = WindmateSessionExcitement.pickBestHorizonExcitement(
+        data.spots,
+        day.date,
+        data.preferences,
+        getSearchRadiusKm(),
+        rideableRange.max
+      );
+      const horizonStickers = WindmateSessionExcitement.renderStickers(horizonExcitement);
 
       return `
         <button
           type="button"
-          class="horizon-day-card text-left bg-base-card border border-base-border rounded-xl p-4 ${blurClass} ${selectedClass}"
+          class="horizon-day-card horizon-day-card--stickers text-left bg-base-card border border-base-border rounded-xl p-4 ${blurClass} ${selectedClass}"
           data-date="${day.date}"
           aria-pressed="${day.date === selectedDayDate}"
         >
+          ${horizonStickers}
           <div class="flex items-center justify-between gap-1">
             <div class="text-xs text-slate-400 uppercase">${dayName}</div>
             ${todayTag}
@@ -1963,9 +1976,17 @@ function renderRideabilityMatrix(data, observations) {
       const windowStatsLine = verdictBanner
         ? ''
         : renderEfficientWindowStats(entry, selectedDayDate, data.preferences);
+      const sessionExcitement = WindmateSessionExcitement.computeFromEntry(
+        entry,
+        selectedDayDate,
+        matrixPrefs,
+        getSearchRadiusKm()
+      );
+      const sessionStickers = WindmateSessionExcitement.renderStickers(sessionExcitement);
 
       return `
-        <div class="bg-base-card border border-base-border rounded-xl p-5" data-spot-id="${spot.id}">
+        <div class="bg-base-card border border-base-border rounded-xl p-5 session-card--stickers" data-spot-id="${spot.id}">
+          ${sessionStickers}
           <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
             <h3 class="font-semibold text-white flex flex-wrap items-center gap-2 min-w-0">
               <span class="text-slate-500 font-normal">#${rank + 1}</span>

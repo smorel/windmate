@@ -98,6 +98,52 @@ const WindmateCopy = {
         : `${min}–${max} rideable hrs`,
   },
 
+  excitement: {
+    bustLabel: 'No rideable wind planned',
+    bustTooltip: 'No rideable wind planned for your settings.',
+    pctLine: (pct) => `Excitement ${pct}%`,
+    statsLine: (tooltip) => {
+      if (!tooltip) return '';
+      const parts = [];
+      if (tooltip.windowHours != null) {
+        const h = tooltip.windowHours;
+        parts.push(`${h} h window`);
+      }
+      if (tooltip.peakWindKt != null && tooltip.peakWindKt > 0) {
+        parts.push(`${Math.round(tooltip.peakWindKt)} kt wind`);
+      }
+      if (tooltip.peakGustKt != null && tooltip.peakGustKt > 0) {
+        parts.push(`${Math.round(tooltip.peakGustKt)} kt gust`);
+      }
+      return parts.join(' · ');
+    },
+    tierLabel: {
+      cool: 'Cool day',
+      nice: 'Nice session',
+      amazing: 'Amazing',
+      epic: 'Epic!',
+    },
+    tierLead: {
+      cool: 'Clearly above your minimum.',
+      nice: 'Solid window and juice.',
+      amazing: 'Worth planning around.',
+      epic: 'Clear the calendar.',
+    },
+    flairLabel: {
+      'quick-hit': 'Quick hit',
+      marathon: 'Marathon',
+      glass: 'Glass',
+    },
+    /** One display name per sticker asset (tier alone or tier+flair combo). */
+    stickerLabel(tier, flair) {
+      if (!tier || tier === 'bust') return this.bustLabel;
+      const base = this.tierLabel[tier] ?? tier;
+      if (!flair) return base;
+      const tag = this.flairLabel[flair] ?? flair;
+      return `${base} · ${tag}`;
+    },
+  },
+
   rank: {
     mostGoodHours: 'Most good hours',
     longestWindow: 'Longest window',

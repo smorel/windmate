@@ -80,7 +80,33 @@ const WindmateWatchlist = (() => {
     return add(spotId, sessionDate, sport);
   }
 
-  function renderStrip(container, { activeSport, observationsBySpot, prefs }) {
+  function prefsForWatchSession(session, { prefs, sportProfiles }) {
+    const profile = sportProfiles?.find((p) => p.sport === session.sport);
+    const base = profile ?? prefs;
+    if (!base) return null;
+    return {
+      ...base,
+      sport: session.sport,
+      rank_criteria_order: base.rank_criteria_order ?? prefs?.rank_criteria_order,
+      favorite_spot_ids: prefs?.favorite_spot_ids ?? base.favorite_spot_ids,
+    };
+  }
+
+  function resolveSessionExcitement(session, { rideEntryBySpot, prefs, sportProfiles, radiusKm }) {
+    const sessionPrefs = prefsForWatchSession(session, { prefs, sportProfiles });
+    const entry = rideEntryBySpot?.get(session.spot_id);
+    if (entry && sessionPrefs) {
+      return WindmateSessionExcitement.computeFromEntry(
+        entry,
+        session.session_date,
+        sessionPrefs,
+        radiusKm ?? sessionPrefs.radius_km ?? 50
+      );
+    }
+    return session.excitement ?? { tier: null };
+  }
+
+  function renderStrip(container, { activeSport, observationsBySpot, prefs, rideEntryBySpot, sportProfiles, radiusKm }) {
     if (!container) return;
     const today = WindmateForecastTime.localDateString();
     const sorted = [...sessions].sort((a, b) => {
@@ -100,7 +126,16 @@ const WindmateWatchlist = (() => {
       <div class="watchlist-strip-label"><span class="watchlist-strip-icon" aria-hidden="true">${watchIcon()}</span> Watching</div>
       <div class="watchlist-strip-cards space-y-3">
         ${sorted
-          .map((session) => renderCard(session, { observationsBySpot, prefs, today }))
+          .map((session) =>
+            renderCard(session, {
+              observationsBySpot,
+              prefs,
+              today,
+              rideEntryBySpot,
+              sportProfiles,
+              radiusKm,
+            })
+          )
           .join('')}
       </div>`;
 
@@ -132,7 +167,7 @@ const WindmateWatchlist = (() => {
     });
   }
 
-  function renderCard(session, { observationsBySpot, prefs, today }) {
+  function renderCard(session, { observationsBySpot, prefs, today, rideEntryBySpot, sportProfiles, radiusKm }) {
     const date = new Date(`${session.session_date}T12:00:00`);
     const dayLabel = date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const verdict = resolveVerdict(session);
@@ -161,10 +196,17 @@ const WindmateWatchlist = (() => {
         : '';
 
     const departureKey = WindmateDeparture.watchDepartureKey(session.id);
+    const excitement = resolveSessionExcitement(session, {
+      rideEntryBySpot,
+      prefs,
+      sportProfiles,
+      radiusKm,
+    });
+    const watchStickers = WindmateSessionExcitement.renderStickers(excitement);
 
     return `
       <div
-        class="watchlist-card watchlist-card--clickable bg-base-card border border-base-border rounded-xl p-4 ${isToday ? 'watchlist-card--today' : ''}"
+        class="watchlist-card watchlist-card--clickable watchlist-card--stickers bg-base-card border border-base-border rounded-xl p-4 ${isToday ? 'watchlist-card--today' : ''}"
         data-watch-nav
         data-watch-id="${session.id}"
         data-spot-id="${session.spot_id}"
@@ -174,6 +216,7 @@ const WindmateWatchlist = (() => {
         tabindex="0"
         aria-label="Go to ${session.spot_name} on ${dayLabel}"
       >
+        ${watchStickers}
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div>
             <div class="text-sm font-semibold text-white">${dayLabel} · ${session.spot_name}</div>
@@ -250,5 +293,6 @@ const WindmateWatchlist = (() => {
     setOnNavigate,
     getSessions: () => sessions,
     resolveVerdict,
+    resolveSessionExcitement,
   };
 })();

@@ -99,6 +99,7 @@ function createWatchlistRouter(db) {
       statusTrend: evaluation.statusTrend,
       summary: evaluation.summary,
       sessionGoNoGo: evaluation.sessionGoNoGo,
+      excitement: evaluation.excitement,
       observation: session.session_date === todayIsoDate() ? observation : null,
     };
   }

@@ -187,6 +187,54 @@ const WindmateSessionRank = (() => {
     };
   }
 
+  /** Absolute go/no-go factors (settings-based caps) — used for excitement stickers, not matrix rank. */
+  function computeAbsoluteGoNoGoMetrics(entry, dateStr, prefs, radiusKm) {
+    const hours = getDayHours(entry, dateStr);
+    const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
+    const rideableHours = hours.filter((h) => h.rideable);
+    const viableHours = hours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
+    const directionOkViable = viableHours.filter((h) => !h.offshoreBlocked);
+    const rideableCount = WindmateRideableWindow.longestConsensusWindowLength(
+      entry,
+      dateStr,
+      minWindowHours,
+      getModelDayHours
+    );
+    const idealDirections = entry.spot?.ideal_directions ?? [];
+    const maxRideableWind = rideableHours.length
+      ? Math.max(...rideableHours.map((h) => h.windSpeed ?? 0))
+      : 0;
+    const maxRideableGust = rideableHours.length
+      ? Math.max(...rideableHours.map((h) => h.gusts ?? h.windSpeed ?? 0))
+      : 0;
+    const maxDirectionWind = directionOkViable.length
+      ? Math.max(...directionOkViable.map((h) => h.windSpeed ?? 0))
+      : 0;
+    const directionAligned = (h) =>
+      h.windExposure === 'onshore' || h.windExposure === 'cross' || (h.windExposure == null && h.idealWind);
+    const onshoreHours = viableHours.filter(directionAligned).length;
+    const wavePreference = wavePreferenceFromPrefs(prefs);
+    const maxGust = Math.max(prefs?.max_gust_knots ?? 25, 1);
+
+    return {
+      rideableCount,
+      maxRideableWind,
+      maxRideableGust,
+      maxDirectionWind,
+      rideability: rideableHours.length / Math.max(hours.length, 1),
+      bestWindow: Math.min(1, rideableCount / 8),
+      wind: Math.min(1, maxRideableWind / maxGust),
+      gust: Math.min(1, maxRideableGust / maxGust),
+      onshore:
+        viableHours.length > 0
+          ? onshoreHours / viableHours.length
+          : idealDirections.length
+            ? 0.3
+            : 0.5,
+      waveMatch: estimateWaveMatch(rideableHours, wavePreference),
+    };
+  }
+
   function buildFactors(metrics, maxDistance, windNorm, gustNorm, wavePreference, hasIdealDirections) {
     const rideableHours = metrics.hours.filter((h) => h.rideable);
     const dist = metrics.distance_km ?? 0;
@@ -593,6 +641,7 @@ const WindmateSessionRank = (() => {
     weightsForDepartureWindow,
     pickBestQualifyingWindow,
     scoreWindowsByStartHour,
+    computeAbsoluteGoNoGoMetrics,
     DEFAULT_ORDER,
     REASON_LABELS,
   };

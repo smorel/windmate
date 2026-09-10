@@ -30,6 +30,7 @@ function createObservationsRouter(db) {
         .map((id) => id.trim())
         .filter(Boolean)
     );
+    const skipCache = req.query.refresh === '1' || req.query.refresh === 'true';
 
     const nearbySpots = selectDashboardSpots(
       getAllSpots(db),
@@ -60,6 +61,7 @@ function createObservationsRouter(db) {
             return await fetchSpotObservations(db, spot, prefs, forecast, {
               escalated,
               ttlMs,
+              skipCache,
             });
           } catch {
             return {

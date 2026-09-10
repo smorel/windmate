@@ -1,6 +1,37 @@
 /** Live strip, expand/collapse, and forecast-vs-actual curve per spot. */
 const WindmateObservations = (() => {
   const expanded = new Set();
+  const EXPANDED_REFRESH_MS = 5 * 60 * 1000;
+  let autoRefreshTimer = null;
+  let autoRefreshCallback = null;
+
+  function clearAutoRefresh() {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+  }
+
+  function syncAutoRefresh() {
+    clearAutoRefresh();
+    if (!expanded.size || !autoRefreshCallback) return;
+    autoRefreshTimer = setInterval(() => {
+      if (!expanded.size) {
+        clearAutoRefresh();
+        return;
+      }
+      void autoRefreshCallback();
+    }, EXPANDED_REFRESH_MS);
+  }
+
+  function setAutoRefreshCallback(fn) {
+    autoRefreshCallback = fn;
+    syncAutoRefresh();
+  }
+
+  function hasExpandedCurves() {
+    return expanded.size > 0;
+  }
 
   function sourceBadge(source) {
     if (source === 'station') return 'Station';
@@ -18,9 +49,11 @@ const WindmateObservations = (() => {
     return 'live-dot--gray';
   }
 
-  function formatUpdated(observedAt) {
-    if (!observedAt) return '';
-    const mins = Math.round((Date.now() - new Date(observedAt).getTime()) / 60000);
+  function formatUpdated(obsEntry) {
+    const current = obsEntry?.current;
+    const freshnessAt = obsEntry?.fetchedAt ?? current?.observedAt;
+    if (!freshnessAt) return '';
+    const mins = Math.round((Date.now() - new Date(freshnessAt).getTime()) / 60000);
     if (mins < 1) return 'updated just now';
     return `updated ${mins} min ago`;
   }
@@ -126,7 +159,7 @@ const WindmateObservations = (() => {
             <span class="font-semibold text-emerald-400">LIVE</span>
             ${pill}
             <span>${Math.round(current.windSpeed)} kt ${current.direction} · gusts ${Math.round(current.gusts)} kt${tempSegment(current)}${stationMeta}</span>
-            <span class="text-slate-500">· ${formatUpdated(current.observedAt)}</span>
+            <span class="text-slate-500">· ${formatUpdated(obsEntry)}</span>
             <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 sm:ml-auto">${sourceBadge(current.source)}</span>
           </div>
           ${delta}${hazard}${windowSummary}${verdictBanner}
@@ -334,8 +367,10 @@ const WindmateObservations = (() => {
         const spotId = btn.dataset.spotId;
         const strip = btn.closest('.live-strip');
         const panel = strip?.querySelector('.curve-panel');
-        if (expanded.has(spotId)) expanded.delete(spotId);
-        else expanded.add(spotId);
+        const opening = !expanded.has(spotId);
+        if (opening) expanded.add(spotId);
+        else expanded.delete(spotId);
+        syncAutoRefresh();
         const obs = observationsBySpot.get(spotId);
         btn.textContent = expanded.has(spotId)
           ? WindmateCopy.observations.hideCurve
@@ -349,6 +384,7 @@ const WindmateObservations = (() => {
               prefs,
               curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot)
             );
+            if (autoRefreshCallback) void autoRefreshCallback();
           }
         }
       });
@@ -374,5 +410,14 @@ const WindmateObservations = (() => {
     return map;
   }
 
-  return { renderLiveStrip, bindToggles, mapBySpotId, renderCurve, renderVerdictBanner };
+  return {
+    renderLiveStrip,
+    bindToggles,
+    mapBySpotId,
+    renderCurve,
+    renderVerdictBanner,
+    setAutoRefreshCallback,
+    hasExpandedCurves,
+    EXPANDED_REFRESH_MS,
+  };
 })();

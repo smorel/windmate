@@ -765,18 +765,66 @@ function setDashboardLoading(message) {
   els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${message}</p>`;
 }
 
-async function refreshDashboard({ silent = false } = {}) {
-  if (!silent) {
-    setDashboardLoading(WindmateCopy.loading.dashboard);
-  }
+function observationsQueryString() {
   const profile = getActiveProfile();
   const radius = profile?.radius_km ?? getSearchRadiusKm();
   const sport = activeSport;
   const query = `lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&limit=12&sport=${sport}`;
+  const watchedIds = WindmateWatchlist.getWatchedSpotIdsForToday(sport);
+  const watchedQuery = watchedIds.length ? `&watchedSpotIds=${watchedIds.join(',')}` : '';
+  return { query, watchedQuery };
+}
+
+function rebindObservationToggles(obsBySpot, matrixPrefs) {
+  const warningsBySpot = new Map(
+    rideabilityData.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
+  );
+  const rideEntryBySpot = new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry]));
+  WindmateObservations.bindToggles(
+    els.watchlistStrip,
+    obsBySpot,
+    matrixPrefs,
+    warningsBySpot,
+    rideEntryBySpot
+  );
+}
+
+function applyObservationsToUi(obsRes) {
+  observationsData = obsRes;
+  if (!rideabilityData) return;
+  renderRideabilityMatrix(rideabilityData, observationsData);
+  const obsBySpot = WindmateObservations.mapBySpotId(observationsData);
+  const matrixPrefs = prefsForRanking(rideabilityData.preferences);
+  WindmateWatchlist.renderStrip(els.watchlistStrip, {
+    activeSport,
+    observationsBySpot: obsBySpot,
+    prefs: matrixPrefs,
+  });
+  rebindObservationToggles(obsBySpot, matrixPrefs);
+  refreshWatchlistDepartures();
+}
+
+async function refreshLiveObservations() {
+  if (!WindmateObservations.hasExpandedCurves() || !rideabilityData) return;
   try {
     await WindmateWatchlist.load();
-    const watchedIds = WindmateWatchlist.getWatchedSpotIdsForToday(sport);
-    const watchedQuery = watchedIds.length ? `&watchedSpotIds=${watchedIds.join(',')}` : '';
+    const { query, watchedQuery } = observationsQueryString();
+    const obsRes = await api(`/api/observations?${query}${watchedQuery}&refresh=1`).catch(() => ({
+      spots: [],
+    }));
+    applyObservationsToUi(obsRes);
+  } catch {
+    /* keep last good data */
+  }
+}
+
+async function refreshDashboard({ silent = false } = {}) {
+  if (!silent) {
+    setDashboardLoading(WindmateCopy.loading.dashboard);
+  }
+  try {
+    await WindmateWatchlist.load();
+    const { query, watchedQuery } = observationsQueryString();
 
     const [rideRes, obsRes, summaryRes] = await Promise.all([
       api(`/api/rideability?${query}`),
@@ -803,26 +851,7 @@ async function refreshDashboard({ silent = false } = {}) {
     renderRankCriteriaList(rankCriteriaOrder);
     renderModelLegend(rideabilityData);
     renderHorizonPlanner(rideabilityData);
-    renderRideabilityMatrix(rideabilityData, observationsData);
-    const obsBySpot = WindmateObservations.mapBySpotId(observationsData);
-    const matrixPrefs = prefsForRanking(rideabilityData.preferences);
-    WindmateWatchlist.renderStrip(els.watchlistStrip, {
-      activeSport,
-      observationsBySpot: obsBySpot,
-      prefs: matrixPrefs,
-    });
-    refreshWatchlistDepartures();
-    const warningsBySpot = new Map(
-      rideabilityData.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
-    );
-    const rideEntryBySpot = new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry]));
-    WindmateObservations.bindToggles(
-      els.watchlistStrip,
-      obsBySpot,
-      matrixPrefs,
-      warningsBySpot,
-      rideEntryBySpot
-    );
+    applyObservationsToUi(observationsData);
   } catch (err) {
     const msg = WindmateCopy.errors.loadFailed(err.message);
     els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
@@ -2032,6 +2061,7 @@ els.manualLocBtn.addEventListener('click', () => {
   WindmateSportSelector.init(els.sportSelector, { onSwitch: switchActiveSport });
   WindmateWatchlist.setOnChange(() => refreshDashboard({ silent: true }));
   WindmateWatchlist.setOnNavigate(goToWatchedSession);
+  WindmateObservations.setAutoRefreshCallback(() => refreshLiveObservations());
   setDashboardLoading(WindmateCopy.loading.dashboard);
   els.locationStatus.textContent = WindmateCopy.geo.locating;
   await loadPreferences();

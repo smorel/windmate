@@ -126,29 +126,39 @@ function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options =
   return { ...observation, sessionGoNoGo };
 }
 
+function observationFetchedAtIso(fetchedAtMs) {
+  return new Date(fetchedAtMs).toISOString();
+}
+
 async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
   const ttlMs = options.ttlMs ?? OBSERVATION_CACHE_TTL_MS;
   const cached = db.prepare(
     'SELECT fetched_at, data FROM observation_cache WHERE spot_id = ?'
   ).get(spot.id);
 
-  if (cached && Date.now() - cached.fetched_at < ttlMs) {
+  if (
+    !options.skipCache &&
+    cached &&
+    Date.now() - cached.fetched_at < ttlMs
+  ) {
     const cachedCore = JSON.parse(cached.data);
     const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
     return {
       ...refreshObservationAnalysis(spot, prefs, forecast, { ...cachedCore, _contextData: contextData }, options),
       cached: true,
+      fetchedAt: observationFetchedAtIso(cached.fetched_at),
     };
   }
 
   try {
     const obs = await buildSpotObservation(db, spot, prefs, forecast, options);
+    const fetchedAtMs = Date.now();
     db.prepare(`
       INSERT INTO observation_cache (spot_id, fetched_at, data)
       VALUES (?, ?, ?)
       ON CONFLICT(spot_id) DO UPDATE SET fetched_at = excluded.fetched_at, data = excluded.data
-    `).run(spot.id, Date.now(), JSON.stringify(observationCachePayload(obs)));
-    return { ...obs, cached: false };
+    `).run(spot.id, fetchedAtMs, JSON.stringify(observationCachePayload(obs)));
+    return { ...obs, cached: false, fetchedAt: observationFetchedAtIso(fetchedAtMs) };
   } catch (err) {
     if (cached) {
       const cachedCore = JSON.parse(cached.data);
@@ -164,9 +174,15 @@ async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
           ),
           cached: true,
           stale: true,
+          fetchedAt: observationFetchedAtIso(cached.fetched_at),
         };
       } catch {
-        return { ...cachedCore, cached: true, stale: true };
+        return {
+          ...cachedCore,
+          cached: true,
+          stale: true,
+          fetchedAt: observationFetchedAtIso(cached.fetched_at),
+        };
       }
     }
     throw err;

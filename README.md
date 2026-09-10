@@ -6,6 +6,14 @@ Windmate helps you decide **where** and **when** to get on the water — and whe
 
 Beyond wind and waves, the product roadmap covers **local ground truth**: social posts from the spot, live cams, water hazards (algae, debris, launch flooding), parking (free vs paid, open on session day), and seasonal access (flooded roads, closed lots) — with **lower ranking and mate-tone explanations** when a spot should be avoided.
 
+<p align="center">
+  <a href="assets/windmate-screenshot.png">
+    <img src="assets/windmate-screenshot.png" alt="Windmate dashboard — Horizon Planner, Rideability Matrix, and live observations" width="720">
+  </a>
+</p>
+
+<p align="center"><em>Click the screenshot for the full-size view.</em></p>
+
 ## What it does
 
 - **Find spots near you** — browser GPS (or manual coordinates), searchable spot list, customizable radius

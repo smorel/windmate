@@ -357,8 +357,13 @@ const WindmateObservations = (() => {
   }
 
   function renderVerdictBanner(verdict) {
-    if (!verdict?.reason) return '';
-    return `<div class="session-verdict-banner session-verdict-banner--${verdict.state} mb-3">${verdict.reason}</div>`;
+    if (!verdict) return '';
+    const summary = verdict.summary ?? '';
+    const caution = verdict.state !== 'go' && verdict.reason ? verdict.reason : '';
+    const text = caution || summary || verdict.reason;
+    if (!text) return '';
+    const tone = caution ? verdict.state : 'go';
+    return `<div class="session-verdict-banner session-verdict-banner--${tone} mb-3">${text}${caution && summary ? `<span class="session-verdict-banner__summary"> · ${summary}</span>` : ''}</div>`;
   }
 
   function mapBySpotId(observationsData) {

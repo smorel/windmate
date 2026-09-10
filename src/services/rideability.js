@@ -13,6 +13,7 @@ const { buildDaylightByDate, isDaylightOk } = require('./daylight');
 const { resolveWaveHeight } = require('./waves');
 
 const { classifyWindExposure, isOffshoreBlocked } = require('./offshore');
+const { localDateString } = require('../utils/forecastTime');
 
 const { parseMinRideableWindowHours, markInRideableWindow } = require('../utils/rideableWindow');
 
@@ -191,7 +192,7 @@ function analyzeMixedRideability(
 
     const days = summarizeByDay(hourly);
 
-    const today = days[0]?.date ?? new Date().toISOString().slice(0, 10);
+    const today = days[0]?.date ?? localDateString();
 
     const todayHours = hourly.filter((h) => h.time.startsWith(today));
 

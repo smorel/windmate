@@ -20,12 +20,14 @@ function selectDashboardSpots(allSpots, lat, lng, radiusKm, limit, favoriteSpotI
   const nearby = withDistance
     .filter((s) => s.distance_km <= radiusKm)
     .sort((a, b) => a.distance_km - b.distance_km)
-    .slice(0, Math.max(1, limit));
+    .slice(0, Math.max(1, limit))
+    .map((s) => ({ ...s, outside_radius: false }));
 
   const included = new Set(nearby.map((s) => s.id));
   const extras = withDistance
     .filter((s) => favSet.has(s.id) && !included.has(s.id))
-    .sort((a, b) => a.distance_km - b.distance_km);
+    .sort((a, b) => a.distance_km - b.distance_km)
+    .map((s) => ({ ...s, outside_radius: s.distance_km > radiusKm }));
 
   return [...nearby, ...extras];
 }

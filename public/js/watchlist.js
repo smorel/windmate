@@ -82,7 +82,7 @@ const WindmateWatchlist = (() => {
 
   function renderStrip(container, { activeSport, observationsBySpot, prefs }) {
     if (!container) return;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = WindmateForecastTime.localDateString();
     const sorted = [...sessions].sort((a, b) => {
       if (a.session_date === today && b.session_date !== today) return -1;
       if (b.session_date === today && a.session_date !== today) return 1;
@@ -151,8 +151,12 @@ const WindmateWatchlist = (() => {
           })
         : '';
 
-    const reasonBanner =
-      verdict.reason
+    const forecastSummary = verdict.summary ?? '';
+    const summaryBanner = forecastSummary
+      ? `<div class="session-verdict-banner session-verdict-banner--go">${forecastSummary}</div>`
+      : '';
+    const cautionBanner =
+      verdict.state !== 'go' && verdict.reason
         ? `<div class="session-verdict-banner session-verdict-banner--${verdict.state}">${verdict.reason}</div>`
         : '';
 
@@ -180,7 +184,8 @@ const WindmateWatchlist = (() => {
             <button type="button" class="text-slate-500 hover:text-red-400 text-sm" data-watch-remove="${session.id}" aria-label="Remove watch">×</button>
           </div>
         </div>
-        ${reasonBanner}
+        ${summaryBanner}
+        ${cautionBanner}
         ${liveStrip}
         <div class="departure-plan-group departure-plan-group--banner-only mt-2" data-departure-group="${departureKey}">
           <div class="departure-line-slot" data-departure-for="${departureKey}"></div>
@@ -218,7 +223,7 @@ const WindmateWatchlist = (() => {
   }
 
   function getWatchedSpotIdsForToday(sport) {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = WindmateForecastTime.localDateString();
     return sessions
       .filter((s) => s.session_date === today && s.sport === sport)
       .map((s) => s.spot_id);

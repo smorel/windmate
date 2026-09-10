@@ -50,6 +50,7 @@ const WindmateCopy = {
     add: (name) => `Favorite ${name}`,
     remove: (name) => `Unfavorite ${name}`,
     inList: 'In your list',
+    outsideRadius: 'Outside search radius',
   },
 
   search: {
@@ -57,6 +58,29 @@ const WindmateCopy = {
     empty: 'No spots match — try another name',
     hint: 'Type at least 2 characters',
     km: (dist) => `${dist.toFixed(1)} km`,
+  },
+
+  map: {
+    label: 'Map',
+    openAria: 'Open spot map',
+    closeAria: 'Close spot map',
+    hint: 'Tap a spot to favorite · Double-click to add a custom spot',
+    hintNoSpots: 'No spots here yet — double-click to add one',
+    hintError: 'Could not load spots — try panning the map',
+    added: (name) => `Added ${name} to your list`,
+    created: (name) => `Created and favorited ${name}`,
+    favoriteLimit: 'Favorite list is full (50 spots max)',
+    locationNotFound: "Couldn't find that location",
+    createTitle: 'Add custom spot',
+    saveFavorite: 'Save & favorite',
+    cancel: 'Cancel',
+    duplicate: (name) => `A spot already exists near here — ${name}`,
+    favoriteInstead: 'Favorite it instead',
+    coords: (lat, lng) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+    sessionPeak: (dayLabel, hour) => `${dayLabel} · ${hour}`,
+    aria: (speed, direction, dayLabel, hour) =>
+      `Forecast map for ${dayLabel}, peak ${Math.round(speed)} knots from ${direction} around ${hour}`,
+    ariaEmpty: (name, dayLabel) => `Forecast map for ${name}, ${dayLabel}`,
   },
 
   picks: {
@@ -133,13 +157,6 @@ const WindmateCopy = {
     legendOnshore: 'Onshore',
     legendCross: 'Cross-shore',
     legendOffshore: 'Offshore',
-  },
-
-  map: {
-    sessionPeak: (dayLabel, hour) => `${dayLabel} · ${hour}`,
-    aria: (speed, direction, dayLabel, hour) =>
-      `Forecast map for ${dayLabel}, peak ${Math.round(speed)} knots from ${direction} around ${hour}`,
-    ariaEmpty: (name, dayLabel) => `Forecast map for ${name}, ${dayLabel}`,
   },
 
   rideable: {

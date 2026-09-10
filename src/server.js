@@ -8,6 +8,7 @@ const { createRideabilityRouter } = require('./routes/rideability');
 const { createPreferencesRouter } = require('./routes/preferences');
 const { createIgetwindRouter } = require('./routes/igetwind');
 const { createLocationRouter } = require('./routes/location');
+const { createGeocodeRouter } = require('./routes/geocode');
 const { createObservationsRouter } = require('./routes/observations');
 const { createSportsRouter } = require('./routes/sports');
 const { createWatchlistRouter } = require('./routes/watchlist');
@@ -42,6 +43,7 @@ app.use('/api/watchlist', createWatchlistRouter(db));
 app.use('/api/departure', createDepartureRouter(db));
 app.use('/api/igetwind', createIgetwindRouter(db));
 app.use('/api/location', createLocationRouter());
+app.use('/api/geocode', createGeocodeRouter());
 
 startHorizonAlertScheduler(db);
 startWatchlistJobs(db);
@@ -51,7 +53,7 @@ async function bootstrap() {
     try {
       const result = await syncIgetwindSpots(db);
       console.log(
-        `[igetwind] Synced ${result.total} spots (${result.inserted} new, ${result.updated} updated, ${result.removed} manual removed)`
+        `[igetwind] Synced ${result.total} spots (${result.inserted} new, ${result.updated} updated)`
       );
     } catch (err) {
       console.warn('[igetwind] Spot sync failed:', err.message);

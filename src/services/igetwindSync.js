@@ -56,8 +56,7 @@ async function syncIgetwindSpots(db) {
       }
     }
 
-    const removed = db.prepare('DELETE FROM spots WHERE igetwind_id IS NULL').run().changes;
-    return { inserted, updated, removed, total: rows.length };
+    return { inserted, updated, total: rows.length };
   });
 
   return sync(validated);

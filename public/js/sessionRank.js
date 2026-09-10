@@ -275,22 +275,37 @@ const WindmateSessionRank = (() => {
       return a.entry.spot.distance_km - b.entry.spot.distance_km;
     });
 
-    return applyFavoriteBoost(ranked, prefs?.favorite_spot_ids);
+    return partitionDistantFavorites(ranked, radiusKm, prefs?.favorite_spot_ids);
   }
 
-  /** Favorites with rideable hours first; relative rank order preserved within each group. */
-  function applyFavoriteBoost(ranked, favoriteSpotIds) {
+  /**
+   * In-radius favorites first (score order), then other spots, then distant favorites.
+   */
+  function partitionDistantFavorites(ranked, radiusKm, favoriteSpotIds) {
     const favorites = new Set(favoriteSpotIds ?? []);
-    if (!favorites.size) return ranked;
-    const favRows = [];
-    const otherRows = [];
+    const radius = radiusKm ?? Infinity;
+    const inRadiusFavorites = [];
+    const inRadiusOthers = [];
+    const distantFavorites = [];
+
     for (const row of ranked) {
-      const isBoostedFavorite =
-        favorites.has(row.entry.spot.id) && row.rideableCount > 0;
-      if (isBoostedFavorite) favRows.push(row);
-      else otherRows.push(row);
+      const dist = row.entry.spot.distance_km ?? 0;
+      const id = row.entry.spot.id;
+      if (favorites.has(id) && dist > radius) {
+        distantFavorites.push(row);
+      } else if (favorites.has(id)) {
+        inRadiusFavorites.push(row);
+      } else {
+        inRadiusOthers.push(row);
+      }
     }
-    return [...favRows, ...otherRows];
+
+    return [...inRadiusFavorites, ...inRadiusOthers, ...distantFavorites];
+  }
+
+  /** @deprecated use partitionDistantFavorites */
+  function applyFavoriteBoost(ranked, favoriteSpotIds, radiusKm) {
+    return partitionDistantFavorites(ranked, radiusKm, favoriteSpotIds);
   }
 
   function renderBanner(label) {
@@ -569,6 +584,7 @@ const WindmateSessionRank = (() => {
   return {
     rankSpotsForDay,
     applyFavoriteBoost,
+    partitionDistantFavorites,
     renderBanner,
     renderBanners,
     normalizeOrder,

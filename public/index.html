@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Windmate</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=6" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="/css/styles.css?v=7" />
   <script>
     tailwind.config = {
       theme: {
@@ -51,25 +52,44 @@
     <div id="sport-selector" class="sport-selector mb-4"></div>
 
     <div id="spot-search" class="spot-search relative">
-      <label for="spot-search-input" class="sr-only">Search spots</label>
-      <input
-        id="spot-search-input"
-        type="text"
-        inputmode="search"
-        enterkeyhint="search"
-        dir="ltr"
-        autocomplete="off"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        role="combobox"
-        aria-autocomplete="list"
-        aria-controls="spot-search-results"
-        aria-expanded="false"
-        placeholder="Search spots to add & favorite…"
-        class="spot-search-input w-full bg-base-card border border-base-border rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-600/50"
-      />
+      <div class="spot-search-row">
+        <label for="spot-search-input" class="sr-only">Search spots</label>
+        <input
+          id="spot-search-input"
+          type="text"
+          inputmode="search"
+          enterkeyhint="search"
+          dir="ltr"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-controls="spot-search-results"
+          aria-expanded="false"
+          placeholder="Search spots to add & favorite…"
+          class="spot-search-input spot-search-input--with-btn bg-base-card border border-base-border rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-600/50"
+        />
+        <button
+          id="spot-map-toggle"
+          type="button"
+          class="spot-map-toggle"
+          aria-label="Open spot map"
+          aria-expanded="false"
+          aria-controls="spot-map-panel"
+        >
+          Map
+        </button>
+      </div>
       <div id="spot-search-results" class="spot-search-results hidden" role="listbox" aria-label="Spot search results"></div>
+      <div id="spot-map-panel" class="spot-map-panel hidden" aria-hidden="true">
+        <div class="spot-map-panel__header">
+          <p id="spot-map-hint" class="spot-map-panel__hint"></p>
+          <button id="spot-map-close" type="button" class="spot-map-panel__close" aria-label="Close map">×</button>
+        </div>
+        <div id="spot-map-container" class="spot-map-container"></div>
+      </div>
     </div>
 
     <section id="mate-picks" class="hidden bg-base-card border border-base-border rounded-xl p-5">
@@ -93,6 +113,37 @@
       </div>
       <div id="rideability-matrix" class="space-y-6"></div>
     </section>
+  </div>
+
+  <div id="spot-create-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="spot-create-modal-title">
+    <div class="settings-modal-backdrop" data-close-spot-create tabindex="-1"></div>
+    <div class="settings-modal-panel">
+      <header class="settings-modal-header">
+        <h2 id="spot-create-modal-title" class="text-lg font-semibold text-white">Add custom spot</h2>
+        <button type="button" class="settings-modal-close" data-close-spot-create aria-label="Cancel">×</button>
+      </header>
+      <div class="settings-modal-body space-y-4">
+        <div>
+          <label for="spot-create-name" class="block text-xs text-slate-400 mb-1">Spot name</label>
+          <input id="spot-create-name" type="text" maxlength="120" class="w-full bg-base border border-base-border rounded-lg px-3 py-2 text-sm text-white" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="spot-create-lat" class="block text-xs text-slate-400 mb-1">Latitude</label>
+            <input id="spot-create-lat" type="text" readonly class="w-full bg-slate-900 border border-base-border rounded-lg px-3 py-2 text-sm text-slate-400" />
+          </div>
+          <div>
+            <label for="spot-create-lng" class="block text-xs text-slate-400 mb-1">Longitude</label>
+            <input id="spot-create-lng" type="text" readonly class="w-full bg-slate-900 border border-base-border rounded-lg px-3 py-2 text-sm text-slate-400" />
+          </div>
+        </div>
+        <div id="spot-create-duplicate" class="spot-create-duplicate hidden"></div>
+        <div class="flex gap-2 justify-end">
+          <button id="spot-create-cancel" type="button" class="text-sm rounded-lg px-4 py-2 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-base-border">Cancel</button>
+          <button id="spot-create-save" type="button" class="text-sm rounded-lg px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-500">Save &amp; favorite</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="legend-modal" class="settings-modal hidden" role="dialog" aria-modal="true" aria-labelledby="legend-modal-title">
@@ -210,13 +261,15 @@
   <script src="/js/windColors.js"></script>
   <script src="/js/waveColors.js"></script>
   <script src="/js/rideableWindow.js"></script>
-  <script src="/js/sessionRank.js"></script>
+  <script src="/js/sessionRank.js?v=8"></script>
   <script src="/js/weatherHazards.js"></script>
   <script src="/js/spotMap.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/js/spotMapPicker.js"></script>
   <script src="/js/observations.js"></script>
   <script src="/js/sportSelector.js"></script>
   <script src="/js/watchlist.js"></script>
   <script src="/js/departure.js?v=11"></script>
-  <script src="/js/app.js"></script>
+  <script src="/js/app.js?v=8"></script>
 </body>
 </html>

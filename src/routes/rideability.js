@@ -14,6 +14,7 @@ const { SPORT_COLORS } = require('../utils/sports');
 const { MODEL_COLORS } = require('../utils/models');
 const { selectDashboardSpots } = require('../utils/spotSelection');
 const { attachSessionGoNoGoByDate } = require('../services/sessionGoNoGo');
+const { localDateString } = require('../utils/forecastTime');
 
 function createRideabilityRouter(db) {
   const router = express.Router();
@@ -59,7 +60,7 @@ function createRideabilityRouter(db) {
     }
 
     try {
-      const results = await Promise.all(
+      const settled = await Promise.allSettled(
         nearbySpots.map(async (spot) => {
           const forecast = await fetchForecast(db, spot.id, spot);
           const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
@@ -72,6 +73,7 @@ function createRideabilityRouter(db) {
             latitude: spot.latitude,
             longitude: spot.longitude,
             distance_km: spot.distance_km,
+            outside_radius: Boolean(spot.outside_radius),
             ideal_directions: spot.ideal_directions,
             source_url: spot.source_url,
           };
@@ -113,7 +115,7 @@ function createRideabilityRouter(db) {
             daylightByDate
           );
           const days = summarizeByDay(hourly);
-          const today = days[0]?.date ?? new Date().toISOString().slice(0, 10);
+          const today = days[0]?.date ?? localDateString();
           const todayHours = hourly.filter((h) => h.time.startsWith(today));
           const rideableTodayHours = todayHours.filter((h) => h.rideable);
 
@@ -136,6 +138,16 @@ function createRideabilityRouter(db) {
           };
         })
       );
+
+      const results = settled
+        .filter((result) => result.status === 'fulfilled')
+        .map((result) => result.value);
+
+      for (const failure of settled) {
+        if (failure.status === 'rejected') {
+          console.warn('[rideability] spot forecast failed:', failure.reason?.message ?? failure.reason);
+        }
+      }
 
       res.json({
         preferences: prefs,

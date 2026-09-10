@@ -9,6 +9,7 @@ const {
   computeSessionWarnings,
 } = require('../services/rideability');
 const { sendAlert, formatAlert, isConfigured } = require('../services/email');
+const { localDateString } = require('../utils/forecastTime');
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -35,7 +36,7 @@ function startAlertScheduler(db) {
 async function runAlertCheck(db) {
   const prefs = getPreferences(db);
   const spots = getAllSpots(db);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateString();
 
   for (const spot of spots) {
     const forecast = await fetchForecast(db, spot.id, spot);

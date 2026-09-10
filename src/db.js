@@ -13,6 +13,7 @@ const { parseFavoriteSpotIds } = require('./utils/favoriteSpots');
 const { DEFAULT_SEARCH_RADIUS_KM, parseSearchRadiusKm } = require('./utils/searchRadius');
 const { parseMinRideableWindowHours } = require('./utils/rideableWindow');
 const { haversineKm } = require('./utils/geo');
+const { localDateString } = require('./utils/forecastTime');
 const MONTREAL_SPOTS = require('./seed/montreal-spots');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -562,7 +563,7 @@ function updatePreferences(db, prefs) {
 }
 
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateString();
 }
 
 /** @param {import('better-sqlite3').Database} db */
@@ -691,16 +692,35 @@ function setObservationCache(db, spotId, data) {
 
 /** @param {import('better-sqlite3').Database} db */
 function getAllSpots(db) {
-  return db
-    .prepare('SELECT * FROM spots WHERE igetwind_id IS NOT NULL ORDER BY name')
-    .all()
-    .map(parseSpot);
+  return db.prepare('SELECT * FROM spots ORDER BY name').all().map(parseSpot);
 }
 
 /** @param {import('better-sqlite3').Database} db @param {string} id */
 function getSpotById(db, id) {
   const row = db.prepare('SELECT * FROM spots WHERE id = ?').get(id);
   return row ? parseSpot(row) : null;
+}
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ id: string, name: string, latitude: number, longitude: number }} spot
+ */
+function insertManualSpot(db, spot) {
+  db.prepare(
+    `INSERT INTO spots (id, name, latitude, longitude, ideal_directions, source_url, igetwind_id)
+     VALUES (@id, @name, @latitude, @longitude, '[]', NULL, NULL)`
+  ).run(spot);
+  return getSpotById(db, spot.id);
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string[]} ids */
+function getSpotsByIds(db, ids) {
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  return db
+    .prepare(`SELECT * FROM spots WHERE id IN (${placeholders}) ORDER BY name`)
+    .all(...ids)
+    .map(parseSpot);
 }
 
 function parseSpot(row) {
@@ -760,6 +780,8 @@ module.exports = {
   updateSportProfile,
   getAllSpots,
   getSpotById,
+  getSpotsByIds,
+  insertManualSpot,
   getObservationCache,
   setObservationCache,
   getWatchedSessions,

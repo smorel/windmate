@@ -1,5 +1,5 @@
 const {
-  computeSessionScore,
+  computeSessionGoNoGoScore,
   longestConsensusWindow,
   getDayHours,
 } = require('./sessionRank');
@@ -128,6 +128,20 @@ function pickPrimaryHazardReason(warnings) {
   return warnings[0].message;
 }
 
+/** Hazards after the consensus window ends should not downgrade a future session. */
+function warningsWithinWindow(warnings, windowSpan) {
+  if (!warnings?.length || !windowSpan?.end) return [];
+  const endKey = hourTimeKey(windowSpan.end);
+  return warnings.filter((w) => hourTimeKey(w.eventTime) <= endKey);
+}
+
+/** Live strip hours must belong to the session calendar day (guards UTC "today" drift). */
+function observationCoversSessionDay(observation, sessionDate) {
+  const hours = observation?.today?.forecast ?? observation?.today?.actual ?? [];
+  if (!hours.length) return false;
+  return hours.some((h) => String(h.time).startsWith(sessionDate));
+}
+
 function liveMismatchReason(mismatch, current) {
   if (!mismatch) return null;
   if (mismatch.state === 'no_go') {
@@ -165,11 +179,21 @@ function computeSessionGoNoGo({
   const hours = getDayHours(rideEntry, sessionDate);
   const windowSpan = longestConsensusWindow(rideEntry, sessionDate, minWindow);
   const windowHours = windowSpan.length;
-  const { score } = computeSessionScore(rideEntry, sessionDate, prefs, prefs.radius_km ?? 50);
+  const { score } = computeSessionGoNoGoScore(
+    rideEntry,
+    sessionDate,
+    prefs,
+    prefs.radius_km ?? 50
+  );
   const windRange = rideableWindRange(hours);
   const windowHourList = hoursInWindowSpan(hours, windowSpan);
   const windowStats = windowStatsRange(windowHourList);
-  const warnings = computeSessionWarnings(hours, prefs);
+  const allWarnings = computeSessionWarnings(hours, prefs);
+  const warnings = warningsWithinWindow(allWarnings, windowSpan);
+  const summary =
+    windowStats && windowHours > 0
+      ? formatForecastSummary(windowHours, windowStats, windowSpan)
+      : '';
   const isToday = sessionDate === todayIsoDate();
   const omitDuplicateLiveDetail =
     omitHazardFromBanner ?? (isToday && observation != null);
@@ -193,7 +217,7 @@ function computeSessionGoNoGo({
       reasons.push('No rideable wind in the forecast for this session');
     }
   } else {
-    if (windowHours <= minWindow) {
+    if (windowHours === minWindow) {
       state = 'caution';
       reasons.push(`Window barely meets your ${minWindow} h minimum`);
     }
@@ -212,7 +236,7 @@ function computeSessionGoNoGo({
   }
 
   const mismatch = observation?.today?.summary?.mismatch;
-  if (isToday && mismatch) {
+  if (isToday && mismatch && observationCoversSessionDay(observation, sessionDate)) {
     const liveReason = liveMismatchReason(mismatch, observation.current);
     if (mismatch.state === 'no_go') {
       state = 'no_go';
@@ -226,17 +250,12 @@ function computeSessionGoNoGo({
     }
   }
 
-  if (state === 'go') {
-    reasons.push(formatForecastSummary(windowHours, windowStats, windowSpan));
-  } else if (windowStats && windowHours > 0) {
-    reasons.push(formatForecastSummary(windowHours, windowStats, windowSpan));
-  }
-
   const uniqueReasons = [...new Set(reasons.filter(Boolean))];
 
   return {
     state,
     reason: uniqueReasons.join(' · '),
+    summary,
     windowHours,
     windowSpan,
     score,
@@ -262,4 +281,10 @@ function attachSessionGoNoGoByDate(rideEntry, prefs) {
   return sessionGoNoGoByDate;
 }
 
-module.exports = { computeSessionGoNoGo, rideableWindRange, attachSessionGoNoGoByDate };
+module.exports = {
+  computeSessionGoNoGo,
+  rideableWindRange,
+  attachSessionGoNoGoByDate,
+  warningsWithinWindow,
+  observationCoversSessionDay,
+};

@@ -60,7 +60,10 @@ const els = {
   spotSearch: document.getElementById('spot-search'),
   spotSearchInput: document.getElementById('spot-search-input'),
   spotSearchResults: document.getElementById('spot-search-results'),
+  spotMapToggle: document.getElementById('spot-map-toggle'),
 };
+
+const MAX_FAVORITE_SPOTS = 50;
 
 let rankCriteriaOrder = [...WindmateSessionRank.DEFAULT_ORDER];
 let favoriteSpotIds = [];
@@ -840,7 +843,7 @@ function renderMatePicks(data) {
 
   const today = WindmateForecastTime.forecastTodayFromRideability(data);
   const prefs = prefsForRanking(data.preferences);
-  const rankedRows = sortSpotsForDay(data.spots, today, prefs, data.radius_km);
+  const rankedRows = sortSpotsForDay(data.spots, today, prefs, getSearchRadiusKm());
   const withSessions = rankedRows.filter((row) => row.rideableCount > 0);
 
   if (withSessions.length > 0) {
@@ -1031,9 +1034,13 @@ function renderFavoriteButton(spot) {
 function favoriteToggleNeedsFullRefresh(spotId, wasFavorite) {
   const entry = rideabilityData?.spots?.find((e) => e.spot.id === spotId);
   const radius = getSearchRadiusKm();
-  if (!wasFavorite && !entry) return true;
-  if (wasFavorite && entry && entry.spot.distance_km > radius) return true;
-  return false;
+  const dist = entry?.spot.distance_km ?? Infinity;
+  const outsideRadius = dist > radius;
+
+  if (!wasFavorite) {
+    return !entry || outsideRadius;
+  }
+  return !entry || outsideRadius;
 }
 
 async function persistFavorites({ fullRefresh = true } = {}) {
@@ -1049,11 +1056,12 @@ async function persistFavorites({ fullRefresh = true } = {}) {
   }
 }
 
-function toggleFavorite(spotId) {
+function toggleFavorite(spotId, { allowAdd = true } = {}) {
   const wasFavorite = isFavoriteSpot(spotId);
   const next = new Set(favoriteSpotIds);
   if (next.has(spotId)) next.delete(spotId);
-  else next.add(spotId);
+  else if (allowAdd) next.add(spotId);
+  else return false;
   favoriteSpotIds = [...next];
   if (rideabilityData?.preferences) {
     rideabilityData.preferences.favorite_spot_ids = favoriteSpotIds;
@@ -1066,6 +1074,37 @@ function toggleFavorite(spotId) {
     const q = els.spotSearchInput?.value.trim();
     if (q.length >= 2) runSpotSearch(q);
   }
+  if (WindmateSpotMapPicker?.isOpen()) {
+    WindmateSpotMapPicker.refreshMarkers();
+  }
+  return true;
+}
+
+function favoriteFromMap(spot) {
+  if (isFavoriteSpot(spot.id)) return;
+  if (favoriteSpotIds.length >= MAX_FAVORITE_SPOTS) {
+    WindmateSpotMapPicker.showToast(WindmateCopy.map.favoriteLimit);
+    return;
+  }
+  toggleFavorite(spot.id);
+  WindmateSpotMapPicker.showToast(WindmateCopy.map.added(spot.name));
+}
+
+async function favoriteCreatedSpot(spot) {
+  if (isFavoriteSpot(spot.id)) {
+    WindmateSpotMapPicker.refreshMarkers();
+    return;
+  }
+  if (favoriteSpotIds.length >= MAX_FAVORITE_SPOTS) {
+    WindmateSpotMapPicker.showToast(WindmateCopy.map.favoriteLimit);
+    return;
+  }
+  favoriteSpotIds = [...favoriteSpotIds, spot.id];
+  if (rideabilityData?.preferences) {
+    rideabilityData.preferences.favorite_spot_ids = favoriteSpotIds;
+  }
+  await persistFavorites({ fullRefresh: true });
+  WindmateSpotMapPicker.refreshMarkers();
 }
 
 function setSearchResultsOpen(open) {
@@ -1116,7 +1155,7 @@ function renderSpotSearchResults(spots) {
           ? `<span class="spot-search-result__badge">${WindmateCopy.favorites.inList}</span>`
           : '';
         return `
-        <div class="spot-search-result" role="option">
+        <div class="spot-search-result" role="option" data-spot-id="${spot.id}" data-spot-lat="${spot.latitude}" data-spot-lng="${spot.longitude}" data-spot-name="${spot.name.replace(/"/g, '&quot;')}">
           <div class="spot-search-result__meta">
             <span class="spot-search-result__name">${spot.name}${badge}</span>
             <span class="spot-search-result__dist">${WindmateCopy.search.km(spot.distance_km)}</span>
@@ -1151,9 +1190,27 @@ async function runSpotSearch(query) {
   }
 }
 
+function initSpotMapPicker() {
+  WindmateSpotMapPicker.init({
+    getFavoriteIds: () => favoriteSpotIds,
+    getActiveSport: () => activeSport,
+    getHome: () => userLocation,
+    onFavorite: favoriteFromMap,
+    onCreated: favoriteCreatedSpot,
+  });
+}
+
 function initSpotSearch() {
   if (els.spotSearchInput) {
     els.spotSearchInput.placeholder = WindmateCopy.search.placeholder;
+    els.spotSearchInput.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      if (!WindmateSpotMapPicker.isOpen()) return;
+      e.preventDefault();
+      const q = els.spotSearchInput.value.trim();
+      if (q.length < 2) return;
+      await WindmateSpotMapPicker.handleSearchEnter(q);
+    });
     els.spotSearchInput.addEventListener('input', () => {
       clearTimeout(spotSearchTimer);
       const raw = els.spotSearchInput.value;
@@ -1174,6 +1231,21 @@ function initSpotSearch() {
   els.spotSearchResults?.addEventListener('mousedown', (e) => {
     if (e.target.closest('.spot-favorite-btn')) return;
     e.preventDefault();
+  });
+
+  els.spotSearchResults?.addEventListener('click', (e) => {
+    if (e.target.closest('.spot-favorite-btn')) return;
+    const row = e.target.closest('.spot-search-result[data-spot-id]');
+    if (!row || !WindmateSpotMapPicker.isOpen()) return;
+    const lat = parseFloat(row.dataset.spotLat);
+    const lng = parseFloat(row.dataset.spotLng);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+    WindmateSpotMapPicker.focusSpot({
+      id: row.dataset.spotId,
+      name: row.dataset.spotName,
+      latitude: lat,
+      longitude: lng,
+    });
   });
 
   document.addEventListener('click', (e) => {
@@ -1820,7 +1892,7 @@ function renderRideabilityMatrix(data, observations) {
     data.spots,
     selectedDayDate,
     prefsForRanking(data.preferences),
-    data.radius_km
+    getSearchRadiusKm()
   ).filter((row) => row.rideableCount > 0);
   const minWindowHours = getMinRideableWindowHours(data.preferences);
 
@@ -1897,6 +1969,10 @@ function renderRideabilityMatrix(data, observations) {
         : '';
 
       const favoriteBtn = renderFavoriteButton(spot);
+      const outsideRadiusBadge =
+        spot.distance_km > data.radius_km
+          ? `<span class="spot-outside-radius-badge" title="${WindmateCopy.favorites.outsideRadius}">far</span>`
+          : '';
       const watchBtn = WindmateWatchlist.renderWatchButton(
         spot.id,
         selectedDayDate,
@@ -1915,6 +1991,7 @@ function renderRideabilityMatrix(data, observations) {
               <span class="text-slate-500 font-normal">#${rank + 1}</span>
               <span class="spot-title">
                 <span class="spot-name">${spot.name}</span>
+                ${outsideRadiusBadge}
                 ${favoriteBtn}
                 ${watchBtn}
               </span>
@@ -1994,6 +2071,7 @@ els.manualLocBtn.addEventListener('click', () => {
   initRankCriteriaSection();
   initLegendModal();
   initSettingsModal();
+  initSpotMapPicker();
   initSpotSearch();
   initFavoriteToggles();
   WindmateSportSelector.init(els.sportSelector, { onSwitch: switchActiveSport });

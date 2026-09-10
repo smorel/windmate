@@ -636,10 +636,193 @@ body.modal-open {
   color: #fbbf24;
 }
 
+.spot-search-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
 .spot-search-input {
   direction: ltr;
   unicode-bidi: isolate;
   text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+.spot-search-input--with-btn {
+  width: auto;
+}
+
+.spot-map-toggle {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid #1a2235;
+  background: #0f1422;
+  color: #94a3b8;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.spot-map-toggle:hover {
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #e2e8f0;
+}
+
+.spot-map-toggle--open {
+  border-color: rgba(16, 185, 129, 0.55);
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.spot-map-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.spot-map-panel {
+  margin-top: 0.625rem;
+  border: 1px solid #1a2235;
+  border-radius: 0.75rem;
+  background: #0f1422;
+  overflow: hidden;
+}
+
+.spot-map-panel.hidden {
+  display: none;
+}
+
+.spot-map-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #1a2235;
+}
+
+.spot-map-panel__hint {
+  font-size: 0.6875rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.spot-map-panel__hint--warn {
+  color: #fbbf24;
+}
+
+.spot-map-panel__hint--error {
+  color: #f87171;
+}
+
+.spot-map-panel__close {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.spot-map-panel__close:hover {
+  background: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+}
+
+.spot-map-container {
+  width: 100%;
+  min-height: 280px;
+  background: #0b0f19;
+}
+
+@media (min-width: 640px) {
+  .spot-map-container {
+    min-height: 360px;
+  }
+}
+
+.spot-map-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  margin-left: -0.625rem !important;
+  margin-top: -0.625rem !important;
+  border-radius: 50%;
+  background: #10b981;
+  border: 2px solid #ecfdf5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+
+.spot-map-marker--favorite {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  font-size: 1.125rem;
+  color: #fbbf24;
+  cursor: default;
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  margin-left: -0.75rem !important;
+  margin-top: -0.75rem !important;
+}
+
+.leaflet-container {
+  font-family: inherit;
+  background: #0b0f19;
+}
+
+.spot-create-duplicate {
+  font-size: 0.8125rem;
+  color: #fbbf24;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+}
+
+.spot-create-duplicate button {
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+  color: #6ee7b7;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.windmate-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(1rem);
+  z-index: 100;
+  max-width: calc(100vw - 2rem);
+  padding: 0.625rem 1rem;
+  border-radius: 0.75rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  font-size: 0.8125rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.windmate-toast--visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 .spot-search-results {
@@ -711,6 +894,18 @@ body.modal-open {
 
 .spot-name {
   min-width: 0;
+}
+
+.spot-outside-radius-badge {
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.3125rem;
+  line-height: 1.2;
 }
 
 .sr-only {

@@ -253,6 +253,18 @@ function computeSessionScore(entry, dateStr, prefs, radiusKm) {
   return { score: Math.round(score * 1000) / 1000, metrics };
 }
 
+/** Session go/no-go — proximity is irrelevant once a spot is chosen. */
+function computeSessionGoNoGoScore(entry, dateStr, prefs, radiusKm) {
+  const order = parseRankCriteriaOrder(prefs.rank_criteria_order).filter((k) => k !== 'proximity');
+  const weights = weightsFromOrder(order);
+  const metrics = computeRawMetrics(entry, dateStr, prefs, radiusKm);
+  let score = 0;
+  for (const key of Object.keys(weights)) {
+    score += (metrics[key] ?? 0) * weights[key];
+  }
+  return { score: Math.round(score * 1000) / 1000, metrics };
+}
+
 const WINDOW_REASON_LABELS = {
   rideability: 'Most good hours',
   bestWindow: 'Longest window',
@@ -502,6 +514,7 @@ function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours) {
 
 module.exports = {
   computeSessionScore,
+  computeSessionGoNoGoScore,
   computeRawMetrics,
   longestConsensusWindow,
   longestConsensusWindowLength,

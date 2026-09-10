@@ -6,14 +6,16 @@ const { analyzeMixedRideability, analyzeHourlyRideability, summarizeByDay } = re
 const { getPrimaryHourlyForecast } = require('./weather');
 const { computeSessionScore, longestConsensusWindowLength } = require('./sessionRank');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
+const { localDateString } = require('../utils/forecastTime');
+
 function todayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateString();
 }
 
 function addDays(isoDate, days) {
   const d = new Date(`${isoDate}T12:00:00`);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localDateString(d);
 }
 
 function weekdayForDate(isoDate) {

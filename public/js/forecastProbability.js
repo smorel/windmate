@@ -97,8 +97,9 @@ const WindmateForecastProbability = (() => {
   function normalizeMeteoProbability(raw) {
     const v = Number(raw);
     if (!Number.isFinite(v) || v < 0) return null;
-    if (v > 1 && v <= 100) return v / 100;
     if (v <= 1) return v;
+    if (v <= 10) return v / 10;
+    if (v <= 100) return v / 100;
     return null;
   }
 

@@ -1,11 +1,12 @@
 const CACHE_TTL_MS = 30 * 60 * 1000;
 /** Bump when hourly parsing changes so SQLite forecast_cache is refetched. */
-const FORECAST_CACHE_VERSION = 2;
+const FORECAST_CACHE_VERSION = 3;
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
 const { fetchModelForecast, normalizeWindData, repairIgetwindHourly, delay } = require('./igetwind');
 const { getModelsForLocation, getPrimaryModel, getModelLabel } = require('../utils/models');
 const { mergeForecastElapsedToday } = require('./forecastMerge');
+const { repairLegacyWindProbabilityHourly } = require('../utils/forecastProbabilityHour');
 
 function getProvider() {
   return (process.env.WEATHER_PROVIDER ?? 'mixed').toLowerCase();
@@ -71,9 +72,18 @@ async function fetchMixedForecast(spot) {
 }
 
 /** Extract primary hourly series from cached mixed or legacy forecast blob. */
+function sanitizeIgetwindHourly(hourly, cacheVersion) {
+  let repaired = repairIgetwindHourly(hourly);
+  if ((cacheVersion ?? 0) < 3) {
+    repaired = repairLegacyWindProbabilityHourly(repaired);
+  }
+  return repaired;
+}
+
 function sanitizeForecastBlob(data) {
   if (!data) return data;
 
+  const sourceVersion = data.cacheVersion ?? 0;
   const out = { ...data, cacheVersion: FORECAST_CACHE_VERSION };
 
   if (out.models) {
@@ -82,11 +92,11 @@ function sanitizeForecastBlob(data) {
       if (!model?.hourly || modelId === 'open-meteo') continue;
       out.models[modelId] = {
         ...model,
-        hourly: repairIgetwindHourly(model.hourly),
+        hourly: sanitizeIgetwindHourly(model.hourly, sourceVersion),
       };
     }
   } else if (out.hourly && out.provider === 'igetwind') {
-    out.hourly = repairIgetwindHourly(out.hourly);
+    out.hourly = sanitizeIgetwindHourly(out.hourly, sourceVersion);
   }
 
   return out;

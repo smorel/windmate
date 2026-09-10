@@ -81,7 +81,7 @@ function isSessionPlanningHour(timeKey, sessionDate, date = new Date()) {
   return !isElapsedLocalDayHour(timeKey, sessionDate, date);
 }
 
-/** Earliest on-water hour start after drive, rig, and leave buffer (rounds up to next hour). */
+/** First session hour you can be on the water after drive, rig, and leave buffer (floor to hour). */
 function earliestFeasibleOnWaterStartKey(
   now = new Date(),
   driveMinutes = 0,
@@ -93,11 +93,21 @@ function earliestFeasibleOnWaterStartKey(
   const y = ready.getFullYear();
   const mo = String(ready.getMonth() + 1).padStart(2, '0');
   const d = String(ready.getDate()).padStart(2, '0');
-  let h = ready.getHours();
-  if (ready.getMinutes() > 0 || ready.getSeconds() > 0 || ready.getMilliseconds() > 0) {
-    h += 1;
-  }
+  const h = ready.getHours();
   return `${y}-${mo}-${d}T${String(h).padStart(2, '0')}:00`;
+}
+
+/** Leave-time hint for traffic lookup before the departure window is chosen. */
+function bootstrapDepartureIso(dateStr, now = new Date()) {
+  if (dateStr !== localDateString(now)) {
+    return `${dateStr}T08:00`;
+  }
+  const y = now.getFullYear();
+  const mo = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const h = String(now.getHours()).padStart(2, '0');
+  const mi = String(now.getMinutes()).padStart(2, '0');
+  return `${y}-${mo}-${d}T${h}:${mi}`;
 }
 
 module.exports = {
@@ -112,4 +122,5 @@ module.exports = {
   isElapsedLocalDayHour,
   isSessionPlanningHour,
   earliestFeasibleOnWaterStartKey,
+  bootstrapDepartureIso,
 };

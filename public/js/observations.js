@@ -288,7 +288,8 @@ const WindmateObservations = (() => {
       rideEntry,
       dateStr,
       prefs,
-      dayHours
+      dayHours,
+      { distanceKm: rideEntry.spot?.distance_km }
     );
     if (!pick) return null;
     return {

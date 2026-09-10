@@ -1075,29 +1075,6 @@ function getSpotDayData(entry, dateStr) {
   return (entry.days ?? []).find((d) => d.date === dateStr) ?? null;
 }
 
-function resolveDepartureWindowForSession(session) {
-  if (!rideabilityData || session.sport !== rideabilityData.preferences.sport) return null;
-
-  const entry = rideabilityData.spots.find((row) => row.spot.id === session.spot_id);
-  if (!entry) return null;
-
-  const dayHours = getSpotDayData(entry, session.session_date)?.hours ?? [];
-  if (!dayHours.length) return null;
-
-  const pick = WindmateSessionRank.pickDepartureQualifyingWindow(
-    entry,
-    session.session_date,
-    prefsForRanking(rideabilityData.preferences),
-    dayHours
-  );
-  if (!pick) return null;
-
-  return {
-    start: pick.run.start,
-    end: WindmateDeparture.exclusiveEndAfterRun(pick.run.end),
-  };
-}
-
 function refreshWatchlistDepartures() {
   if (!els.watchlistStrip || userLocation.lat == null || userLocation.lng == null) return;
   WindmateDeparture.loadForWatchlist(
@@ -1105,8 +1082,7 @@ function refreshWatchlistDepartures() {
     WindmateWatchlist.getSessions(),
     userLocation.lat,
     userLocation.lng,
-    (session) => WindmateWatchlist.resolveVerdict(session),
-    resolveDepartureWindowForSession
+    (session) => WindmateWatchlist.resolveVerdict(session)
   );
 }
 
@@ -2405,16 +2381,6 @@ function renderRideabilityMatrix(data, observations) {
       );
 
       const matrixPrefs = prefsForRanking(data.preferences);
-      const departurePick = WindmateSessionRank.pickDepartureQualifyingWindow(
-        entry,
-        selectedDayDate,
-        matrixPrefs,
-        dayHours
-      );
-      const departureWindowStart = departurePick?.run.start ?? '';
-      const departureWindowEnd = departurePick
-        ? WindmateDeparture.exclusiveEndAfterRun(departurePick.run.end)
-        : '';
       const scoreRow = renderWindowScoreRow(dayHours, entry, selectedDayDate, matrixPrefs);
       const matrixRows = `${directionRow}${criterionRows}${scoreRow}`;
       const dayLabel = viewingToday
@@ -2500,8 +2466,6 @@ function renderRideabilityMatrix(data, observations) {
                   class="matrix-grid-wrap"
                   data-matrix-grid="${spot.id}"
                   data-matrix-hour-times="${dayHours.map((h) => WindmateRideableWindow.hourTimeKey(h.time)).join('|')}"
-                  data-departure-window-start="${departureWindowStart}"
-                  data-departure-window-end="${departureWindowEnd}"
                 >
                   ${renderMatrixTimeAxis(dayHours)}
                   ${matrixRows}

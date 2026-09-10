@@ -770,6 +770,15 @@ const WindmateSessionRank = (() => {
     return best;
   }
 
+  function pickEarliestDepartureWindow(scored) {
+    if (!scored.length) return null;
+    let earliest = scored[0];
+    for (const item of scored) {
+      if (item.run.start.localeCompare(earliest.run.start) < 0) earliest = item;
+    }
+    return earliest;
+  }
+
   function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, options = {}) {
     const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
     let consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
@@ -798,7 +807,9 @@ const WindmateSessionRank = (() => {
     );
     const byStartTime = new Map(scored.map((item) => [item.run.start, item]));
     fillTrailingHourScores(byStartTime, consensusHours, minWindowHours);
-    const best = pickBestDepartureWindow(scored, byStartTime);
+    const best = options.preferEarliestStart
+      ? pickEarliestDepartureWindow(scored)
+      : pickBestDepartureWindow(scored, byStartTime);
     if (!best) return null;
 
     return {
@@ -809,9 +820,14 @@ const WindmateSessionRank = (() => {
     };
   }
 
-  const DEFAULT_DEPARTURE_DRIVE_ESTIMATE_MIN = 45;
   const DEFAULT_DEPARTURE_RIG_MIN = 20;
   const DEFAULT_DEPARTURE_BUFFER_MIN = 5;
+  const HAVERSINE_DRIVE_SPEED_KMH = 55;
+
+  function estimateDriveMinutesFromDistanceKm(distanceKm) {
+    if (!Number.isFinite(distanceKm)) return null;
+    return Math.max(1, Math.round((distanceKm / HAVERSINE_DRIVE_SPEED_KMH) * 60));
+  }
 
   function hourStartMs(timeKey) {
     const key = hourTimeKey(timeKey);
@@ -848,35 +864,33 @@ const WindmateSessionRank = (() => {
     dateStr,
     prefs,
     timelineHours,
-    { driveMinutes, rigMinutes, bufferMinutes, now } = {}
+    { driveMinutes, distanceKm, rigMinutes, bufferMinutes, now } = {}
   ) {
     const rig = rigMinutes ?? DEFAULT_DEPARTURE_RIG_MIN;
     const buffer = bufferMinutes ?? DEFAULT_DEPARTURE_BUFFER_MIN;
-    const drive = driveMinutes ?? DEFAULT_DEPARTURE_DRIVE_ESTIMATE_MIN;
+    const drive =
+      driveMinutes ?? estimateDriveMinutesFromDistanceKm(distanceKm);
     const asOf = now ?? new Date();
 
-    let pick = pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours);
-    if (!pick || dateStr !== WindmateForecastTime.localDateString(asOf)) return pick;
+    if (!Number.isFinite(drive) || dateStr !== WindmateForecastTime.localDateString(asOf)) {
+      return pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours);
+    }
 
-    for (let attempt = 0; attempt < 8 && pick; attempt += 1) {
-      const onWaterEnd = WindmateForecastTime.addForecastMinutes(pick.run.end, 60);
-      if (
-        isDepartureWindowStillFeasible(asOf, pick.run.start, onWaterEnd, drive, rig, buffer)
-      ) {
-        return pick;
-      }
+    const notBefore = WindmateForecastTime.earliestFeasibleOnWaterStartKey(
+      asOf,
+      drive,
+      rig,
+      buffer
+    );
+    const pick = pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, {
+      notBeforeHourKey: notBefore,
+      preferEarliestStart: true,
+    });
+    if (!pick) return null;
 
-      const notBefore = WindmateForecastTime.earliestFeasibleOnWaterStartKey(
-        asOf,
-        drive,
-        rig,
-        buffer
-      );
-      const next = pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, {
-        notBeforeHourKey: notBefore,
-      });
-      if (!next || hourTimeKey(next.run.start) === hourTimeKey(pick.run.start)) return null;
-      pick = next;
+    const onWaterEnd = WindmateForecastTime.addForecastMinutes(pick.run.end, 60);
+    if (!isDepartureWindowStillFeasible(asOf, pick.run.start, onWaterEnd, drive, rig, buffer)) {
+      return null;
     }
 
     return pick;

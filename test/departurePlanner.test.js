@@ -15,7 +15,7 @@ const {
   DEFAULT_RIG_MINUTES,
   DEFAULT_DEPARTURE_BUFFER_MINUTES,
 } = require('../src/services/departurePlanner');
-const { localDateString } = require('../src/utils/forecastTime');
+const { localDateString, earliestFeasibleOnWaterStartKey } = require('../src/utils/forecastTime');
 const { subtractForecastMinutes } = require('../src/utils/forecastTime');
 const { roundDepartureBucket, haversineDriveMinutes } = require('../src/services/travelTime');
 const {
@@ -426,6 +426,29 @@ describe('resolveDepartureStatus', () => {
 });
 
 describe('pickDepartureQualifyingWindow', () => {
+  it('skips today feasibility when drive duration is unknown', () => {
+    const hours = [
+      hour('2026-09-12T08:00', { windSpeed: 26 }),
+      hour('2026-09-12T09:00', { windSpeed: 26 }),
+      hour('2026-09-12T14:00', { windSpeed: 18 }),
+      hour('2026-09-12T15:00', { windSpeed: 18 }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 50,
+      rank_criteria_order: ['wind'],
+    };
+    const now = new Date(2026, 8, 12, 15, 30);
+    const dateStr = localDateString(now);
+    const timeline = hours.map((h) => ({
+      ...h,
+      time: `${dateStr}T${h.time.slice(11)}`,
+    }));
+    const withoutDrive = pickDepartureQualifyingWindow(entry, dateStr, prefs, timeline, { now });
+    assert.equal(withoutDrive.run.start.replace(dateStr, '2026-09-12'), '2026-09-12T08:00');
+  });
+
   it('limits window search to hours at or after notBefore', () => {
     const hours = [
       hour('2026-09-12T08:00', { windSpeed: 24 }),
@@ -477,7 +500,43 @@ describe('pickDepartureQualifyingWindow', () => {
       bufferMinutes: DEFAULT_DEPARTURE_BUFFER_MINUTES,
     });
     assert.ok(departurePick);
-    assert.ok(departurePick.run.start >= `${dateStr}T17:00`);
+    assert.ok(departurePick.run.start >= `${dateStr}T16:00`);
     assert.notEqual(departurePick.run.start, morningBest.run.start.replace('2026-09-12', dateStr));
+  });
+
+  it('on today picks the earliest reachable window, not a later higher-scored block', () => {
+    const hours = [
+      hour('2026-09-12T14:00', { windSpeed: 17 }),
+      hour('2026-09-12T15:00', { windSpeed: 19 }),
+      hour('2026-09-12T16:00', { windSpeed: 19 }),
+      hour('2026-09-12T17:00', { windSpeed: 17 }),
+    ];
+    const entry = { models: {}, days: [{ date: '2026-09-12', hours }] };
+    const prefs = {
+      min_rideable_window_hours: 2,
+      max_gust_knots: 50,
+      rank_criteria_order: ['wind'],
+    };
+    const now = new Date(2026, 8, 12, 13, 10);
+    const dateStr = localDateString(now);
+    const timeline = hours.map((h) => ({
+      ...h,
+      time: `${dateStr}T${h.time.slice(11)}`,
+    }));
+    const departurePick = pickDepartureQualifyingWindow(entry, dateStr, prefs, timeline, {
+      now,
+      driveMinutes: 32,
+      rigMinutes: DEFAULT_RIG_MINUTES,
+      bufferMinutes: DEFAULT_DEPARTURE_BUFFER_MINUTES,
+    });
+    assert.equal(departurePick.run.start, `${dateStr}T14:00`);
+  });
+});
+
+describe('earliestFeasibleOnWaterStartKey', () => {
+  it('floors ready time to the session hour instead of rounding up', () => {
+    const now = new Date(2026, 8, 12, 13, 10);
+    const key = earliestFeasibleOnWaterStartKey(now, 32, DEFAULT_RIG_MINUTES, DEFAULT_DEPARTURE_BUFFER_MINUTES);
+    assert.equal(key, '2026-09-12T14:00');
   });
 });

@@ -643,6 +643,15 @@ function pickBestDepartureWindow(scored, byStartTime) {
   return best;
 }
 
+function pickEarliestDepartureWindow(scored) {
+  if (!scored.length) return null;
+  let earliest = scored[0];
+  for (const item of scored) {
+    if (item.run.start.localeCompare(earliest.run.start) < 0) earliest = item;
+  }
+  return earliest;
+}
+
 function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, options = {}) {
   const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
   let consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
@@ -672,7 +681,9 @@ function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, options 
   );
   const byStartTime = new Map(scored.map((item) => [item.run.start, item]));
   fillTrailingHourScores(byStartTime, consensusHours, minWindowHours);
-  const best = pickBestDepartureWindow(scored, byStartTime);
+  const best = options.preferEarliestStart
+    ? pickEarliestDepartureWindow(scored)
+    : pickBestDepartureWindow(scored, byStartTime);
   if (!best) return null;
 
   return {

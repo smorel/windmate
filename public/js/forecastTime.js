@@ -129,10 +129,7 @@ const WindmateForecastTime = (() => {
     const y = ready.getFullYear();
     const mo = String(ready.getMonth() + 1).padStart(2, '0');
     const d = String(ready.getDate()).padStart(2, '0');
-    let h = ready.getHours();
-    if (ready.getMinutes() > 0 || ready.getSeconds() > 0 || ready.getMilliseconds() > 0) {
-      h += 1;
-    }
+    const h = ready.getHours();
     return `${y}-${mo}-${d}T${String(h).padStart(2, '0')}:00`;
   }
 

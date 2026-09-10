@@ -1,7 +1,68 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { warningsWithinWindow, observationCoversSessionDay } = require('../src/services/sessionGoNoGo');
-const { computeSessionGoNoGoScore } = require('../src/services/sessionRank');
+const {
+  warningsWithinWindow,
+  observationCoversSessionDay,
+  attachSessionGoNoGoByDate,
+} = require('../src/services/sessionGoNoGo');
+const { computeSessionGoNoGoScore, longestConsensusWindowLength } = require('../src/services/sessionRank');
+const { markInRideableWindow } = require('../src/utils/rideableWindow');
+
+describe('markInRideableWindow', () => {
+  it('marks every qualifying run, not only the longest block', () => {
+    const hours = [
+      { time: '2026-09-11T09:00', rideable: true },
+      { time: '2026-09-11T10:00', rideable: true },
+      { time: '2026-09-11T11:00', rideable: true },
+      { time: '2026-09-11T12:00', rideable: true },
+      { time: '2026-09-11T13:00', rideable: false },
+      { time: '2026-09-11T17:00', rideable: true },
+      { time: '2026-09-11T18:00', rideable: true },
+      { time: '2026-09-11T19:00', rideable: true },
+    ];
+    markInRideableWindow(hours, 2);
+    const marked = hours.filter((h) => h.inRideableWindow).map((h) => h.time.slice(11, 16));
+    assert.deepEqual(marked, ['09:00', '10:00', '11:00', '12:00', '17:00', '18:00', '19:00']);
+  });
+});
+
+describe('attachSessionGoNoGoByDate', () => {
+  it('matches longestConsensusWindowLength for multi-model days', () => {
+    const prefs = {
+      min_rideable_window_hours: 2,
+      min_wind_knots: 12,
+      max_gust_knots: 50,
+      radius_km: 50,
+      rank_criteria_order: ['wind', 'gust', 'bestWindow'],
+    };
+    const hour = (time, rideable = true) => ({
+      time,
+      rideable,
+      windOk: rideable,
+      weatherOk: true,
+      tempOk: true,
+      windSpeed: 16,
+      gusts: 22,
+      windExposure: 'onshore',
+    });
+    const dayHours = Array.from({ length: 8 }, (_, i) =>
+      hour(`2026-09-11T${String(9 + i).padStart(2, '0')}:00`)
+    );
+    const rideEntry = {
+      spot: { ideal_directions: ['E'], distance_km: 10 },
+      primaryModel: 'gfs',
+      models: {
+        gfs: { days: [{ date: '2026-09-11', hours: dayHours }] },
+        'open-meteo': { days: [{ date: '2026-09-11', hours: dayHours }] },
+      },
+      days: [{ date: '2026-09-11' }],
+    };
+    const attached = attachSessionGoNoGoByDate(rideEntry, prefs);
+    const expectedLen = longestConsensusWindowLength(rideEntry, '2026-09-11', 2);
+    assert.equal(attached['2026-09-11'].windowHours, expectedLen);
+    assert.ok(attached['2026-09-11'].windowHours >= 2);
+  });
+});
 
 describe('warningsWithinWindow', () => {
   it('ignores hazards after the consensus window ends', () => {

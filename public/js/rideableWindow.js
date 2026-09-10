@@ -7,6 +7,31 @@ const WindmateRideableWindow = (() => {
     return String(time).replace(' ', 'T').slice(0, 16);
   }
 
+  /**
+   * True when every model that still reports this hour marks it rideable.
+   * Missing data is ignored. For elapsed hours on `options.today`, models with
+   * wind/gust below user thresholds are ignored (retrospective model downgrades).
+   */
+  function allReportingModelsRideable(indexedByKey, key, options) {
+    const today = options?.today;
+    const now = options?.now ?? new Date();
+    let reporting = 0;
+    for (const byKey of indexedByKey) {
+      const hour = byKey.get(key);
+      if (!hour) continue;
+      if (
+        today &&
+        WindmateForecastTime.isElapsedLocalDayHour(key, today, now) &&
+        hour.windOk === false
+      ) {
+        continue;
+      }
+      reporting += 1;
+      if (!hour.rideable) return false;
+    }
+    return reporting > 0;
+  }
+
   function parseMinHours(value, fallback = DEFAULT_MIN_HOURS) {
     const n = parseInt(value, 10);
     if (Number.isNaN(n) || n < 1) return fallback;
@@ -120,9 +145,14 @@ const WindmateRideableWindow = (() => {
       return { timeline, consensusHours: [] };
     }
 
+    const consensusOptions =
+      dateStr === WindmateForecastTime.localDateString()
+        ? { today: dateStr, now: new Date() }
+        : undefined;
+
     const consensusHours = timeline.map((slot) => {
       const key = hourTimeKey(slot.time);
-      const allRideable = indexed.every((byKey) => byKey.get(key)?.rideable === true);
+      const allRideable = allReportingModelsRideable(indexed, key, consensusOptions);
       return { time: key, rideable: allRideable };
     });
 
@@ -141,10 +171,17 @@ const WindmateRideableWindow = (() => {
     return longestWindow(consensusHours, minConsecutive);
   }
 
-  function getLongestConsensusWindowHours(entry, dateStr, minConsecutive, getModelDayHours) {
-    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours);
+  function qualifyingWindowHourKeys(marked, timeline, minConsecutive) {
+    markHours(marked, minConsecutive);
+    const windowKeys = new Set(
+      marked.filter((hour) => hour.inRideableWindow).map((hour) => hour.time)
+    );
+    return timeline.filter((slot) => windowKeys.has(hourTimeKey(slot.time)));
+  }
 
-    if (!timeline.length) return [];
+  function consensusWindowMarkedHours(entry, dateStr, getModelDayHours) {
+    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours);
+    if (!timeline.length) return { timeline: [], marked: [] };
 
     const marked = consensusHours.length
       ? consensusHours.map((hour) => ({ ...hour }))
@@ -153,12 +190,26 @@ const WindmateRideableWindow = (() => {
           rideable: hour.rideable === true,
         }));
 
+    return { timeline, marked };
+  }
+
+  /** Hours in the longest qualifying all-models-agree block (stats / horizon wind range). */
+  function getLongestConsensusWindowHours(entry, dateStr, minConsecutive, getModelDayHours) {
+    const { timeline, marked } = consensusWindowMarkedHours(entry, dateStr, getModelDayHours);
+    if (!timeline.length) return [];
+
     markLongestQualifyingWindows(marked, minConsecutive);
     const windowKeys = new Set(
       marked.filter((hour) => hour.inRideableWindow).map((hour) => hour.time)
     );
-
     return timeline.filter((slot) => windowKeys.has(hourTimeKey(slot.time)));
+  }
+
+  /** Every hour in any qualifying consensus block (matrix bands, live curve). */
+  function getQualifyingConsensusWindowHours(entry, dateStr, minConsecutive, getModelDayHours) {
+    const { timeline, marked } = consensusWindowMarkedHours(entry, dateStr, getModelDayHours);
+    if (!timeline.length) return [];
+    return qualifyingWindowHourKeys(marked, timeline, minConsecutive);
   }
 
   /** Hours where every model with data agrees the hour is rideable. */
@@ -175,8 +226,12 @@ const WindmateRideableWindow = (() => {
 
     if (alignedByIndex) {
       consensusHours = hourSets[0].map((hour, index) => {
-        const allRideable = hourSets.every((hours) => hours[index].rideable === true);
         const key = hourTimeKey(hour.time);
+        const reporting = hourSets
+          .map((hours) => hours[index])
+          .filter((slot) => slot && hourTimeKey(slot.time) === key);
+        const allRideable =
+          reporting.length > 0 && reporting.every((slot) => slot.rideable === true);
         allModelsByTime.set(key, allRideable);
         return { time: key, rideable: allRideable };
       });
@@ -191,7 +246,7 @@ const WindmateRideableWindow = (() => {
       ].sort();
 
       consensusHours = timeline.map((key) => {
-        const allRideable = indexed.every((byKey) => byKey.get(key)?.rideable === true);
+        const allRideable = allReportingModelsRideable(indexed, key);
         allModelsByTime.set(key, allRideable);
         return { time: key, rideable: allRideable };
       });
@@ -216,7 +271,7 @@ const WindmateRideableWindow = (() => {
       consensusHours.map((hour) => [hour.time, hour.rideable])
     );
 
-    markLongestQualifyingWindows(consensusHours, minConsecutive);
+    markHours(consensusHours, minConsecutive);
     const windowByTime = new Map(
       consensusHours.map((hour) => [hour.time, Boolean(hour.inRideableWindow)])
     );
@@ -230,13 +285,8 @@ const WindmateRideableWindow = (() => {
 
     return timelineHours.map((slot) => {
       const key = hourTimeKey(slot.time);
-      const hour = byKey.get(key) ?? {
-        time: slot.time,
-        rideable: false,
-        windSpeed: 0,
-        gusts: 0,
-        direction: '—',
-      };
+      const hour = byKey.get(key);
+      if (!hour) return null;
 
       return {
         ...hour,
@@ -253,7 +303,7 @@ const WindmateRideableWindow = (() => {
     }
 
     const marked = hours.map((hour) => ({ ...hour }));
-    markLongestQualifyingWindows(marked, minConsecutive);
+    markHours(marked, minConsecutive);
     return {
       windowByTime: new Map(
         marked.map((hour) => [hourTimeKey(hour.time), Boolean(hour.inRideableWindow)])
@@ -281,6 +331,7 @@ const WindmateRideableWindow = (() => {
   return {
     DEFAULT_MIN_HOURS,
     hourTimeKey,
+    allReportingModelsRideable,
     parseMinHours,
     longestWindow,
     markHours,
@@ -288,6 +339,7 @@ const WindmateRideableWindow = (() => {
     buildConsensusHours,
     longestConsensusWindowLength,
     getLongestConsensusWindowHours,
+    getQualifyingConsensusWindowHours,
     buildConsensusWindowMaps,
     buildConsensusWindowMapsFromEntry,
     buildSingleModelWindowMaps,

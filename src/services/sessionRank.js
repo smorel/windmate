@@ -3,9 +3,11 @@ const {
   longestRideableWindow,
   longestRideableWindowSpan,
   hourTimeKey,
+  allReportingModelsRideable,
 } = require('../utils/rideableWindow');
 const { parseRankCriteriaOrder } = require('../utils/rankCriteria');
 const { SPORT_WAVE_DEFAULTS } = require('../utils/sports');
+const { localDateString } = require('../utils/forecastTime');
 
 const DEFAULT_ORDER = [
   'rideability',
@@ -130,41 +132,9 @@ function longestConsensusWindow(entry, dateStr, minWindowHours) {
     return longestRideableWindowSpan(hours, minWindowHours);
   }
 
-  const timelines = modelEntries.map(([, model]) => {
-    const day = model.days?.find((d) => d.date === dateStr);
-    return day?.hours ?? [];
-  });
-  const timeKeys = [
-    ...new Set(timelines.flatMap((hours) => hours.map((h) => h.time.slice(0, 16)))),
-  ].sort();
-
-  let best = { length: 0, start: null, end: null };
-  let current = 0;
-  let runStart = null;
-  let runEnd = null;
-
-  for (const key of timeKeys) {
-    const allRideable = timelines.every((hours) => {
-      const hour = hours.find((h) => h.time.slice(0, 16) === key);
-      return hour?.rideable === true;
-    });
-    if (allRideable) {
-      if (current === 0) runStart = key;
-      current += 1;
-      runEnd = key;
-    } else if (current > 0) {
-      if (current >= minWindowHours && current > best.length) {
-        best = { length: current, start: runStart, end: runEnd };
-      }
-      current = 0;
-      runStart = null;
-      runEnd = null;
-    }
-  }
-  if (current >= minWindowHours && current > best.length) {
-    best = { length: current, start: runStart, end: runEnd };
-  }
-  return best;
+  const timeline = getDayHours(entry, dateStr);
+  const consensusHours = buildConsensusHours(entry, dateStr, timeline);
+  return longestRideableWindowSpan(consensusHours, minWindowHours);
 }
 
 function longestConsensusWindowLength(entry, dateStr, minWindowHours) {
@@ -329,9 +299,12 @@ function buildConsensusHours(entry, dateStr, timelineHours) {
     return byKey;
   });
 
+  const consensusOptions =
+    dateStr === localDateString() ? { today: dateStr, now: new Date() } : undefined;
+
   return timeline.map((slot) => {
     const key = hourTimeKey(slot.time);
-    const allRideable = indexed.every((byKey) => byKey.get(key)?.rideable === true);
+    const allRideable = allReportingModelsRideable(indexed, key, consensusOptions);
     const sample = indexed.map((byKey) => byKey.get(key)).find(Boolean) ?? slot;
     return { ...sample, time: key, rideable: allRideable };
   });

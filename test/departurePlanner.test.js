@@ -78,6 +78,27 @@ describe('buildConsensusHours', () => {
     assert.equal(windows[0].start, '2026-09-12T08:00');
     assert.equal(windows[2].start, '2026-09-12T10:00');
   });
+
+  it('ignores models with no data for a timeline slot when building consensus', () => {
+    const primaryHours = [
+      hour('2026-09-12T08:00'),
+      hour('2026-09-12T09:00'),
+      hour('2026-09-12T10:00'),
+    ];
+    const hrrrHours = [hour('2026-09-12T09:00'), hour('2026-09-12T10:00')];
+    const entry = {
+      primaryModel: 'gfs',
+      models: {
+        gfs: { days: [{ date: '2026-09-12', hours: primaryHours }] },
+        hrrr: { days: [{ date: '2026-09-12', hours: hrrrHours }] },
+      },
+    };
+
+    const consensus = buildConsensusHours(entry, '2026-09-12', primaryHours);
+    assert.equal(consensus.length, 3);
+    assert.equal(consensus[0].rideable, true);
+    assert.equal(consensus.every((slot) => slot.rideable), true);
+  });
 });
 
 describe('enumerateConsensusRuns', () => {

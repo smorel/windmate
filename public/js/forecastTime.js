@@ -83,6 +83,20 @@ const WindmateForecastTime = (() => {
     return days?.[0]?.date ?? today;
   }
 
+  function currentLocalHourStartKey(date = new Date()) {
+    const y = date.getFullYear();
+    const mo = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const h = String(date.getHours()).padStart(2, '0');
+    return `${y}-${mo}-${d}T${h}:00`;
+  }
+
+  function isElapsedLocalDayHour(timeKey, today, date = new Date()) {
+    const key = String(timeKey).replace(' ', 'T').slice(0, 16);
+    if (!key.startsWith(today)) return false;
+    return key < currentLocalHourStartKey(date);
+  }
+
   return {
     formatForecastClock,
     addForecastMinutes,
@@ -92,5 +106,7 @@ const WindmateForecastTime = (() => {
     localDateString,
     forecastTodayFromRideability,
     defaultPlannerDayDate,
+    currentLocalHourStartKey,
+    isElapsedLocalDayHour,
   };
 })();

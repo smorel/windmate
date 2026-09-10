@@ -1391,6 +1391,43 @@ function countSpotsWithSharedWindows(spots, dateStr, prefs) {
   return spots.filter((entry) => getConsensusRideableHours(entry, dateStr, prefs) > 0).length;
 }
 
+function isPlannedHorizonSpot(entry, radiusKm) {
+  if (entry.spot?.outside_radius) return false;
+  const dist = entry.spot?.distance_km;
+  if (Number.isFinite(dist) && dist > radiusKm) return false;
+  return true;
+}
+
+function plannedHorizonSpots(spots, radiusKm) {
+  return spots.filter((entry) => isPlannedHorizonSpot(entry, radiusKm));
+}
+
+/** True when only out-of-radius favorites have qualifying windows — not a local planned day. */
+function isFarFavoritesOnlyHorizonDay(spots, dateStr, prefs, radiusKm) {
+  let anyFarWindow = false;
+  let anyPlannedWindow = false;
+  for (const entry of spots) {
+    if (getConsensusRideableHours(entry, dateStr, prefs) <= 0) continue;
+    if (isPlannedHorizonSpot(entry, radiusKm)) anyPlannedWindow = true;
+    else anyFarWindow = true;
+  }
+  return anyFarWindow && !anyPlannedWindow;
+}
+
+function renderHorizonFarCuriosityBlock() {
+  const line = WindmateCopy.horizon.farAwayCuriosity;
+  const title = WindmateCopy.horizon.farAwayCuriosityTitle;
+  return `<div class="mt-3 text-sm text-slate-400 leading-snug" title="${escapeHtml(title)}">${escapeHtml(line)}</div>`;
+}
+
+function renderHorizonBustSticker() {
+  const title = escapeHtml(WindmateCopy.excitement.bustTooltip);
+  const label = escapeHtml(WindmateCopy.excitement.bustLabel);
+  return `<span class="session-excitement-stack" title="${title}">
+        <span class="session-excitement-sticker session-excitement-sticker--bust" role="img" aria-label="${label}">😢</span>
+      </span>`;
+}
+
 function renderHorizonWindBlock(spots, dateStr, prefs, sportColor, rideableMax) {
   if (rideableMax <= 0) {
     return `<div class="mt-3 text-sm text-slate-500">${WindmateCopy.horizon.noRideableWind}</div>`;
@@ -1491,15 +1528,27 @@ function renderHorizonPlanner(data) {
       const date = new Date(day.date + 'T12:00:00');
       const dayName = date.toLocaleDateString([], { weekday: 'short' });
       const monthDay = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-      const rideableRange = getDayRideableWindowRange(data.spots, day.date, data.preferences);
+      const radiusKm = getSearchRadiusKm();
+      const farCuriosityOnly = isFarFavoritesOnlyHorizonDay(
+        data.spots,
+        day.date,
+        data.preferences,
+        radiusKm
+      );
+      const plannedSpots = plannedHorizonSpots(data.spots, radiusKm);
+      const rideableRange = getDayRideableWindowRange(plannedSpots, day.date, data.preferences);
       const rideableLabel = WindmateCopy.horizon.rideableHours(
         rideableRange.min,
         rideableRange.max
       );
       const pct = Math.round((rideableRange.max / Math.max(24, 1)) * 100);
-      const spotsWithWindows = countSpotsWithSharedWindows(data.spots, day.date, data.preferences);
+      const spotsWithWindows = countSpotsWithSharedWindows(
+        plannedSpots,
+        day.date,
+        data.preferences
+      );
       const agreement =
-        spotsWithWindows > 0
+        !farCuriosityOnly && spotsWithWindows > 0
           ? `<div class="mt-1 text-[10px] text-slate-500">${WindmateCopy.horizon.spotsWithWindows(spotsWithWindows)}</div>`
           : '';
 
@@ -1507,21 +1556,47 @@ function renderHorizonPlanner(data) {
       const todayTag = isTodayCard
         ? '<span class="text-[10px] text-emerald-400 font-medium">Today</span>'
         : '';
-      const horizonExcitement = WindmateSessionExcitement.pickBestHorizonExcitement(
-        data.spots,
-        day.date,
-        data.preferences,
-        getSearchRadiusKm(),
-        rideableRange.max
-      );
-      const horizonStickers = WindmateSessionExcitement.renderStickers(horizonExcitement);
+
+      let horizonStickers;
+      let forecastBlock;
+      let rideableFooter = '';
+
+      if (farCuriosityOnly) {
+        horizonStickers = renderHorizonBustSticker();
+        forecastBlock = renderHorizonFarCuriosityBlock();
+      } else {
+        const horizonExcitement = WindmateSessionExcitement.pickBestHorizonExcitement(
+          plannedSpots,
+          day.date,
+          data.preferences,
+          radiusKm,
+          rideableRange.max
+        );
+        horizonStickers = WindmateSessionExcitement.renderStickers(horizonExcitement);
+        forecastBlock = renderHorizonWindBlock(
+          plannedSpots,
+          day.date,
+          data.preferences,
+          sportColor,
+          rideableRange.max
+        );
+        rideableFooter = `
+          <div class="mt-2 text-xs text-slate-400">${rideableLabel} · ${pct}%</div>
+          ${agreement}
+          <div class="mt-3 h-1.5 rounded-full bg-base overflow-hidden">
+            <div class="h-full rounded-full" style="width:${pct}%;background:${sportColor}"></div>
+          </div>`;
+      }
+
+      const cardExtraClass = farCuriosityOnly ? ' horizon-day-card--far-curiosity' : '';
 
       return `
         <button
           type="button"
-          class="horizon-day-card horizon-day-card--stickers text-left bg-base-card border border-base-border rounded-xl p-4 ${blurClass} ${selectedClass}"
+          class="horizon-day-card horizon-day-card--stickers text-left bg-base-card border border-base-border rounded-xl p-4 ${blurClass} ${selectedClass}${cardExtraClass}"
           data-date="${day.date}"
           aria-pressed="${day.date === selectedDayDate}"
+          ${farCuriosityOnly ? `title="${escapeHtml(WindmateCopy.horizon.farAwayCuriosityTitle)}"` : ''}
         >
           ${horizonStickers}
           <div class="flex items-center justify-between gap-1">
@@ -1529,12 +1604,8 @@ function renderHorizonPlanner(data) {
             ${todayTag}
           </div>
           <div class="text-lg font-semibold text-white">${monthDay}</div>
-          ${renderHorizonWindBlock(data.spots, day.date, data.preferences, sportColor, rideableRange.max)}
-          <div class="mt-2 text-xs text-slate-400">${rideableLabel} · ${pct}%</div>
-          ${agreement}
-          <div class="mt-3 h-1.5 rounded-full bg-base overflow-hidden">
-            <div class="h-full rounded-full" style="width:${pct}%;background:${sportColor}"></div>
-          </div>
+          ${forecastBlock}
+          ${rideableFooter}
         </button>`;
     })
     .join('');
@@ -1552,16 +1623,17 @@ function criterionColor(hour, criterion) {
 
 function criterionHourBlockClass(timelineSlot, modelHoursAtSlot) {
   const classes = ['hour-block'];
-  const anyRideable = modelHoursAtSlot.some((hour) => hour?.rideable);
+  const present = modelHoursAtSlot.filter((hour) => hour != null);
+  const anyRideable = present.some((hour) => hour.rideable);
   if (anyRideable) classes.push('rideable');
   if (anyRideable && !timelineSlot.inRideableWindow) classes.push('rideable-isolated');
-  if (!anyRideable && modelHoursAtSlot.some((hour) => hour?.offshoreBlocked && hour?.windOk)) {
+  if (!anyRideable && present.some((hour) => hour.offshoreBlocked && hour.windOk)) {
     classes.push('offshore-hour');
   }
-  if (modelHoursAtSlot.some((hour) => WindmateWeatherHazards.hasForecastRain(hour))) {
+  if (present.some((hour) => WindmateWeatherHazards.hasForecastRain(hour))) {
     classes.push('rain-hour');
   }
-  if (modelHoursAtSlot.some((hour) => (hour?.weatherCode ?? 0) >= 95)) classes.push('storm-hour');
+  if (present.some((hour) => (hour?.weatherCode ?? 0) >= 95)) classes.push('storm-hour');
   return classes.join(' ');
 }
 
@@ -1574,7 +1646,7 @@ function escapeHtml(text) {
 }
 
 function modelHourStatus(hour) {
-  if (!hour) return 'No data';
+  if (hour == null) return 'No forecast data for this hour';
   if (hour.rideable) {
     if (hour.inRideableWindow) {
       return WindmateWeatherHazards.hasForecastRain(hour)
@@ -1622,14 +1694,20 @@ function criterionTooltipLines(modelHours, criterion, time) {
 
   const lines = [`${criterionLabel} · ${hourLabel}`];
   for (const { label, hour } of modelHours) {
-    if (!hour?.rideable) {
+    if (hour == null) {
+      lines.push(`${label}: — (${modelHourStatus(hour)})`);
+      continue;
+    }
+    if (!hour.rideable) {
       lines.push(`${label}: — (${modelHourStatus(hour)})`);
       continue;
     }
     lines.push(`${label}: ${criterionValueLine(hour, criterion)}`);
   }
 
-  const primary = modelHours.find((entry) => entry.hour?.rideable)?.hour ?? modelHours[0]?.hour;
+  const primary =
+    modelHours.map((entry) => entry.hour).find((h) => h != null && h.rideable) ??
+    modelHours.map((entry) => entry.hour).find((h) => h != null);
   if (primary) lines.push(modelHourStatus(primary));
   return lines;
 }
@@ -1690,7 +1768,8 @@ function buildAlignedModels(timelineHours, modelEntries, getModelHours, windowMa
 function renderCriterionSegments(modelHoursAtSlot, criterion) {
   return modelHoursAtSlot
     .map((hour) => {
-      if (!hour?.rideable) {
+      if (hour == null) return '';
+      if (!hour.rideable) {
         return '<div class="hour-block-seg hour-block-seg--empty"></div>';
       }
       const color = criterionColor(hour, criterion);
@@ -1864,8 +1943,11 @@ function renderCriterionMatrixRows(timelineHours, modelEntries, getModelHours, w
     .join('');
 }
 
-function resolveSessionVerdictForDay(entry, date) {
-  return entry.sessionGoNoGoByDate?.[date] ?? null;
+function resolveSessionVerdictForDay(entry, date, prefs) {
+  if (!entry || !prefs) {
+    return entry?.sessionGoNoGoByDate?.[date] ?? null;
+  }
+  return WindmateSessionGoNoGo.forDay(entry, date, prefs, getModelDayHours);
 }
 
 function renderRideabilityMatrix(data, observations) {
@@ -1950,7 +2032,11 @@ function renderRideabilityMatrix(data, observations) {
         data.preferences.sport
       );
       const obsEntry = obsBySpot.get(spot.id);
-      const sessionVerdict = resolveSessionVerdictForDay(entry, selectedDayDate);
+      const sessionVerdict = resolveSessionVerdictForDay(
+        entry,
+        selectedDayDate,
+        prefsForRanking(data.preferences)
+      );
       const verdictBanner = WindmateObservations.renderVerdictBanner(sessionVerdict);
       const liveStrip = viewingToday
         ? WindmateObservations.renderLiveStrip(
@@ -2044,7 +2130,10 @@ function renderRideabilityMatrix(data, observations) {
 
   const spotIds = rankedSpots.map((row) => row.entry.spot.id);
   const sessionVerdictBySpot = new Map(
-    rankedSpots.map((row) => [row.entry.spot.id, resolveSessionVerdictForDay(row.entry, selectedDayDate)])
+    rankedSpots.map((row) => [
+      row.entry.spot.id,
+      resolveSessionVerdictForDay(row.entry, selectedDayDate, prefsForRanking(data.preferences)),
+    ])
   );
   WindmateDeparture.loadForMatrix(
     els.rideabilityMatrix,

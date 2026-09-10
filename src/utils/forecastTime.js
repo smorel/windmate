@@ -54,6 +54,22 @@ function todayFromHourlyTimes(hourly) {
   return localDateString();
 }
 
+/** Start of the current local clock hour, e.g. `2026-09-10T09:00`. */
+function currentLocalHourStartKey(date = new Date()) {
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  return `${y}-${mo}-${d}T${h}:00`;
+}
+
+/** True for timeline slots on `today` that started before the current local hour. */
+function isElapsedLocalDayHour(timeKey, today, date = new Date()) {
+  const key = String(timeKey).replace(' ', 'T').slice(0, 16);
+  if (!key.startsWith(today)) return false;
+  return key < currentLocalHourStartKey(date);
+}
+
 module.exports = {
   parseForecastParts,
   formatForecastClock,
@@ -61,4 +77,6 @@ module.exports = {
   subtractForecastMinutes,
   localDateString,
   todayFromHourlyTimes,
+  currentLocalHourStartKey,
+  isElapsedLocalDayHour,
 };

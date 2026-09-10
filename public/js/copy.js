@@ -92,6 +92,8 @@ const WindmateCopy = {
     windLine: (range) => `${range} kt wind`,
     gustLine: (range) => `${range} kt gust`,
     noRideableWind: 'No rideable wind',
+    farAwayCuriosity: 'Something happening far away mate!',
+    farAwayCuriosityTitle: 'Favorited spots outside your search radius — curiosity only, not a planned session.',
     rideableHours: (min, max) =>
       min === max
         ? `${max} rideable hr${max === 1 ? '' : 's'}`

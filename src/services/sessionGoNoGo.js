@@ -2,8 +2,11 @@ const {
   computeSessionGoNoGoScore,
   longestConsensusWindow,
   getDayHours,
+  weightsFromOrder,
 } = require('./sessionRank');
+const { parseRankCriteriaOrder } = require('../utils/rankCriteria');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
+const { explainMarginalSessionScore } = require('../utils/sessionScoreReasons');
 const { resolveWaveHeight } = require('./waves');
 const { computeSessionWarnings } = require('./weatherHazards');
 const { todayIsoDate } = require('../db');
@@ -179,7 +182,7 @@ function computeSessionGoNoGo({
   const hours = getDayHours(rideEntry, sessionDate);
   const windowSpan = longestConsensusWindow(rideEntry, sessionDate, minWindow);
   const windowHours = windowSpan.length;
-  const { score } = computeSessionGoNoGoScore(
+  const { score, metrics } = computeSessionGoNoGoScore(
     rideEntry,
     sessionDate,
     prefs,
@@ -223,7 +226,9 @@ function computeSessionGoNoGo({
     }
     if (score < ON_TRACK_MIN_SCORE) {
       state = worseState(state, 'caution');
-      reasons.push('Marginal session score for your setup');
+      const order = parseRankCriteriaOrder(prefs.rank_criteria_order).filter((k) => k !== 'proximity');
+      const weights = weightsFromOrder(order);
+      reasons.push(explainMarginalSessionScore(metrics, weights, rideEntry, prefs));
     }
   }
 

@@ -197,7 +197,7 @@ const WindmateObservations = (() => {
     const minWindow = WindmateRideableWindow.parseMinHours(prefs.min_rideable_window_hours);
     const dateStr = forecast[0].time.slice(0, 10);
     if (rideEntry?.models && Object.keys(rideEntry.models).length) {
-      return WindmateRideableWindow.getLongestConsensusWindowHours(
+      return WindmateRideableWindow.getQualifyingConsensusWindowHours(
         rideEntry,
         dateStr,
         minWindow,
@@ -205,7 +205,7 @@ const WindmateObservations = (() => {
       );
     }
     const hours = forecast.map((hour) => ({ ...hour }));
-    WindmateRideableWindow.markLongestQualifyingWindows(hours, minWindow);
+    WindmateRideableWindow.markHours(hours, minWindow);
     return hours.filter((hour) => hour.inRideableWindow);
   }
 

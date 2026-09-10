@@ -51,6 +51,7 @@ function hasHorizonOpportunity(
 
     let bestScore = 0;
     for (const spot of spots) {
+      if (spot.outside_radius) continue;
       const entry = rideabilityBySpotId.get(spot.id);
       if (!entry) continue;
       const windowHours = longestConsensusWindowLength(entry, sessionDate, minWindow);

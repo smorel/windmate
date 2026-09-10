@@ -1,8 +1,31 @@
 const DEFAULT_MIN_RIDEABLE_WINDOW_HOURS = 2;
 const MAX_MIN_RIDEABLE_WINDOW_HOURS = 24;
 
+const { isElapsedLocalDayHour } = require('./forecastTime');
+
 function hourTimeKey(time) {
   return String(time).replace(' ', 'T').slice(0, 16);
+}
+
+/**
+ * True when every model that still reports this hour marks it rideable.
+ * Missing data is ignored. For elapsed hours on `options.today`, models with
+ * wind/gust below user thresholds are ignored (retrospective model downgrades).
+ */
+function allReportingModelsRideable(indexedByKey, key, options) {
+  const today = options?.today;
+  const now = options?.now ?? new Date();
+  let reporting = 0;
+  for (const byKey of indexedByKey) {
+    const hour = byKey.get(key);
+    if (!hour) continue;
+    if (today && isElapsedLocalDayHour(key, today, now) && hour.windOk === false) {
+      continue;
+    }
+    reporting += 1;
+    if (!hour.rideable) return false;
+  }
+  return reporting > 0;
 }
 
 function parseMinRideableWindowHours(value, fallback = DEFAULT_MIN_RIDEABLE_WINDOW_HOURS) {
@@ -96,7 +119,7 @@ function buildConsensusWindowMapsForTimeline(timelineHours, modelHourLists, minC
   const allModelsByTime = new Map();
   const consensusHours = timelineHours.map((slot) => {
     const key = hourTimeKey(slot.time);
-    const allRideable = indexed.every((byKey) => byKey.get(key)?.rideable === true);
+    const allRideable = allReportingModelsRideable(indexed, key);
     allModelsByTime.set(key, allRideable);
     return { time: key, rideable: allRideable };
   });
@@ -122,8 +145,12 @@ function buildConsensusWindowMaps(modelHourLists, minConsecutive = DEFAULT_MIN_R
 
   if (alignedByIndex) {
     consensusHours = hourSets[0].map((hour, index) => {
-      const allRideable = hourSets.every((hours) => hours[index].rideable === true);
       const key = hourTimeKey(hour.time);
+      const reporting = hourSets
+        .map((hours) => hours[index])
+        .filter((slot) => slot && hourTimeKey(slot.time) === key);
+      const allRideable =
+        reporting.length > 0 && reporting.every((slot) => slot.rideable === true);
       allModelsByTime.set(key, allRideable);
       return { time: key, rideable: allRideable };
     });
@@ -138,7 +165,7 @@ function buildConsensusWindowMaps(modelHourLists, minConsecutive = DEFAULT_MIN_R
     ].sort();
 
     consensusHours = timeline.map((key) => {
-      const allRideable = indexed.every((byKey) => byKey.get(key)?.rideable === true);
+      const allRideable = allReportingModelsRideable(indexed, key);
       allModelsByTime.set(key, allRideable);
       return { time: key, rideable: allRideable };
     });
@@ -156,6 +183,7 @@ module.exports = {
   DEFAULT_MIN_RIDEABLE_WINDOW_HOURS,
   MAX_MIN_RIDEABLE_WINDOW_HOURS,
   hourTimeKey,
+  allReportingModelsRideable,
   parseMinRideableWindowHours,
   longestRideableWindow,
   longestRideableWindowSpan,

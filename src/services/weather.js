@@ -3,6 +3,7 @@ const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
 const { fetchModelForecast, normalizeWindData, delay } = require('./igetwind');
 const { getModelsForLocation, getPrimaryModel, getModelLabel } = require('../utils/models');
+const { mergeForecastElapsedToday } = require('./forecastMerge');
 
 function getProvider() {
   return (process.env.WEATHER_PROVIDER ?? 'mixed').toLowerCase();
@@ -105,13 +106,16 @@ async function fetchForecast(db, spotId, spot) {
       data = await fetchSingleModel(spot, model);
     }
 
+    const previousData = cached ? JSON.parse(cached.data) : null;
+    const merged = mergeForecastElapsedToday(previousData, data);
+
     db.prepare(`
       INSERT INTO forecast_cache (spot_id, fetched_at, data)
       VALUES (?, ?, ?)
       ON CONFLICT(spot_id) DO UPDATE SET fetched_at = excluded.fetched_at, data = excluded.data
-    `).run(spotId, Date.now(), JSON.stringify(data));
+    `).run(spotId, Date.now(), JSON.stringify(merged));
 
-    return { ...data, cached: false };
+    return { ...merged, cached: false };
   } catch (err) {
     if (cached) {
       return { ...JSON.parse(cached.data), cached: true, stale: true };

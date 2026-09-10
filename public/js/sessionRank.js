@@ -235,6 +235,18 @@ const WindmateSessionRank = (() => {
     };
   }
 
+  /** Session banner score — same criteria as server go/no-go (proximity excluded). */
+  function computeSessionGoNoGoScore(entry, dateStr, prefs, radiusKm) {
+    const order = normalizeOrder(prefs?.rank_criteria_order).filter((k) => k !== 'proximity');
+    const weights = weightsFromOrder(order);
+    const metrics = computeAbsoluteGoNoGoMetrics(entry, dateStr, prefs, radiusKm);
+    let score = 0;
+    for (const key of Object.keys(weights)) {
+      score += (metrics[key] ?? 0) * weights[key];
+    }
+    return { score: Math.round(score * 1000) / 1000, metrics };
+  }
+
   function buildFactors(metrics, maxDistance, windNorm, gustNorm, wavePreference, hasIdealDirections) {
     const rideableHours = metrics.hours.filter((h) => h.rideable);
     const dist = metrics.distance_km ?? 0;
@@ -384,9 +396,18 @@ const WindmateSessionRank = (() => {
       return byKey;
     });
 
+    const consensusOptions =
+      dateStr === WindmateForecastTime.localDateString()
+        ? { today: dateStr, now: new Date() }
+        : undefined;
+
     return timeline.map((slot) => {
       const key = hourTimeKey(slot.time);
-      const allRideable = indexed.every((byKey) => byKey.get(key)?.rideable === true);
+      const allRideable = WindmateRideableWindow.allReportingModelsRideable(
+        indexed,
+        key,
+        consensusOptions
+      );
       const sample = indexed.map((byKey) => byKey.get(key)).find(Boolean) ?? slot;
       return { ...sample, time: key, rideable: allRideable };
     });
@@ -642,6 +663,7 @@ const WindmateSessionRank = (() => {
     pickBestQualifyingWindow,
     scoreWindowsByStartHour,
     computeAbsoluteGoNoGoMetrics,
+    computeSessionGoNoGoScore,
     DEFAULT_ORDER,
     REASON_LABELS,
   };

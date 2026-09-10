@@ -109,6 +109,10 @@
   opacity: 1;
 }
 
+.horizon-day-card--far-curiosity .text-lg.font-semibold {
+  margin-bottom: 0;
+}
+
 .matrix-hour-track {
   position: relative;
   min-width: 0;

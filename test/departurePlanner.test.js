@@ -7,6 +7,7 @@ const {
   buildConsensusHours,
   weightsForDepartureWindow,
   scoreWindowRun,
+  buildHourlyConfidenceMap,
 } = require('../src/services/sessionRank');
 const {
   resolveDepartureStatus,
@@ -15,6 +16,11 @@ const {
 } = require('../src/services/departurePlanner');
 const { subtractForecastMinutes } = require('../src/utils/forecastTime');
 const { roundDepartureBucket, haversineDriveMinutes } = require('../src/services/travelTime');
+const {
+  resolveModelHourAtTimeline,
+  findNearestModelHour,
+  hourTimeKey,
+} = require('../src/utils/rideableWindow');
 
 function hour(time, overrides = {}) {
   return {
@@ -116,6 +122,65 @@ describe('enumerateConsensusRuns', () => {
     assert.equal(runs.length, 2);
     assert.equal(runs[0].length, 2);
     assert.equal(runs[1].length, 3);
+  });
+});
+
+describe('findNearestModelHour', () => {
+  it('borrows the closest coarse timestep within half the model step', () => {
+    const coarse = [
+      hour('2026-09-12T06:00'),
+      hour('2026-09-12T09:00', { rideable: false, windOk: false, windSpeed: 8 }),
+      hour('2026-09-12T12:00'),
+    ];
+    const near = findNearestModelHour(coarse, '2026-09-12T07:00');
+    assert.ok(near);
+    assert.equal(near.inferred, true);
+    assert.equal(hourTimeKey(near.hour.time), '2026-09-12T06:00');
+    assert.equal(resolveModelHourAtTimeline(coarse, '2026-09-12T08:00').time, '2026-09-12T09:00');
+  });
+
+  it('skips non-rideable timesteps when rideableOnly is set', () => {
+    const coarse = [
+      hour('2026-09-12T06:00'),
+      hour('2026-09-12T09:00', { rideable: false, windOk: false, windSpeed: 8 }),
+      hour('2026-09-12T12:00'),
+    ];
+    assert.equal(resolveModelHourAtTimeline(coarse, '2026-09-12T08:00', { rideableOnly: true }), null);
+    assert.equal(
+      resolveModelHourAtTimeline(coarse, '2026-09-12T07:00', { rideableOnly: true }).time,
+      '2026-09-12T06:00'
+    );
+  });
+});
+
+describe('buildHourlyConfidenceMap', () => {
+  it('uses model agreement when no model reports meteo probability', () => {
+    const ride = hour('2026-09-12T08:00');
+    const no = hour('2026-09-12T08:00', { rideable: false, windOk: false, windSpeed: 8 });
+    const entry = {
+      primaryModel: 'gfs',
+      models: {
+        gfs: { days: [{ date: '2026-09-12', hours: [ride] }] },
+        lam: { days: [{ date: '2026-09-12', hours: [no] }] },
+        hrrr: { days: [{ date: '2026-09-12', hours: [] }] },
+      },
+    };
+    const map = buildHourlyConfidenceMap(entry, '2026-09-12');
+    assert.equal(map.get('2026-09-12T08:00'), 1 / 3);
+  });
+
+  it('averages meteo probability among reporting models', () => {
+    const ride = hour('2026-09-12T08:00', { forecastProbability: 0.8 });
+    const rideLow = hour('2026-09-12T08:00', { forecastProbability: 0.4 });
+    const entry = {
+      primaryModel: 'gfs',
+      models: {
+        gfs: { days: [{ date: '2026-09-12', hours: [ride] }] },
+        lam: { days: [{ date: '2026-09-12', hours: [rideLow] }] },
+      },
+    };
+    const map = buildHourlyConfidenceMap(entry, '2026-09-12');
+    assert.ok(Math.abs(map.get('2026-09-12T08:00') - 0.6) < 1e-9);
   });
 });
 

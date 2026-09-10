@@ -7,6 +7,69 @@ function hourTimeKey(time) {
   return String(time).replace(' ', 'T').slice(0, 16);
 }
 
+function hourKeyToMs(key) {
+  const normalized = String(key).replace(' ', 'T');
+  const iso = normalized.length === 16 ? `${normalized}:00` : normalized;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : NaN;
+}
+
+function nearestHourToleranceMs(modelHours) {
+  if (!modelHours?.length) return 0;
+  if (modelHours.length === 1) return 60 * 60 * 1000;
+
+  const gaps = [];
+  for (let i = 1; i < modelHours.length; i += 1) {
+    const a = hourKeyToMs(hourTimeKey(modelHours[i - 1].time));
+    const b = hourKeyToMs(hourTimeKey(modelHours[i].time));
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a) gaps.push(b - a);
+  }
+  if (!gaps.length) return 60 * 60 * 1000;
+
+  gaps.sort((x, y) => x - y);
+  const median = gaps[Math.floor(gaps.length / 2)];
+  return Math.max(median / 2, 30 * 60 * 1000);
+}
+
+function findNearestModelHour(modelHours, timelineKey, maxOffsetMs, options = {}) {
+  if (!modelHours?.length) return null;
+  const target = hourKeyToMs(timelineKey);
+  if (!Number.isFinite(target)) return null;
+
+  const rideableOnly = options.rideableOnly === true;
+  const tolerance = maxOffsetMs ?? nearestHourToleranceMs(modelHours);
+  let best = null;
+  let bestDelta = Infinity;
+
+  for (const hour of modelHours) {
+    if (rideableOnly && !hour.rideable) continue;
+    const ms = hourKeyToMs(hourTimeKey(hour.time));
+    if (!Number.isFinite(ms)) continue;
+    const delta = Math.abs(ms - target);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = hour;
+    }
+  }
+
+  if (!best || bestDelta > tolerance) return null;
+  const exact = hourTimeKey(best.time) === hourTimeKey(timelineKey);
+  return { hour: best, inferred: !exact };
+}
+
+function resolveModelHourAtTimeline(modelHours, timelineKey, options = {}) {
+  const rideableOnly = options.rideableOnly === true;
+  const byKey = new Map();
+  for (const hour of modelHours ?? []) byKey.set(hourTimeKey(hour.time), hour);
+  const key = hourTimeKey(timelineKey);
+  const exact = byKey.get(key);
+  if (exact) {
+    if (rideableOnly && !exact.rideable) return null;
+    return exact;
+  }
+  return findNearestModelHour(modelHours, key, undefined, { rideableOnly })?.hour ?? null;
+}
+
 /**
  * True when every model that still reports this hour marks it rideable.
  * Missing data is ignored. For elapsed hours on `options.today`, models with
@@ -183,6 +246,9 @@ module.exports = {
   DEFAULT_MIN_RIDEABLE_WINDOW_HOURS,
   MAX_MIN_RIDEABLE_WINDOW_HOURS,
   hourTimeKey,
+  nearestHourToleranceMs,
+  findNearestModelHour,
+  resolveModelHourAtTimeline,
   allReportingModelsRideable,
   parseMinRideableWindowHours,
   longestRideableWindow,

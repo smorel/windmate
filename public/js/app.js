@@ -911,10 +911,11 @@ function renderModelLegend(data) {
 
   const windLegend = WindmateWindColors.renderLegend();
   const waveLegend = WindmateWaveColors.renderLegend();
+  const probabilityLegend = WindmateForecastProbability.renderLegend();
   const rideLegend = renderRideLegend();
   const first = data.spots.find((s) => s.models && Object.keys(s.models).length);
   if (!first) {
-    els.modelLegend.innerHTML = `${windLegend}${waveLegend}${rideLegend}`;
+    els.modelLegend.innerHTML = `${windLegend}${waveLegend}${probabilityLegend}${rideLegend}`;
     return;
   }
 
@@ -928,6 +929,7 @@ function renderModelLegend(data) {
   els.modelLegend.innerHTML = `
     ${windLegend}
     ${waveLegend}
+    ${probabilityLegend}
     ${rideLegend}
     <div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
       <span class="text-slate-500">Models:</span>
@@ -1541,7 +1543,14 @@ function renderHorizonPlanner(data) {
         rideableRange.min,
         rideableRange.max
       );
-      const pct = Math.round((rideableRange.max / Math.max(24, 1)) * 100);
+      const maxSessionProbability = WindmateForecastProbability.maxSessionProbabilityForDay(
+        plannedSpots,
+        day.date,
+        data.preferences,
+        getModelDayHours
+      );
+      const pct = Math.round(maxSessionProbability * 100);
+      const probabilityBarColor = WindmateForecastProbability.colorForProbability(maxSessionProbability);
       const spotsWithWindows = countSpotsWithSharedWindows(
         plannedSpots,
         day.date,
@@ -1581,10 +1590,10 @@ function renderHorizonPlanner(data) {
           rideableRange.max
         );
         rideableFooter = `
-          <div class="mt-2 text-xs text-slate-400">${rideableLabel} · ${pct}%</div>
+          <div class="mt-2 text-xs text-slate-400" title="${escapeHtml(WindmateCopy.horizon.forecastProbabilityTitle)}">${rideableLabel} · ${pct}%</div>
           ${agreement}
-          <div class="mt-3 h-1.5 rounded-full bg-base overflow-hidden">
-            <div class="h-full rounded-full" style="width:${pct}%;background:${sportColor}"></div>
+          <div class="mt-3 h-1.5 rounded-full bg-base overflow-hidden" title="${escapeHtml(WindmateCopy.horizon.forecastProbabilityTitle)}">
+            <div class="h-full rounded-full" style="width:${pct}%;background:${probabilityBarColor}"></div>
           </div>`;
       }
 
@@ -1778,6 +1787,133 @@ function renderCriterionSegments(modelHoursAtSlot, criterion) {
     .join('');
 }
 
+function renderProbabilitySegments(modelHoursAtSlot, slotAgreement) {
+  return modelHoursAtSlot
+    .map((hour) => {
+      if (hour == null || !hour.rideable) {
+        return '<div class="hour-block-seg hour-block-seg--empty"></div>';
+      }
+      const hasMeteo = WindmateForecastProbability.hasMeteoForecastProbability(hour);
+      const probability = WindmateForecastProbability.resolveSegmentDisplayProbability(
+        hour,
+        slotAgreement
+      );
+      const color = WindmateForecastProbability.colorForProbability(probability);
+      const inferredClass = hasMeteo ? '' : ' hour-block-seg--inferred';
+      return `<div class="hour-block-seg${inferredClass}" style="background:${color}"></div>`;
+    })
+    .join('');
+}
+
+function probabilitySlotHasRideable(modelHoursAtSlot, slot) {
+  if (modelHoursAtSlot.some((hour) => hour?.rideable)) return true;
+  return slot?.rideable === true;
+}
+
+function probabilityTooltipLines(modelHours, time, slotAgreement, slotHasMeteo) {
+  const hourLabel = time.slice(11, 16);
+  const lines = [`${WindmateCopy.matrix.probabilityRow} · ${hourLabel}`];
+  if (slotHasMeteo) {
+    lines.push(WindmateCopy.matrix.probabilityMeteoHour);
+  } else {
+    lines.push(
+      `${WindmateCopy.matrix.probabilityAgreementFallback}: ${Math.round(
+        (Number(slotAgreement) || 0) * 100
+      )}%`
+    );
+  }
+  for (const { label, hour } of modelHours) {
+    if (hour == null || !hour.rideable) {
+      lines.push(`${label}: —`);
+      continue;
+    }
+    const inferred =
+      hour.probabilityInferred && hour.time
+        ? ` ~ (${String(hour.time).slice(11, 16)} step)`
+        : '';
+    const meteo = WindmateForecastProbability.resolveHourMeteoProbability(hour);
+    if (meteo != null) {
+      lines.push(`${label}: ${Math.round(meteo * 100)}% meteo${inferred}`);
+    } else {
+      lines.push(`${label}: ${WindmateCopy.matrix.probabilityNoMeteo}${inferred}`);
+    }
+  }
+  return lines;
+}
+
+function probabilitySlotHasMeteo(modelHoursAtSlot) {
+  return modelHoursAtSlot.some((hour) =>
+    WindmateForecastProbability.hasMeteoForecastProbability(hour)
+  );
+}
+
+function renderProbabilityRow(timelineHours, modelEntries, getModelHours, windowMaps, entry, dateStr) {
+  if (!timelineHours?.length) return '';
+
+  const hourlyAgreement =
+    entry && dateStr && typeof WindmateSessionRank.buildHourlyModelAgreementMap === 'function'
+      ? WindmateSessionRank.buildHourlyModelAgreementMap(entry, dateStr)
+      : new Map();
+
+  const probAligned =
+    modelEntries.length > 0
+      ? modelEntries.map(([id, model]) => ({
+          label: model.label ?? id,
+          hours: WindmateRideableWindow.alignModelHoursToTimeline(
+            timelineHours,
+            getModelHours(id) ?? [],
+            windowMaps,
+            { fillNearest: true, rideableOnly: true }
+          ),
+        }))
+      : [
+          {
+            label: 'Forecast',
+            hours: WindmateRideableWindow.alignModelHoursToTimeline(
+              timelineHours,
+              timelineHours,
+              windowMaps,
+              { fillNearest: true, rideableOnly: true }
+            ),
+          },
+        ];
+
+  const timelineSlots = WindmateRideableWindow.alignModelHoursToTimeline(
+    timelineHours,
+    timelineHours,
+    windowMaps
+  );
+  const label = WindmateCopy.matrix.probabilityRow;
+  const hint = WindmateCopy.matrix.probabilityRowHint;
+
+  const blocks = timelineSlots
+    .map((slot, index) => {
+      const modelHoursAtSlot = probAligned.map((model) => model.hours[index]);
+      const slotAgreement =
+        hourlyAgreement.get(WindmateRideableWindow.hourTimeKey(slot.time)) ?? 0;
+      const segments = renderProbabilitySegments(modelHoursAtSlot, slotAgreement);
+      const modelHours = probAligned.map((model) => ({
+        label: model.label,
+        hour: model.hours[index],
+      }));
+      const slotHasMeteo = probabilitySlotHasMeteo(modelHoursAtSlot);
+      const tipText = probabilitySlotHasRideable(modelHoursAtSlot, slot)
+        ? probabilityTooltipLines(modelHours, slot.time, slotAgreement, slotHasMeteo).join('\n')
+        : `${WindmateCopy.matrix.probabilityRow} · ${slot.time.slice(11, 16)}\n${WindmateCopy.matrix.probabilityNotRideable}`;
+      const tip = escapeHtml(tipText);
+      return `<div class="hour-block hour-block--probability"><div class="hour-block-segments">${segments}</div><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
+    })
+    .join('');
+
+  return `
+    <div class="matrix-row matrix-row--probability flex items-center gap-2 mb-1">
+      <span class="text-[10px] text-slate-400 w-24 shrink-0 truncate" title="${escapeHtml(hint)}">${label}</span>
+      <div class="matrix-hour-track flex-1">
+        <div class="matrix-hour-blocks">${blocks}</div>
+      </div>
+    </div>`;
+}
+
 function renderCriterionRow(timelineHours, alignedModels, criterion, label, windowMaps) {
   if (!timelineHours?.length) {
     return `<div class="text-xs text-slate-500 py-1">${WindmateCopy.empty.noModelData(label)}</div>`;
@@ -1819,6 +1955,25 @@ function windowScoreCriterionLabel(key) {
   return WindmateCopy.rankCriteria[key]?.label ?? WindmateCopy.matrix[key + 'Row'] ?? key;
 }
 
+function windowScoreConfidenceLabel(source) {
+  if (source === 'meteo') {
+    return WindmateCopy.rankCriteria.forecastConfidenceMeteo?.label ?? windowScoreCriterionLabel('forecastConfidence');
+  }
+  if (source === 'agreement') {
+    return (
+      WindmateCopy.rankCriteria.forecastConfidenceAgreement?.label ??
+      windowScoreCriterionLabel('forecastConfidence')
+    );
+  }
+  if (source === 'mixed') {
+    return (
+      WindmateCopy.rankCriteria.forecastConfidenceMixed?.label ??
+      windowScoreCriterionLabel('forecastConfidence')
+    );
+  }
+  return windowScoreCriterionLabel('forecastConfidence');
+}
+
 function formatWindowScoreTooltip(scored, sessionWindowHours, order, weights) {
   const startLabel = scored.run.start.slice(11, 16);
   const endHour = scored.run.end.slice(11, 16);
@@ -1837,6 +1992,15 @@ function formatWindowScoreTooltip(scored, sessionWindowHours, order, weights) {
       `${windowScoreCriterionLabel(key)}: ${value.toFixed(2)} × ${pct} = ${contribution.toFixed(2)}`
     );
   }
+
+  const confidence = scored.metrics.forecastConfidence ?? 1;
+  const baseScore = scored.baseScore ?? scored.windowScore / Math.max(confidence, 0.001);
+  const confidenceLabel = windowScoreConfidenceLabel(scored.metrics.forecastConfidenceSource);
+  lines.push('');
+  lines.push(`Conditions subtotal: ${baseScore.toFixed(2)}`);
+  lines.push(
+    `${confidenceLabel}: ${confidence.toFixed(2)} × subtotal = ${scored.windowScore.toFixed(2)}`
+  );
 
   return lines.join('\n');
 }
@@ -1914,7 +2078,14 @@ function renderMatrixTimeAxis(timelineHours) {
     </div>`;
 }
 
-function renderCriterionMatrixRows(timelineHours, modelEntries, getModelHours, windowMaps) {
+function renderCriterionMatrixRows(
+  timelineHours,
+  modelEntries,
+  getModelHours,
+  windowMaps,
+  entry,
+  dateStr
+) {
   const alignedModels =
     modelEntries.length > 0
       ? buildAlignedModels(timelineHours, modelEntries, getModelHours, windowMaps)
@@ -1936,11 +2107,20 @@ function renderCriterionMatrixRows(timelineHours, modelEntries, getModelHours, w
     { key: 'wave', label: WindmateCopy.matrix.waveRow },
   ];
 
-  return criteria
+  const criteriaHtml = criteria
     .map((criterion) =>
       renderCriterionRow(timelineHours, alignedModels, criterion.key, criterion.label, windowMaps)
     )
     .join('');
+
+  return `${criteriaHtml}${renderProbabilityRow(
+    timelineHours,
+    modelEntries,
+    getModelHours,
+    windowMaps,
+    entry,
+    dateStr
+  )}`;
 }
 
 function resolveSessionVerdictForDay(entry, date, prefs) {
@@ -2001,7 +2181,9 @@ function renderRideabilityMatrix(data, observations) {
         dayHours,
         modelEntries,
         (modelId) => getModelDayHours(entry, modelId, selectedDayDate),
-        windowMaps
+        windowMaps,
+        entry,
+        selectedDayDate
       );
 
       const matrixPrefs = prefsForRanking(data.preferences);

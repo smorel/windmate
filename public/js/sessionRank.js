@@ -454,6 +454,176 @@ const WindmateSessionRank = (() => {
     return dayHours.some((h) => h.idealWind != null);
   }
 
+  function readMeteoForecastProbability(hour) {
+    if (typeof WindmateForecastProbability?.resolveHourMeteoProbability === 'function') {
+      return WindmateForecastProbability.resolveHourMeteoProbability(hour);
+    }
+    return null;
+  }
+
+  function resolveModelHourForProbability(modelHours, key, consensusOptions) {
+    const byKey = new Map((modelHours ?? []).map((h) => [hourTimeKey(h.time), h]));
+    let hour = byKey.get(key);
+    if (!hour) {
+      const near = WindmateRideableWindow.findNearestModelHour(modelHours, key, undefined, {
+        rideableOnly: false,
+      });
+      hour = near?.hour;
+    }
+    if (
+      hour &&
+      consensusOptions?.today &&
+      WindmateForecastTime.isElapsedLocalDayHour(
+        key,
+        consensusOptions.today,
+        consensusOptions.now
+      ) &&
+      hour.windOk === false
+    ) {
+      return null;
+    }
+    return hour;
+  }
+
+  function buildHourlyConfidenceBundle(entry, dateStr) {
+    const confidenceMap = new Map();
+    const meteoPresenceMap = new Map();
+    const agreementMap = buildHourlyModelAgreementMap(entry, dateStr);
+    const modelIds = Object.entries(entry.models ?? {})
+      .filter(([, model]) => !model.error)
+      .map(([id]) => id);
+    let timeline = getModelDayHours(entry, entry.primaryModel, dateStr);
+    if (!timeline.length) timeline = getDayHours(entry, dateStr);
+    if (!timeline.length) {
+      return { confidenceMap, meteoPresenceMap };
+    }
+
+    const hoursByModelId = new Map();
+    for (const modelId of modelIds) {
+      hoursByModelId.set(modelId, getModelDayHours(entry, modelId, dateStr));
+    }
+
+    const consensusOptions =
+      dateStr === WindmateForecastTime.localDateString()
+        ? { today: dateStr, now: new Date() }
+        : undefined;
+
+    for (const slot of timeline) {
+      const key = hourTimeKey(slot.time);
+      const meteo = [];
+      if (!modelIds.length) {
+        const p = readMeteoForecastProbability(slot);
+        if (p != null) {
+          confidenceMap.set(key, p);
+          meteoPresenceMap.set(key, true);
+        } else {
+          confidenceMap.set(key, agreementMap.get(key) ?? 1);
+          meteoPresenceMap.set(key, false);
+        }
+        continue;
+      }
+      for (const modelId of modelIds) {
+        const hour = resolveModelHourForProbability(
+          hoursByModelId.get(modelId) ?? [],
+          key,
+          consensusOptions
+        );
+        const p = readMeteoForecastProbability(hour);
+        if (p != null) meteo.push(p);
+      }
+      if (meteo.length) {
+        confidenceMap.set(key, meteo.reduce((sum, a) => sum + a, 0) / meteo.length);
+        meteoPresenceMap.set(key, true);
+      } else {
+        confidenceMap.set(key, agreementMap.get(key) ?? 1);
+        meteoPresenceMap.set(key, false);
+      }
+    }
+
+    return { confidenceMap, meteoPresenceMap };
+  }
+
+  function buildHourlyConfidenceMap(entry, dateStr) {
+    return buildHourlyConfidenceBundle(entry, dateStr).confidenceMap;
+  }
+
+  function forecastConfidenceSourceForRun(runHours, meteoPresenceMap) {
+    if (!runHours?.length) return 'agreement';
+    let meteoHours = 0;
+    for (const hour of runHours) {
+      if (meteoPresenceMap?.get(hourTimeKey(hour.time))) meteoHours += 1;
+    }
+    if (meteoHours === runHours.length) return 'meteo';
+    if (meteoHours === 0) return 'agreement';
+    return 'mixed';
+  }
+
+  function buildHourlyModelAgreementMap(entry, dateStr) {
+    const map = new Map();
+    const modelIds = Object.entries(entry.models ?? {})
+      .filter(([, model]) => !model.error)
+      .map(([id]) => id);
+    let timeline = getModelDayHours(entry, entry.primaryModel, dateStr);
+    if (!timeline.length) timeline = getDayHours(entry, dateStr);
+    if (!timeline.length) return map;
+
+    const hoursByModelId = new Map();
+    for (const modelId of modelIds) {
+      hoursByModelId.set(modelId, getModelDayHours(entry, modelId, dateStr));
+    }
+
+    const consensusOptions =
+      dateStr === WindmateForecastTime.localDateString()
+        ? { today: dateStr, now: new Date() }
+        : undefined;
+
+    for (const slot of timeline) {
+      const key = hourTimeKey(slot.time);
+      if (!modelIds.length) {
+        map.set(key, slot.rideable ? 1 : 0);
+        continue;
+      }
+      let sum = 0;
+      for (const modelId of modelIds) {
+        const modelHours = hoursByModelId.get(modelId) ?? [];
+        const byKey = new Map(modelHours.map((h) => [hourTimeKey(h.time), h]));
+        let hour = byKey.get(key);
+        if (!hour) {
+          const near = WindmateRideableWindow.findNearestModelHour(modelHours, key, undefined, {
+            rideableOnly: true,
+          });
+          hour = near?.hour;
+        }
+        if (hour && !hour.rideable) hour = null;
+        if (
+          hour &&
+          consensusOptions?.today &&
+          WindmateForecastTime.isElapsedLocalDayHour(
+            key,
+            consensusOptions.today,
+            consensusOptions.now
+          ) &&
+          hour.windOk === false
+        ) {
+          continue;
+        }
+        if (hour?.rideable) sum += 1;
+      }
+      map.set(key, sum / modelIds.length);
+    }
+
+    return map;
+  }
+
+  function meanConfidenceForRunHours(runHours, hourlyConfidenceMap) {
+    if (!runHours?.length) return 1;
+    const probs = runHours.map((hour) => {
+      const p = hourlyConfidenceMap?.get(hourTimeKey(hour.time));
+      return typeof p === 'number' ? p : 1;
+    });
+    return probs.reduce((sum, p) => sum + p, 0) / probs.length;
+  }
+
   function dayWindGustNorms(dayHours) {
     const rideable = (dayHours ?? []).filter((h) => h.rideable);
     const dayMaxWind = rideable.length
@@ -469,7 +639,17 @@ const WindmateSessionRank = (() => {
     };
   }
 
-  function computeWindowRunMetrics(runHours, dayHours, prefs, longestBlockLength, minWindowHours) {
+  function computeWindowRunMetrics(
+    runHours,
+    dayHours,
+    prefs,
+    longestBlockLength,
+    minWindowHours,
+    hourlyConfidenceBundle
+  ) {
+    const hourlyConfidenceMap =
+      hourlyConfidenceBundle?.confidenceMap ?? hourlyConfidenceBundle;
+    const meteoPresenceMap = hourlyConfidenceBundle?.meteoPresenceMap;
     const viableHours = runHours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
     const directionAligned = (h) =>
       h.windExposure === 'onshore' ||
@@ -498,24 +678,39 @@ const WindmateSessionRank = (() => {
             ? 0.3
             : 0.5,
       waveMatch: estimateWaveMatch(runHours, wavePreference),
+      forecastConfidence: meanConfidenceForRunHours(runHours, hourlyConfidenceMap),
+      forecastConfidenceSource: forecastConfidenceSourceForRun(runHours, meteoPresenceMap),
     };
   }
 
-  function scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights) {
+  function scoreWindowRun(
+    run,
+    consensusHours,
+    prefs,
+    longestBlockLength,
+    minWindowHours,
+    weights,
+    hourlyConfidenceMap
+  ) {
     const metrics = computeWindowRunMetrics(
       run.hours,
       consensusHours,
       prefs,
       longestBlockLength,
-      minWindowHours
+      minWindowHours,
+      hourlyConfidenceMap
     );
     let score = 0;
     for (const key of Object.keys(weights)) {
       if (key === 'proximity') continue;
       score += (metrics[key] ?? 0) * weights[key];
     }
+    const baseScore = score;
+    const confidence = metrics.forecastConfidence ?? 1;
+    score *= confidence;
     return {
       run,
+      baseScore: Math.round(baseScore * 1000) / 1000,
       rawScore: score,
       windowScore: Math.round(score * 1000) / 1000,
       metrics,
@@ -568,9 +763,18 @@ const WindmateSessionRank = (() => {
 
     const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
     const weights = weightsForDepartureWindow(prefs?.rank_criteria_order);
+    const hourlyConfidence = buildHourlyConfidenceBundle(entry, dateStr);
 
     const scored = windows.map((run) =>
-      scoreWindowRun(run, consensusHours, prefs, longestBlockLength, minWindowHours, weights)
+      scoreWindowRun(
+        run,
+        consensusHours,
+        prefs,
+        longestBlockLength,
+        minWindowHours,
+        weights,
+        hourlyConfidence
+      )
     );
     const byStartTime = new Map(scored.map((item) => [item.run.start, item]));
     fillTrailingHourScores(byStartTime, consensusHours, minWindowHours);
@@ -615,6 +819,7 @@ const WindmateSessionRank = (() => {
     const longestBlockLength = longestRideableBlockLength(consensusHours, minWindowHours);
     const order = departureWindowOrder(prefs?.rank_criteria_order);
     const weights = weightsForDepartureWindow(prefs?.rank_criteria_order);
+    const hourlyConfidence = buildHourlyConfidenceBundle(entry, dateStr);
     const scored = windows.map((run) => {
       const item = scoreWindowRun(
         run,
@@ -622,7 +827,8 @@ const WindmateSessionRank = (() => {
         prefs,
         longestBlockLength,
         minWindowHours,
-        weights
+        weights,
+        hourlyConfidence
       );
       return { ...item, weights };
     });
@@ -664,6 +870,9 @@ const WindmateSessionRank = (() => {
     scoreWindowsByStartHour,
     computeAbsoluteGoNoGoMetrics,
     computeSessionGoNoGoScore,
+    buildHourlyConfidenceMap,
+    buildHourlyConfidenceBundle,
+    buildHourlyModelAgreementMap,
     DEFAULT_ORDER,
     REASON_LABELS,
   };

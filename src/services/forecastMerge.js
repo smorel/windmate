@@ -12,12 +12,17 @@ function mergeHourlySeries(prevHourly, nextHourly, today, cutoverKey) {
       wind: prevHourly.wind_speed_10m[i] ?? 0,
       gust: prevHourly.wind_gusts_10m[i] ?? 0,
       dir: prevHourly.wind_direction_10m[i] ?? 0,
+      prob: prevHourly.wind_probability_10m?.[i] ?? null,
     });
   }
 
   const wind_speed_10m = [];
   const wind_gusts_10m = [];
   const wind_direction_10m = [];
+  const trackProb =
+    Array.isArray(nextHourly.wind_probability_10m) ||
+    Array.isArray(prevHourly.wind_probability_10m);
+  const wind_probability_10m = trackProb ? [] : undefined;
 
   for (let i = 0; i < nextHourly.time.length; i += 1) {
     const t = nextHourly.time[i];
@@ -32,6 +37,11 @@ function mergeHourlySeries(prevHourly, nextHourly, today, cutoverKey) {
         wind_speed_10m.push(Math.max(prev.wind, nextWind));
         wind_gusts_10m.push(Math.max(prev.gust, nextGust));
         wind_direction_10m.push(nextDir || prev.dir);
+        if (trackProb) {
+          wind_probability_10m.push(
+            nextHourly.wind_probability_10m?.[i] ?? prev.prob ?? null
+          );
+        }
         continue;
       }
     }
@@ -39,15 +49,20 @@ function mergeHourlySeries(prevHourly, nextHourly, today, cutoverKey) {
     wind_speed_10m.push(nextWind);
     wind_gusts_10m.push(nextGust);
     wind_direction_10m.push(nextDir);
+    if (trackProb) {
+      wind_probability_10m.push(nextHourly.wind_probability_10m?.[i] ?? null);
+    }
   }
 
-  return {
+  const merged = {
     ...nextHourly,
     time: nextHourly.time,
     wind_speed_10m,
     wind_gusts_10m,
     wind_direction_10m,
   };
+  if (trackProb) merged.wind_probability_10m = wind_probability_10m;
+  return merged;
 }
 
 /** Keep the strongest wind/gust seen today for hours that already started (stabilizes rideability). */

@@ -7,6 +7,61 @@ const WindmateRideableWindow = (() => {
     return String(time).replace(' ', 'T').slice(0, 16);
   }
 
+  function hourKeyToMs(key) {
+    const normalized = String(key).replace(' ', 'T');
+    const iso = normalized.length === 16 ? `${normalized}:00` : normalized;
+    const ms = Date.parse(iso);
+    return Number.isFinite(ms) ? ms : NaN;
+  }
+
+  /** Half the median step between model timestamps — used to borrow nearest step for sparse grids. */
+  function nearestHourToleranceMs(modelHours) {
+    if (!modelHours?.length) return 0;
+    if (modelHours.length === 1) return 60 * 60 * 1000;
+
+    const gaps = [];
+    for (let i = 1; i < modelHours.length; i += 1) {
+      const a = hourKeyToMs(hourTimeKey(modelHours[i - 1].time));
+      const b = hourKeyToMs(hourTimeKey(modelHours[i].time));
+      if (Number.isFinite(a) && Number.isFinite(b) && b > a) gaps.push(b - a);
+    }
+    if (!gaps.length) return 60 * 60 * 1000;
+
+    gaps.sort((x, y) => x - y);
+    const median = gaps[Math.floor(gaps.length / 2)];
+    return Math.max(median / 2, 30 * 60 * 1000);
+  }
+
+  /**
+   * Closest model hour to a timeline slot when the model uses a coarser timestep.
+   * @returns {{ hour: object, inferred: boolean } | null}
+   */
+  function findNearestModelHour(modelHours, timelineKey, maxOffsetMs, options = {}) {
+    if (!modelHours?.length) return null;
+    const target = hourKeyToMs(timelineKey);
+    if (!Number.isFinite(target)) return null;
+
+    const rideableOnly = options.rideableOnly === true;
+    const tolerance = maxOffsetMs ?? nearestHourToleranceMs(modelHours);
+    let best = null;
+    let bestDelta = Infinity;
+
+    for (const hour of modelHours) {
+      if (rideableOnly && !hour.rideable) continue;
+      const ms = hourKeyToMs(hourTimeKey(hour.time));
+      if (!Number.isFinite(ms)) continue;
+      const delta = Math.abs(ms - target);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = hour;
+      }
+    }
+
+    if (!best || bestDelta > tolerance) return null;
+    const exact = hourTimeKey(best.time) === hourTimeKey(timelineKey);
+    return { hour: best, inferred: !exact };
+  }
+
   /**
    * True when every model that still reports this hour marks it rideable.
    * Missing data is ignored. For elapsed hours on `options.today`, models with
@@ -279,18 +334,40 @@ const WindmateRideableWindow = (() => {
     return { windowByTime, allModelsByTime };
   }
 
-  function alignModelHoursToTimeline(timelineHours, modelHours, windowMaps) {
+  function alignModelHoursToTimeline(timelineHours, modelHours, windowMaps, options = {}) {
     if (!timelineHours?.length) return [];
     const byKey = new Map(modelHours.map((hour) => [hourTimeKey(hour.time), hour]));
+    const fillNearest = options.fillNearest === true;
+    const toleranceMs = fillNearest
+      ? (options.nearestToleranceMs ?? nearestHourToleranceMs(modelHours))
+      : 0;
 
     return timelineHours.map((slot) => {
       const key = hourTimeKey(slot.time);
-      const hour = byKey.get(key);
+      let hour = byKey.get(key);
+      let probabilityInferred = false;
+
+      if (options.rideableOnly && hour && !hour.rideable) {
+        hour = null;
+      }
+
+      if (!hour && fillNearest && toleranceMs > 0) {
+        const near = findNearestModelHour(modelHours, key, toleranceMs, {
+          rideableOnly: options.rideableOnly === true,
+        });
+        if (near) {
+          hour = near.hour;
+          probabilityInferred = near.inferred;
+        }
+      }
+
       if (!hour) return null;
+      if (options.rideableOnly && !hour.rideable) return null;
 
       return {
         ...hour,
         time: slot.time,
+        probabilityInferred,
         allModelsRideable: allModelsRideableAt(hour, windowMaps),
         inRideableWindow: isInWindow(hour, windowMaps),
       };
@@ -344,6 +421,8 @@ const WindmateRideableWindow = (() => {
     buildConsensusWindowMapsFromEntry,
     buildSingleModelWindowMaps,
     alignModelHoursToTimeline,
+    findNearestModelHour,
+    nearestHourToleranceMs,
     isInWindow,
     allModelsRideableAt,
   };

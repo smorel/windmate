@@ -8,6 +8,7 @@ const JSON_HEADERS = {
 };
 
 const { haversineKm, degreesToCompass } = require('../utils/geo');
+const { normalizeMeteoProbability } = require('../utils/forecastProbabilityHour');
 
 /** @returns {Promise<{ spots: object[] }>} */
 async function fetchAllSpots() {
@@ -55,6 +56,94 @@ async function fetchModelForecast(lat, lng, model) {
   return block;
 }
 
+function createHourSlot() {
+  return {
+    wind: 0,
+    gust: 0,
+    direction: 0,
+    windProb: null,
+    hasWind: false,
+    hasGust: false,
+  };
+}
+
+/** Fill gaps where iGetwind emitted direction/probability without WIND/GUST (avoids false 0 kt). */
+function dropOrFillMissingWindSamples(byTime, times) {
+  const kept = [];
+
+  for (let i = 0; i < times.length; i += 1) {
+    const key = times[i];
+    const hour = byTime.get(key);
+
+    if (!hour.hasWind) {
+      let prev = -1;
+      for (let j = i - 1; j >= 0; j -= 1) {
+        if (byTime.get(times[j]).hasWind) {
+          prev = j;
+          break;
+        }
+      }
+      let next = -1;
+      for (let k = i + 1; k < times.length; k += 1) {
+        if (byTime.get(times[k]).hasWind) {
+          next = k;
+          break;
+        }
+      }
+
+      if (prev < 0 && next < 0) {
+        byTime.delete(key);
+        continue;
+      }
+
+      if (prev >= 0 && next >= 0) {
+        const t = (i - prev) / (next - prev);
+        const a = byTime.get(times[prev]);
+        const b = byTime.get(times[next]);
+        hour.wind = a.wind + t * (b.wind - a.wind);
+      } else if (prev >= 0) {
+        hour.wind = byTime.get(times[prev]).wind;
+      } else {
+        hour.wind = byTime.get(times[next]).wind;
+      }
+    }
+
+    if (!hour.hasGust) {
+      let prev = -1;
+      for (let j = i - 1; j >= 0; j -= 1) {
+        if (byTime.get(times[j]).hasGust) {
+          prev = j;
+          break;
+        }
+      }
+      let next = -1;
+      for (let k = i + 1; k < times.length; k += 1) {
+        if (byTime.get(times[k]).hasGust) {
+          next = k;
+          break;
+        }
+      }
+
+      if (prev >= 0 && next >= 0) {
+        const t = (i - prev) / (next - prev);
+        const a = byTime.get(times[prev]);
+        const b = byTime.get(times[next]);
+        hour.gust = a.gust + t * (b.gust - a.gust);
+      } else if (prev >= 0) {
+        hour.gust = byTime.get(times[prev]).gust;
+      } else if (next >= 0) {
+        hour.gust = byTime.get(times[next]).gust;
+      } else {
+        hour.gust = hour.wind;
+      }
+    }
+
+    kept.push(key);
+  }
+
+  return kept;
+}
+
 /**
  * @param {{ winddata: { ty: string, t: string, v: number }[] }} modelBlock
  * @param {string} modelId
@@ -65,26 +154,37 @@ function normalizeWindData(modelBlock, modelId) {
   for (const row of modelBlock.winddata) {
     const iso = row.t.replace(' ', 'T');
     if (!byTime.has(iso)) {
-      byTime.set(iso, { wind: 0, gust: 0, direction: 0 });
+      byTime.set(iso, createHourSlot());
     }
     const hour = byTime.get(iso);
-    if (row.ty === 'WIND' || row.ty === 'WINDP') {
+    if (row.ty === 'WIND') {
       hour.wind = Math.max(hour.wind, row.v * MS_TO_KNOTS);
+      hour.hasWind = true;
+    } else if (row.ty === 'WINDP') {
+      const prob = normalizeMeteoProbability(row.v);
+      if (prob != null) hour.windProb = prob;
     } else if (row.ty === 'GUST') {
       hour.gust = Math.max(hour.gust, row.v * MS_TO_KNOTS);
+      hour.hasGust = true;
     } else if (row.ty === 'WDIR') {
       hour.direction = row.v;
     }
   }
 
-  const times = [...byTime.keys()].sort();
+  const sortedTimes = [...byTime.keys()].sort();
+  const times = dropOrFillMissingWindSamples(byTime, sortedTimes);
+  const hasWindProbability = times.some((t) => byTime.get(t).windProb != null);
+  const hourly = {
+    time: times,
+    wind_speed_10m: times.map((t) => byTime.get(t).wind),
+    wind_gusts_10m: times.map((t) => byTime.get(t).gust || byTime.get(t).wind),
+    wind_direction_10m: times.map((t) => byTime.get(t).direction),
+  };
+  if (hasWindProbability) {
+    hourly.wind_probability_10m = times.map((t) => byTime.get(t).windProb);
+  }
   return {
-    hourly: {
-      time: times,
-      wind_speed_10m: times.map((t) => byTime.get(t).wind),
-      wind_gusts_10m: times.map((t) => byTime.get(t).gust || byTime.get(t).wind),
-      wind_direction_10m: times.map((t) => byTime.get(t).direction),
-    },
+    hourly,
     provider: 'igetwind',
     model: modelId,
   };

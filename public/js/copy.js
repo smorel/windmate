@@ -98,6 +98,7 @@ const WindmateCopy = {
       min === max
         ? `${max} rideable hr${max === 1 ? '' : 's'}`
         : `${min}–${max} rideable hrs`,
+    forecastProbabilityTitle: 'Best session forecast confidence that day (highest among your spots)',
   },
 
   excitement: {
@@ -166,6 +167,22 @@ const WindmateCopy = {
     gust: { label: 'Gust strength', hint: 'Peak gusts during good hours' },
     onshore: { label: 'Ideal direction', hint: 'Share of good hours with wind from ideal directions' },
     waveMatch: { label: 'Wave / chop', hint: 'Flatter chop scores higher (by sport default)' },
+    forecastConfidence: {
+      label: 'Forecast confidence',
+      hint: 'Meteo WINDP when available; otherwise model agreement (same as the Probability row)',
+    },
+    forecastConfidenceMeteo: {
+      label: 'Meteo forecast confidence',
+      hint: 'Mean WINDP from models that report it in this window',
+    },
+    forecastConfidenceAgreement: {
+      label: 'Model agreement (no meteo)',
+      hint: 'Fraction of models rideable each hour — matches the Probability row when WINDP is absent',
+    },
+    forecastConfidenceMixed: {
+      label: 'Forecast confidence (mixed)',
+      hint: 'Some hours use WINDP and others use model agreement',
+    },
     planned: 'Coming later: water quality, water level',
   },
 
@@ -178,9 +195,17 @@ const WindmateCopy = {
     windRow: 'Wind',
     gustRow: 'Gust',
     waveRow: 'Wave',
+    probabilityRow: 'Probability',
+    probabilityRowHint:
+      'Rideable hours only. Colors use meteo WINDP when the model provides it; otherwise dimmed bands show model agreement (not provider probability).',
+    probabilityNotRideable: 'Not rideable for your setup — no probability shown',
+    probabilityLegend: 'Meteo probability · dim = model agreement only',
+    probabilityAgreementFallback: 'Model agreement (no meteo probability)',
+    probabilityMeteoHour: 'Meteo wind probability',
+    probabilityNoMeteo: 'no meteo probability',
     scoreRow: 'Score',
     scoreRowHint:
-      'Departure window score from wind, gust, direction, and waves — each normalized to the best rideable hour that day',
+      'Departure window score from wind, gust, direction, and waves, then × mean hourly forecast confidence',
   },
 
   direction: {

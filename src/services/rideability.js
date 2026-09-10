@@ -16,6 +16,7 @@ const { classifyWindExposure, isOffshoreBlocked } = require('./offshore');
 const { localDateString } = require('../utils/forecastTime');
 
 const { parseMinRideableWindowHours, markInRideableWindow } = require('../utils/rideableWindow');
+const { normalizeMeteoProbability } = require('../utils/forecastProbabilityHour');
 
 /**
  * @param {{ hourly: object }} forecast
@@ -78,45 +79,32 @@ function analyzeHourlyRideability(
 
     const rideable = windOk && weatherOk && tempOk && directionOk && daylightOk;
 
+    const rawWindProb = hourly.wind_probability_10m?.[i];
+    const forecastProbability = normalizeMeteoProbability(rawWindProb);
 
-
-    return {
-
+    const hour = {
       time,
-
       windSpeed,
-
       gusts,
-
       direction,
-
       directionDeg,
-
       windOk,
-
       weatherOk,
-
       tempOk,
-
       directionOk,
-
       daylightOk,
-
       rideable,
-
       idealWind,
-
       windExposure,
-
       offshoreBlocked,
-
       waveHeightM: wave.waveHeightM,
-
       waveSource: wave.waveSource,
-
       ...context,
-
     };
+    if (forecastProbability != null) {
+      hour.forecastProbability = forecastProbability;
+    }
+    return hour;
 
   });
 

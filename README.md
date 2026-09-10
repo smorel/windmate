@@ -14,6 +14,27 @@ Beyond wind and waves, the product roadmap covers **local ground truth**: social
 
 <p align="center"><em>Click the screenshot for the full-size view.</em></p>
 
+### Legend
+
+<p align="center">
+  <a href="assets/legend.png">
+    <img src="assets/legend.png" alt="Legend modal — Beaufort wind and gust colors, wave bands, shared windows, offshore blockage, and forecast models" width="720">
+  </a>
+</p>
+
+### Your setup
+
+<p align="center">
+  <a href="assets/settings1.png">
+    <img src="assets/settings1.png" alt="Settings — sports, search radius, wind and gust limits, temperature thresholds, offshore wind policy" width="360">
+  </a>
+  <a href="assets/settings2.png">
+    <img src="assets/settings2.png" alt="Settings — minimum session window, email alerts, drag-to-reorder spot ranking" width="360">
+  </a>
+</p>
+
+<p align="center"><em>Click any image for the full-size view.</em></p>
+
 ## What it does
 
 - **Find spots near you** — browser GPS (or manual coordinates), searchable spot list, customizable radius

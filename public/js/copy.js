@@ -285,6 +285,8 @@ const WindmateCopy = {
     showCurve: "Today's curve ▾",
     hideCurve: "Hide curve ▴",
     rideableWindow: 'Rideable window',
+    plannerWindow: 'Leave-by window',
+    plannerWindowHint: 'Best ranked window — same as the departure line on the spot card.',
     actualGusts: 'Actual gusts',
     curveTooltipTime: (time) => time,
     curveTooltipActual: (windKt, gustKt) => `Actual ${windKt} kt · gusts ${gustKt} kt`,

@@ -2228,6 +2228,7 @@ function renderRideabilityMatrix(data, observations) {
             prefsForRanking(data.preferences),
             {
               curveKey: `matrix:${spot.id}`,
+              sessionDate: selectedDayDate,
               ...(sessionVerdict ? { sessionGoNoGo: sessionVerdict, suppressVerdictBanner: true } : {}),
             }
           )

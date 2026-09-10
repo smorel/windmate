@@ -105,7 +105,7 @@ const WindmateObservations = (() => {
         ? `<button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}" data-curve-key="${curveKey}">
             ${curveExpanded ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
           </button>
-          <div class="curve-panel ${curveExpanded ? '' : 'hidden'} mt-3" data-spot-id="${spotId}" data-curve-key="${curveKey}"></div>`
+          <div class="curve-panel ${curveExpanded ? '' : 'hidden'} mt-3" ${curvePanelAttrs(spotId, curveKey, options.sessionDate)}></div>`
         : '';
       return `
         <div class="live-strip live-strip--empty mb-3 p-3 rounded-lg bg-base border border-base-border">
@@ -169,7 +169,7 @@ const WindmateObservations = (() => {
         <button type="button" class="curve-toggle mt-2 text-[10px] text-emerald-400 hover:underline" data-spot-id="${spotId}" data-curve-key="${curveKey}">
           ${curveExpanded ? WindmateCopy.observations.hideCurve : WindmateCopy.observations.showCurve}
         </button>
-        <div class="curve-panel ${curveExpanded ? '' : 'hidden'} mt-3" data-spot-id="${spotId}" data-curve-key="${curveKey}"></div>
+        <div class="curve-panel ${curveExpanded ? '' : 'hidden'} mt-3" ${curvePanelAttrs(spotId, curveKey, options.sessionDate)}></div>
         ${warningLines}
       </div>`;
   }
@@ -194,6 +194,19 @@ const WindmateObservations = (() => {
     return day?.hours ?? [];
   }
 
+  function resolvePlannerWindowRange(rideEntry, dateStr, prefs) {
+    if (!rideEntry || !dateStr) return null;
+    const primary = rideEntry.primaryModel;
+    const dayHours = primary ? getModelDayHours(rideEntry, primary, dateStr) : [];
+    if (!dayHours.length) return null;
+    const pick = WindmateSessionRank.pickBestQualifyingWindow(rideEntry, dateStr, prefs, dayHours);
+    if (!pick) return null;
+    return {
+      start: WindmateRideableWindow.hourTimeKey(pick.run.start),
+      endExclusive: WindmateDeparture.exclusiveEndAfterRun(pick.run.end),
+    };
+  }
+
   function qualifyingWindowHours(forecast, rideEntry, prefs) {
     if (!forecast.length) return [];
     const minWindow = WindmateRideableWindow.parseMinHours(prefs.min_rideable_window_hours);
@@ -216,9 +229,27 @@ const WindmateObservations = (() => {
     return windowHours
       .map((hour) => {
         const x = xForHour(hour.time);
-        return `<rect x="${x - barW / 2}" y="${pad.t}" width="${barW}" height="${innerH}" fill="rgba(16,185,129,0.22)" stroke="#10b981" stroke-width="0.75" stroke-opacity="0.4"/>`;
+        return `<rect x="${x - barW / 2}" y="${pad.t}" width="${barW}" height="${innerH}" fill="rgba(16,185,129,0.18)" stroke="#10b981" stroke-width="0.75" stroke-opacity="0.35"/>`;
       })
       .join('');
+  }
+
+  function renderPlannerWindowBand(plannerRange, xForHour, pad, innerH, innerW) {
+    if (!plannerRange?.start || !plannerRange?.endExclusive) return '';
+    const barW = innerW / 24;
+    const x1 = xForHour(plannerRange.start) - barW / 2;
+    const x2 = xForHour(plannerRange.endExclusive) - barW / 2;
+    const w = Math.max(x2 - x1, barW);
+    const y1 = pad.t;
+    const y2 = pad.t + innerH;
+    return `<rect x="${x1}" y="${y1}" width="${w}" height="${innerH}" fill="rgba(16,185,129,0.5)" stroke="#34d399" stroke-width="1.5" stroke-opacity="0.95"/>
+      <line x1="${x1}" y1="${y1}" x2="${x1}" y2="${y2}" stroke="#a7f3d0" stroke-width="2" opacity="0.9"/>
+      <line x1="${x2}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#a7f3d0" stroke-width="2" opacity="0.9"/>`;
+  }
+
+  function curvePanelAttrs(spotId, curveKey, sessionDate) {
+    const dateAttr = sessionDate ? ` data-session-date="${sessionDate}"` : '';
+    return `data-spot-id="${spotId}" data-curve-key="${curveKey}"${dateAttr}`;
   }
 
   function fractionalHourFromTime(time) {
@@ -413,6 +444,9 @@ const WindmateObservations = (() => {
     const bandTop = yForSpeed(prefs.max_gust_knots);
     const bandBottom = yForSpeed(prefs.min_wind_knots);
 
+    const sessionDate = options.sessionDate ?? forecast[0]?.time?.slice(0, 10);
+    const plannerRange =
+      options.plannerRange ?? resolvePlannerWindowRange(options.rideEntry, sessionDate, prefs);
     const rideableWindowHours = qualifyingWindowHours(forecast, options.rideEntry, prefs);
     const rideableWindowBands = renderRideableWindowBands(
       rideableWindowHours,
@@ -421,6 +455,7 @@ const WindmateObservations = (() => {
       innerH,
       innerW
     );
+    const plannerWindowBand = renderPlannerWindowBand(plannerRange, xForHour, pad, innerH, innerW);
     const hazardBands = renderHazardBands(warnings, xForHour, pad, innerH, innerW);
 
     const weatherBlocks = forecast
@@ -455,6 +490,7 @@ const WindmateObservations = (() => {
           ${yAxis}
           <rect x="${pad.l}" y="${bandTop}" width="${innerW}" height="${Math.max(0, bandBottom - bandTop)}" fill="rgba(16,185,129,0.08)"/>
           ${rideableWindowBands}
+          ${plannerWindowBand}
           ${weatherBlocks}
           ${hazardBands}
           <path d="${forecastGustPath}" fill="none" stroke="#f59e0b" stroke-width="1.75" stroke-dasharray="3 4" opacity="0.9"/>
@@ -472,7 +508,12 @@ const WindmateObservations = (() => {
           <span><span class="inline-block w-4 border-t-2 border-dashed border-emerald-300 align-middle mr-1"></span>${WindmateCopy.observations.actualGusts}</span>
           <span><span class="inline-block w-4 border-t-2 border-dashed border-slate-500 align-middle mr-1"></span>Forecast wind</span>
           <span><span class="inline-block w-4 border-t-2 border-dashed border-amber-500 align-middle mr-1"></span>Forecast gusts</span>
-          <span><span class="inline-block w-3 h-3 rounded-sm bg-emerald-500/25 border border-emerald-500/40 align-middle mr-1"></span>${WindmateCopy.observations.rideableWindow}</span>
+          <span><span class="inline-block w-3 h-3 rounded-sm bg-emerald-500/20 border border-emerald-500/35 align-middle mr-1"></span>${WindmateCopy.observations.rideableWindow}</span>
+          ${
+            plannerRange
+              ? `<span title="${WindmateCopy.observations.plannerWindowHint}"><span class="inline-block w-3 h-3 rounded-sm bg-emerald-400/55 border-2 border-emerald-300 align-middle mr-1"></span>${WindmateCopy.observations.plannerWindow}</span>`
+              : ''
+          }
         </div>
       </div>`;
 
@@ -487,10 +528,16 @@ const WindmateObservations = (() => {
     return warningsBySpot?.get(spotId) ?? obs?.today?.warnings ?? [];
   }
 
-  function curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot) {
+  function curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs) {
+    const rideEntry = rideEntryBySpot?.get(spotId) ?? null;
+    const sessionDate = panel?.dataset?.sessionDate;
     return {
       warnings: curveWarningsFor(spotId, observationsBySpot, warningsBySpot),
-      rideEntry: rideEntryBySpot?.get(spotId) ?? null,
+      rideEntry,
+      sessionDate,
+      plannerRange: sessionDate && rideEntry && prefs
+        ? resolvePlannerWindowRange(rideEntry, sessionDate, prefs)
+        : null,
     };
   }
 
@@ -501,7 +548,12 @@ const WindmateObservations = (() => {
       if (!spotId || !curveKey || !expanded.has(curveKey)) return;
       const obs = observationsBySpot.get(spotId);
       if (!obs) return;
-      renderCurve(panel, obs, prefs, curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot));
+      renderCurve(
+        panel,
+        obs,
+        prefs,
+        curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs)
+      );
     });
   }
 
@@ -528,7 +580,7 @@ const WindmateObservations = (() => {
               panel,
               obs,
               prefs,
-              curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot)
+              curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs)
             );
             if (autoRefreshCallback) void autoRefreshCallback();
           }

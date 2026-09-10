@@ -180,8 +180,9 @@ const WindmateWatchlist = (() => {
     const obs = observationsBySpot?.get(session.spot_id);
     const liveStrip =
       isToday && obs
-        ? WindmateObservations.renderLiveStrip(session.spot, obs, null, prefs, {
+        ? WindmateObservations.renderLiveStrip(session.spot, obs, rideEntryBySpot?.get(session.spot_id), prefs, {
             curveKey: `watch:${session.id}`,
+            sessionDate: session.session_date,
             sessionGoNoGo: verdict,
             suppressVerdictBanner: true,
           })

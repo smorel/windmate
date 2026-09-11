@@ -198,7 +198,8 @@ const WindmateSessionRank = (() => {
 
   /** Absolute go/no-go factors (settings-based caps) — used for excitement stickers, not matrix rank. */
   function computeAbsoluteGoNoGoMetrics(entry, dateStr, prefs, radiusKm) {
-    const hours = filterPlanningHours(getDayHours(entry, dateStr), dateStr);
+    const rawHours = filterPlanningHours(getDayHours(entry, dateStr), dateStr);
+    const hours = rawHours.map((h) => WindmateRideableWindow.remapHourForPrefs(h, prefs));
     const minWindowHours = WindmateRideableWindow.parseMinHours(prefs?.min_rideable_window_hours);
     const rideableHours = hours.filter((h) => h.rideable);
     const viableHours = hours.filter((h) => h.windOk && h.weatherOk && h.tempOk);
@@ -207,7 +208,8 @@ const WindmateSessionRank = (() => {
       entry,
       dateStr,
       minWindowHours,
-      getModelDayHours
+      getModelDayHours,
+      prefs
     );
     const idealDirections = entry.spot?.ideal_directions ?? [];
     const maxRideableWind = rideableHours.length

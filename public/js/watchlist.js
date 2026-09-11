@@ -92,6 +92,11 @@ const WindmateWatchlist = (() => {
     };
   }
 
+  /**
+   * Stickers use the watched session's sport profile, not the dashboard sport.
+   * Same spot can appear on multiple pins (sailing vs wingfoiling) with different ratings.
+   * Matrix ride data is sport-agnostic wind; rideability flags are re-applied via session prefs.
+   */
   function resolveSessionExcitement(session, { rideEntryBySpot, prefs, sportProfiles, radiusKm }) {
     const sessionPrefs = prefsForWatchSession(session, { prefs, sportProfiles });
     const entry = rideEntryBySpot?.get(session.spot_id);
@@ -104,6 +109,24 @@ const WindmateWatchlist = (() => {
       );
     }
     return session.excitement ?? { tier: null };
+  }
+
+  function patchSessionStickers(card, session, ctx) {
+    const excitement = resolveSessionExcitement(session, ctx);
+    const html = WindmateSessionExcitement.renderStickers(excitement);
+    const stack = card.querySelector('.session-excitement-stack');
+    if (!html) {
+      stack?.remove();
+      return;
+    }
+    if (stack) {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = html.trim();
+      const next = wrap.firstElementChild;
+      if (next) stack.replaceWith(next);
+      return;
+    }
+    card.insertAdjacentHTML('afterbegin', html);
   }
 
   function sortedSessions() {
@@ -137,13 +160,14 @@ const WindmateWatchlist = (() => {
       const isToday = session.session_date === today;
       const obs = observationsBySpot?.get(session.spot_id);
       const verdict = resolveVerdict(session);
+      const sessionPrefs = prefsForWatchSession(session, { prefs, sportProfiles });
       const liveStrip =
         isToday && obs
           ? WindmateObservations.renderLiveStrip(
               { id: session.spot_id },
               obs,
               rideEntryBySpot?.get(session.spot_id),
-              prefs,
+              sessionPrefs ?? prefs,
               {
                 curveKey: `watch:${session.id}`,
                 sessionDate: session.session_date,
@@ -181,6 +205,13 @@ const WindmateWatchlist = (() => {
       } else if (summaryEl) {
         summaryEl.remove();
       }
+
+      patchSessionStickers(card, session, {
+        rideEntryBySpot,
+        prefs,
+        sportProfiles,
+        radiusKm,
+      });
     }
     return true;
   }
@@ -243,6 +274,7 @@ const WindmateWatchlist = (() => {
   }
 
   function renderCard(session, { observationsBySpot, prefs, today, rideEntryBySpot, sportProfiles, radiusKm }) {
+    const sessionPrefs = prefsForWatchSession(session, { prefs, sportProfiles }) ?? prefs;
     const date = new Date(`${session.session_date}T12:00:00`);
     const dayLabel = date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const verdict = resolveVerdict(session);
@@ -255,7 +287,7 @@ const WindmateWatchlist = (() => {
     const obs = observationsBySpot?.get(session.spot_id);
     const liveStrip =
       isToday && obs
-        ? WindmateObservations.renderLiveStrip(session.spot, obs, rideEntryBySpot?.get(session.spot_id), prefs, {
+        ? WindmateObservations.renderLiveStrip(session.spot, obs, rideEntryBySpot?.get(session.spot_id), sessionPrefs, {
             curveKey: `watch:${session.id}`,
             sessionDate: session.session_date,
             sessionGoNoGo: verdict,
@@ -342,11 +374,18 @@ const WindmateWatchlist = (() => {
     });
   }
 
-  function getWatchedSpotIdsForToday(sport) {
+  /** Unique spot ids for today's watches (all sports — live strip is per session sport). */
+  function getWatchedSpotIdsForToday() {
     const today = WindmateForecastTime.localDateString();
-    return sessions
-      .filter((s) => s.session_date === today && s.sport === sport)
-      .map((s) => s.spot_id);
+    const ids = new Set(
+      sessions.filter((s) => s.session_date === today).map((s) => s.spot_id)
+    );
+    return [...ids];
+  }
+
+  /** Unique spot ids across all watched sessions (for rideability include list). */
+  function getWatchedSpotIds() {
+    return [...new Set(sessions.map((s) => s.spot_id))];
   }
 
   function setOnChange(fn) {
@@ -368,10 +407,12 @@ const WindmateWatchlist = (() => {
     renderWatchButton,
     bindWatchButtons,
     getWatchedSpotIdsForToday,
+    getWatchedSpotIds,
     setOnChange,
     setOnNavigate,
     getSessions: () => sessions,
     resolveVerdict,
     resolveSessionExcitement,
+    prefsForWatchSession,
   };
 })();

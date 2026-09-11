@@ -904,7 +904,7 @@ function observationsQueryString({ bypassCache = false } = {}) {
   const radius = profile?.radius_km ?? getSearchRadiusKm();
   const sport = activeSport;
   const query = `lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&limit=12&sport=${sport}`;
-  const watchedIds = WindmateWatchlist.getWatchedSpotIdsForToday(sport);
+  const watchedIds = WindmateWatchlist.getWatchedSpotIdsForToday();
   const watchedQuery = watchedIds.length ? `&watchedSpotIds=${watchedIds.join(',')}` : '';
   const refreshQuery = bypassCache ? '&refresh=1' : '';
   return { query, watchedQuery, refreshQuery };
@@ -1021,6 +1021,14 @@ function initHourlyDashboardRefresh() {
   });
 }
 
+function watchlistCurvePrefsResolver(panel, matrixPrefs) {
+  const card = panel?.closest('[data-watch-id]');
+  if (!card) return matrixPrefs;
+  const session = WindmateWatchlist.getSessions().find((s) => String(s.id) === card.dataset.watchId);
+  if (!session) return matrixPrefs;
+  return WindmateWatchlist.prefsForWatchSession(session, { prefs: matrixPrefs, sportProfiles }) ?? matrixPrefs;
+}
+
 function rebindObservationToggles(obsBySpot, matrixPrefs) {
   const warningsBySpot = new Map(
     rideabilityData.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
@@ -1031,7 +1039,8 @@ function rebindObservationToggles(obsBySpot, matrixPrefs) {
     obsBySpot,
     matrixPrefs,
     warningsBySpot,
-    rideEntryBySpot
+    rideEntryBySpot,
+    (panel) => watchlistCurvePrefsResolver(panel, matrixPrefs)
   );
   WindmateObservations.bindToggles(
     els.rideabilityMatrix,
@@ -1131,8 +1140,13 @@ async function refreshDashboard({
         ).catch(() => null)
       : Promise.resolve(horizonSummary);
 
+    const includeSpotIds = WindmateWatchlist.getWatchedSpotIds();
+    const includeSpotsQuery = includeSpotIds.length
+      ? `&includeSpotIds=${encodeURIComponent(includeSpotIds.join(','))}`
+      : '';
+
     const [rideRes, obsRes, summaryRes] = await Promise.all([
-      api(`/api/rideability?${query}${refreshQuery}`),
+      api(`/api/rideability?${query}${includeSpotsQuery}${refreshQuery}`),
       api(`/api/observations?${query}${watchedQuery}${refreshQuery}`).catch(() => ({ spots: [] })),
       summaryRequest,
     ]);

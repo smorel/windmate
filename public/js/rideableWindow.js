@@ -62,6 +62,56 @@ const WindmateRideableWindow = (() => {
     return { hour: best, inferred: !exact };
   }
 
+  function windOkForPrefs(hour, prefs) {
+    const windSpeed = hour.windSpeed ?? 0;
+    const gusts = hour.gusts ?? windSpeed;
+    return windSpeed >= prefs.min_wind_knots && gusts <= prefs.max_gust_knots;
+  }
+
+  function isOffshoreBlockedForPrefs(hour, prefs) {
+    if (prefs?.offshore_wind_ok) return false;
+    if (hour.windExposure === 'offshore') return true;
+    if (hour.windExposure) return false;
+    return Boolean(hour.offshoreBlocked);
+  }
+
+  function isTempOkForPrefs(prefs, hour) {
+    if (prefs.min_air_temp_c != null && hour.airTempC != null && hour.airTempC < prefs.min_air_temp_c) {
+      return false;
+    }
+    if (
+      prefs.min_water_temp_c != null &&
+      hour.waterTempC != null &&
+      hour.waterTempC < prefs.min_water_temp_c
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  /** Re-evaluate rideability for a sport profile (watch card vs matrix sport). */
+  function rideableForPrefs(hour, prefs) {
+    if (!prefs || !hour) return hour?.rideable === true;
+    const windOk = windOkForPrefs(hour, prefs);
+    const weatherOk = hour.weatherOk !== false;
+    const tempOk = isTempOkForPrefs(prefs, hour);
+    const directionOk = !isOffshoreBlockedForPrefs(hour, prefs);
+    const daylightOk = hour.daylightOk !== false;
+    return windOk && weatherOk && tempOk && directionOk && daylightOk;
+  }
+
+  function remapHourForPrefs(hour, prefs) {
+    if (!prefs || !hour) return hour;
+    const offshoreBlocked = isOffshoreBlockedForPrefs(hour, prefs);
+    return {
+      ...hour,
+      windOk: windOkForPrefs(hour, prefs),
+      tempOk: isTempOkForPrefs(prefs, hour),
+      offshoreBlocked,
+      rideable: rideableForPrefs(hour, prefs),
+    };
+  }
+
   /**
    * True when every model that still reports this hour marks it rideable.
    * Missing data is ignored. For elapsed hours on `options.today`, models with
@@ -70,19 +120,22 @@ const WindmateRideableWindow = (() => {
   function allReportingModelsRideable(indexedByKey, key, options) {
     const today = options?.today;
     const now = options?.now ?? new Date();
+    const prefs = options?.prefs;
     let reporting = 0;
     for (const byKey of indexedByKey) {
       const hour = byKey.get(key);
       if (!hour) continue;
+      const windBelowThreshold = prefs ? !windOkForPrefs(hour, prefs) : hour.windOk === false;
       if (
         today &&
         WindmateForecastTime.isElapsedLocalDayHour(key, today, now) &&
-        hour.windOk === false
+        windBelowThreshold
       ) {
         continue;
       }
       reporting += 1;
-      if (!hour.rideable) return false;
+      const rideable = prefs ? rideableForPrefs(hour, prefs) : hour.rideable === true;
+      if (!rideable) return false;
     }
     if (reporting === 0) return false;
     if (today && WindmateForecastTime.isElapsedLocalDayHour(key, today, now)) return false;
@@ -229,7 +282,7 @@ const WindmateRideableWindow = (() => {
     });
   }
 
-  function buildConsensusHours(entry, dateStr, getModelDayHours) {
+  function buildConsensusHours(entry, dateStr, getModelDayHours, prefs) {
     const modelIds = Object.entries(entry.models ?? {})
       .filter(([, model]) => !model.error)
       .map(([modelId]) => modelId);
@@ -254,10 +307,12 @@ const WindmateRideableWindow = (() => {
       return { timeline, consensusHours: [] };
     }
 
-    const consensusOptions =
-      dateStr === WindmateForecastTime.localDateString()
+    const consensusOptions = {
+      ...(dateStr === WindmateForecastTime.localDateString()
         ? { today: dateStr, now: new Date() }
-        : undefined;
+        : {}),
+      ...(prefs ? { prefs } : {}),
+    };
 
     const consensusHours = timeline.map((slot) => {
       const key = hourTimeKey(slot.time);
@@ -268,16 +323,19 @@ const WindmateRideableWindow = (() => {
     return { timeline, consensusHours };
   }
 
-  function longestConsensusWindowLength(entry, dateStr, minConsecutive, getModelDayHours) {
-    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours);
+  function longestConsensusWindowLength(entry, dateStr, minConsecutive, getModelDayHours, prefs) {
+    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours, prefs);
     if (!consensusHours.length) {
       const hours = timeline ?? [];
       return longestWindow(
-        hours.map((hour) => ({
-          rideable:
-            hour.rideable === true &&
-            WindmateForecastTime.isSessionPlanningHour(hourTimeKey(hour.time), dateStr),
-        })),
+        hours.map((hour) => {
+          const remapped = remapHourForPrefs(hour, prefs);
+          return {
+            rideable:
+              remapped.rideable === true &&
+              WindmateForecastTime.isSessionPlanningHour(hourTimeKey(hour.time), dateStr),
+          };
+        }),
         minConsecutive
       );
     }
@@ -292,8 +350,8 @@ const WindmateRideableWindow = (() => {
     return timeline.filter((slot) => windowKeys.has(hourTimeKey(slot.time)));
   }
 
-  function consensusWindowMarkedHours(entry, dateStr, getModelDayHours) {
-    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours);
+  function consensusWindowMarkedHours(entry, dateStr, getModelDayHours, prefs) {
+    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours, prefs);
     if (!timeline.length) return { timeline: [], marked: [] };
 
     const marked = consensusHours.length
@@ -319,8 +377,8 @@ const WindmateRideableWindow = (() => {
   }
 
   /** Every hour in any qualifying consensus block (matrix bands, live curve). */
-  function getQualifyingConsensusWindowHours(entry, dateStr, minConsecutive, getModelDayHours) {
-    const { timeline, marked } = consensusWindowMarkedHours(entry, dateStr, getModelDayHours);
+  function getQualifyingConsensusWindowHours(entry, dateStr, minConsecutive, getModelDayHours, prefs) {
+    const { timeline, marked } = consensusWindowMarkedHours(entry, dateStr, getModelDayHours, prefs);
     if (!timeline.length) return [];
     return qualifyingWindowHourKeys(marked, timeline, minConsecutive);
   }
@@ -468,6 +526,8 @@ const WindmateRideableWindow = (() => {
     DEFAULT_MIN_HOURS,
     hourTimeKey,
     allReportingModelsRideable,
+    rideableForPrefs,
+    remapHourForPrefs,
     parseMinHours,
     longestWindow,
     markHours,

@@ -17,12 +17,24 @@ const { startHorizonAlertScheduler } = require('./cron/horizonAlertScheduler');
 const { startWatchlistJobs } = require('./cron/watchlistDigest');
 const { syncIgetwindSpots } = require('./services/igetwindSync');
 const { getProvider } = require('./services/weather');
+const { syncAssets } = require('../scripts/sync-assets');
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const db = initDb();
 const app = express();
+const repoAssets = path.join(__dirname, '..', 'assets');
+const publicAssets = path.join(__dirname, '..', 'public', 'assets');
 
 app.use(express.json());
+app.use('/assets', (req, res, next) => {
+  if (process.env.NODE_ENV !== 'production') {
+    res.set('Cache-Control', 'no-store');
+  }
+  next();
+});
+// Repo assets/ first (edit here) — public/assets is a synced copy for deploy
+app.use('/assets', express.static(repoAssets));
+app.use('/assets', express.static(publicAssets));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.get('/api/health', (_req, res) => {
@@ -49,6 +61,13 @@ startHorizonAlertScheduler(db);
 startWatchlistJobs(db);
 
 async function bootstrap() {
+  try {
+    const n = syncAssets();
+    console.log(`[assets] Synced ${n} PNGs to public/assets`);
+  } catch (err) {
+    console.warn('[assets] Sync skipped:', err.message);
+  }
+
   if (process.env.IGETWIND_SYNC_SPOTS !== 'false') {
     try {
       const result = await syncIgetwindSpots(db);

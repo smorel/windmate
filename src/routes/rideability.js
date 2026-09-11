@@ -1,5 +1,6 @@
 const express = require('express');
-const { getAllSpots, getPreferences } = require('../db');
+const { getAllSpots, getPreferences, getSpotById } = require('../db');
+const { haversineKm } = require('../utils/geo');
 const { fetchForecast, getProvider, getPrimaryHourlyForecast } = require('../services/weather');
 const { fetchOpenMeteoContext } = require('../services/openMeteoContext');
 const { buildContextByTime, buildTempSummary } = require('../services/temperature');
@@ -39,7 +40,7 @@ function createRideabilityRouter(db) {
         : prefs.radius_km;
     const sportColor = SPORT_COLORS[prefs.sport] ?? SPORT_COLORS.wingfoiling;
 
-    const nearbySpots = selectSpotsForProfile(
+    let nearbySpots = selectSpotsForProfile(
       getAllSpots(db),
       lat,
       lng,
@@ -47,6 +48,26 @@ function createRideabilityRouter(db) {
       limit,
       effectiveRadius
     );
+
+    const includeSpotIds = String(req.query.includeSpotIds ?? '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (includeSpotIds.length) {
+      const included = new Set(nearbySpots.map((s) => s.id));
+      for (const spotId of includeSpotIds) {
+        if (included.has(spotId)) continue;
+        const spot = getSpotById(db, spotId);
+        if (!spot) continue;
+        const distance_km = haversineKm(lat, lng, spot.latitude, spot.longitude);
+        nearbySpots.push({
+          ...spot,
+          distance_km,
+          outside_radius: distance_km > effectiveRadius,
+        });
+        included.add(spotId);
+      }
+    }
 
     if (nearbySpots.length === 0) {
       return res.json({

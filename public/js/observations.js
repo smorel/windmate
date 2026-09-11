@@ -30,7 +30,7 @@ const WindmateObservations = (() => {
     if (!ctx) return;
 
     event.stopPropagation();
-    const { observationsBySpot, prefs, warningsBySpot, rideEntryBySpot } = ctx;
+    const { observationsBySpot, prefs, warningsBySpot, rideEntryBySpot, resolveCurvePrefs } = ctx;
     const spotId = btn.dataset.spotId;
     const curveKey = btn.dataset.curveKey ?? spotId;
     const strip = btn.closest('.live-strip');
@@ -41,11 +41,19 @@ const WindmateObservations = (() => {
     const obs = observationsBySpot.get(spotId);
     syncCurveToggleUi(strip, curveKey);
     if (panel && expanded.has(curveKey)) {
+      const curvePrefs = resolveCurvePrefs?.(panel) ?? prefs;
       renderCurve(
         panel,
         obs,
-        prefs,
-        curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs)
+        curvePrefs,
+        curveRenderOptions(
+          spotId,
+          observationsBySpot,
+          warningsBySpot,
+          rideEntryBySpot,
+          panel,
+          curvePrefs
+        )
       );
       if (autoRefreshCallback) void autoRefreshCallback();
     }
@@ -378,10 +386,14 @@ const WindmateObservations = (() => {
         rideEntry,
         dateStr,
         minWindow,
-        getModelDayHours
+        getModelDayHours,
+        prefs
       );
     }
-    const hours = forecast.map((hour) => ({ ...hour }));
+    const hours = forecast.map((hour) => ({
+      ...hour,
+      rideable: WindmateRideableWindow.rideableForPrefs(hour, prefs),
+    }));
     WindmateRideableWindow.markHours(hours, minWindow);
     return hours.filter((hour) => hour.inRideableWindow);
   }
@@ -808,23 +820,45 @@ const WindmateObservations = (() => {
     });
   }
 
-  function refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot) {
+  function refreshExpandedCurves(
+    root,
+    observationsBySpot,
+    prefs,
+    warningsBySpot,
+    rideEntryBySpot,
+    resolveCurvePrefs = null
+  ) {
     root.querySelectorAll('.curve-panel').forEach((panel) => {
       const spotId = panel.dataset.spotId;
       const curveKey = panel.dataset.curveKey ?? spotId;
       if (!spotId || !curveKey || !expanded.has(curveKey)) return;
       const obs = observationsBySpot.get(spotId);
       if (!obs) return;
+      const curvePrefs = resolveCurvePrefs?.(panel) ?? prefs;
       renderCurve(
         panel,
         obs,
-        prefs,
-        curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs)
+        curvePrefs,
+        curveRenderOptions(
+          spotId,
+          observationsBySpot,
+          warningsBySpot,
+          rideEntryBySpot,
+          panel,
+          curvePrefs
+        )
       );
     });
   }
 
-  function bindToggles(root, observationsBySpot, prefs, warningsBySpot = null, rideEntryBySpot = null) {
+  function bindToggles(
+    root,
+    observationsBySpot,
+    prefs,
+    warningsBySpot = null,
+    rideEntryBySpot = null,
+    resolveCurvePrefs = null
+  ) {
     if (!root) return;
     ensureToggleRoot(root);
     toggleContextByRoot.set(root, {
@@ -832,6 +866,7 @@ const WindmateObservations = (() => {
       prefs,
       warningsBySpot,
       rideEntryBySpot,
+      resolveCurvePrefs,
     });
     root.querySelectorAll('.live-strip').forEach((strip) => {
       const curveKey =
@@ -840,7 +875,14 @@ const WindmateObservations = (() => {
         strip.querySelector('.curve-panel')?.dataset?.spotId;
       if (curveKey) syncCurveToggleUi(strip, curveKey);
     });
-    refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot);
+    refreshExpandedCurves(
+      root,
+      observationsBySpot,
+      prefs,
+      warningsBySpot,
+      rideEntryBySpot,
+      resolveCurvePrefs
+    );
   }
 
   function renderVerdictBanner(verdict) {

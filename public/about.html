@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Windmate — free session planning for wingfoiling, kitesurfing, sailing, and more. Your wind mate, built by the community." />
+  <title>What is Windmate?</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/css/marketing.css?v=10" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            base: { DEFAULT: '#0b0f19', card: '#0f1422', border: '#1a2235' },
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="marketing-page marketing-mesh text-slate-200 min-h-screen antialiased">
+  <header class="marketing-header">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
+      <a href="/" class="group">
+        <span class="text-lg font-bold text-white group-hover:text-emerald-400 transition">Windmate</span>
+        <span class="block text-xs text-slate-500">Back to the dashboard</span>
+      </a>
+      <nav class="marketing-nav flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label="On this page">
+        <a href="#story">Story</a>
+        <a href="#product">Product</a>
+        <a href="#free">Free &amp; open</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="max-w-6xl mx-auto px-4 pt-12 pb-16 md:pt-16 md:pb-24">
+    <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+      <div class="text-center lg:text-left">
+        <p class="marketing-pill mb-6">Free · community · your wind mate</p>
+        <h1 class="text-3xl md:text-4xl lg:text-[2.75rem] font-bold tracking-tight text-white leading-[1.12]">
+          The session call,<br />
+          <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-cyan-400">not the data dump.</span>
+        </h1>
+        <p class="mt-5 text-slate-400 text-base md:text-lg leading-relaxed max-w-xl mx-auto lg:mx-0">
+          Windmate reads HRDPS, HRRR, GFS, and Open-Meteo against <em>your</em> ride rules — ranks <strong class="text-slate-300 font-medium">favorites and nearby spots you’ve never tried</strong> — then tells you which day, which launch, and whether it’s worth the drive (forecast, live obs, and spot intel headed toward one clear <strong class="text-slate-300 font-medium">go / no-go</strong>).
+        </p>
+        <div class="mt-8 flex flex-wrap justify-center lg:justify-start gap-3">
+          <a
+            href="/"
+            class="inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-950/40"
+          >
+            Open the dashboard
+          </a>
+          <a
+            href="#product"
+            class="inline-flex items-center justify-center rounded-xl px-6 py-3 text-sm font-medium text-slate-200 border border-base-border bg-base-card/80 hover:bg-slate-800/80 transition"
+          >
+            Explore features
+          </a>
+        </div>
+        <p class="mt-6 text-xs text-slate-500 max-w-md mx-auto lg:mx-0">
+          No paywall. No “premium wind.” Built by riders who were tired of opening five tabs before breakfast.
+        </p>
+      </div>
+
+      <div class="marketing-ui-frame marketing-reveal">
+        <div class="marketing-ui-frame__chrome" aria-hidden="true">
+          <span class="marketing-ui-frame__dot"></span>
+          <span class="marketing-ui-frame__dot"></span>
+          <span class="marketing-ui-frame__dot"></span>
+        </div>
+        <img
+          src="/assets/marketing-horizon.png"
+          alt="Horizon Planner with Nice session day, rideable hours, and shared windows"
+          width="1334"
+          height="320"
+          loading="eager"
+        />
+      </div>
+    </div>
+
+    <ul class="mt-14 grid grid-cols-2 lg:grid-cols-4 gap-3 marketing-reveal" aria-label="At a glance">
+      <li class="marketing-stat"><strong>4</strong><span>Forecast models</span></li>
+      <li class="marketing-stat"><strong>7</strong><span>Day horizon</span></li>
+      <li class="marketing-stat"><strong>6+</strong><span>Wind sports</span></li>
+      <li class="marketing-stat"><strong>$0</strong><span>Always free</span></li>
+    </ul>
+  </section>
+
+  <main class="max-w-6xl mx-auto px-4 pb-24 space-y-24 md:space-y-32">
+    <section id="story" class="marketing-section-title marketing-reveal">
+      <div class="marketing-story-split">
+        <div class="marketing-story-copy space-y-5 text-slate-400 text-sm leading-relaxed">
+          <h2 class="text-2xl font-bold text-white">Built for people who’d rather be on the water</h2>
+          <p class="text-base text-slate-400 leading-relaxed">
+            Wingfoiling, kitesurfing, windsurfing, sailing, kitefoiling, parawing — if you care about wind, gusts, direction, waves, and a <strong class="text-slate-300 font-medium">real session window</strong>, you’re who we had in mind.
+          </p>
+          <p>
+            Classic wind apps excel at charts. You still reconcile models, guess if offshore is rideable for your sport, and wonder whether two green hours count as a session — and even when the numbers look fine, the spot might not be: closed parking, flooded access, sketchy launch for a kite, algae, or nobody on the water when social says otherwise.
+          </p>
+          <p>
+            <strong class="text-slate-300">Spot intelligence</strong> (rolling out with the community) is meant to close that gap — live station readings and today’s curve, plus live cams, recent posts from the launch, photos, parking and water-level notes, and launchability for your sport — so you get a clearer <strong class="text-slate-300">go / no-go</strong> before you drive, not just a green wind cell.
+          </p>
+          <p>
+            Windmate is opinionated in a helpful way: <strong class="text-slate-300">rideable windows</strong>, ranked spots (favorites <em>and</em> newcomers in range), model agreement in color, and stickers from <span class="text-emerald-400/90">Nice session</span> to <span class="text-amber-300/90">Unsure</span> when the hours won’t form a real window. On <strong class="text-slate-300">session day</strong>, <strong class="text-slate-300">today’s curve</strong> plots the forecast against the <strong class="text-slate-300">nearest live meteo station</strong> so you can see whether the model’s holding before you pack the car.
+          </p>
+          <p class="marketing-quote">
+            Tech underneath, mate tone on top — honesty when data’s thin, not false hype.
+          </p>
+        </div>
+        <figure class="marketing-story-figure">
+          <img
+            src="/assets/marketing-watchlist.png"
+            alt="Session day live curve comparing forecast to the nearest meteo station, with Unsure when the window is too short"
+            class="marketing-feature-img w-full"
+            width="1334"
+            height="840"
+            loading="lazy"
+          />
+        </figure>
+      </div>
+
+      <ol class="mt-14 grid md:grid-cols-3 gap-8 marketing-steps">
+        <li class="marketing-step marketing-reveal">
+          <h3 class="text-sm font-semibold text-white">Set your rules</h3>
+          <p class="mt-2 text-sm text-slate-500">Sports, min wind, max gust, temps, offshore policy — saved per sport.</p>
+        </li>
+        <li class="marketing-step marketing-reveal">
+          <h3 class="text-sm font-semibold text-white">Discover &amp; favorite</h3>
+          <p class="mt-2 text-sm text-slate-500">Map and search surface rideable launches near you — star the keepers, let ranking promote the best match for the day.</p>
+        </li>
+        <li class="marketing-step marketing-reveal">
+          <h3 class="text-sm font-semibold text-white">Leave on time</h3>
+          <p class="mt-2 text-sm text-slate-500">Departure planner picks the best rideable window for your min session — then hints when to go and opens maps for your arrival time.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="product" class="marketing-section-title">
+      <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10 marketing-reveal">
+        <div>
+          <h2 class="text-2xl font-bold text-white">Everything in one dashboard</h2>
+        </div>
+        <a href="/" class="text-sm font-medium text-emerald-400 hover:text-emerald-300 transition shrink-0">
+          Try it live →
+        </a>
+      </div>
+
+      <div class="marketing-features">
+        <article class="marketing-feature-card marketing-reveal">
+          <h3>Horizon Planner</h3>
+          <p>
+            Seven days at a glance: wind and gust ranges, rideable hours, shared windows across spots. Tap a day to re-rank. Toggle <strong class="text-slate-400 font-normal">Only rideable hours</strong> when you want less noise.
+          </p>
+          <div class="marketing-feature-card__media">
+            <img src="/assets/marketing-horizon.png" alt="" width="1334" height="390" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-reveal">
+          <h3>Watching &amp; stickers</h3>
+          <p>
+            Favorites up front with excitement tiers and session stickers. On the <strong class="text-slate-400 font-normal">day of the session</strong>, open <strong class="text-slate-400 font-normal">today’s curve</strong>: actual wind and gusts from the <strong class="text-slate-400 font-normal">closest live meteo station</strong> on the same chart as forecast — mate-tone readouts when they line up or drift. <strong class="text-slate-400 font-normal">Unsure</strong> when rideable hours don’t meet your minimum window.
+          </p>
+          <div class="marketing-feature-card__media">
+            <img src="/assets/marketing-watchlist.png" alt="Today's curve with live station wind and gusts vs forecast" width="1334" height="840" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-reveal">
+          <h3>Departure planner</h3>
+          <p>
+            Windmate finds the <strong class="text-slate-400 font-normal">best rideable window</strong> that satisfies your minimum session length (same logic as ranking), then lines up travel: <strong class="text-slate-400 font-normal">leave-by</strong> or <strong class="text-slate-400 font-normal">go now</strong> hints, estimated drive time, on-the-water hours, and <strong class="text-slate-400 font-normal">Open in Google Maps</strong> aimed at your target arrival — on Watching cards and ranked spot rows.
+          </p>
+          <div class="marketing-feature-card__media marketing-feature-card__media--contain">
+            <img src="/assets/marketing-departure.png" alt="Leave-by mate line with drive time and Google Maps link" width="1334" height="210" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-reveal">
+          <h3>Spot discovery &amp; ranking</h3>
+          <p>
+            Not just your usual launches. The matrix ranks <strong class="text-slate-400 font-normal">every rideable spot in range</strong> — badges like “most good hours” and “longest window” — so a great day somewhere new can outrank a tired favorite. Search and star what you want in Watching; the planner still surfaces the best match for <em>that</em> day.
+          </p>
+          <div class="marketing-feature-card__media marketing-feature-card__media--contain">
+            <img src="/assets/marketing-map.png" alt="Ranked spots with rideability matrix and map inset" width="1334" height="740" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-feature-card--future marketing-features__full marketing-reveal">
+          <span class="marketing-future-pill">Coming together · spot intelligence</span>
+          <h3>Local intel — go / no-go before you drive</h3>
+          <p>
+            Wind and waves are only half the story. Spot intelligence pulls together what’s happening <em>at the launch</em> — spot photos and media, <strong class="text-slate-400 font-normal">live cams</strong>, <strong class="text-slate-400 font-normal">social posts</strong> from riders on site, plus parking, access, and water-condition signals as we wire them up — into a plain <strong class="text-slate-400 font-normal">go / no-go</strong> read alongside your forecast. When ground truth says skip it, we rank the spot down and say why in mate tone. The goal: no more drive-and-cry at arrival — forecast looked rideable, ground truth wasn’t. Some pieces are live today; the rest is rolling out in the open with the community.
+          </p>
+          <div class="marketing-feature-card__media marketing-feature-card__media--full">
+            <img src="/assets/marketing-sessions.png" alt="Spot intel panel with forecast grid and spot media" width="2022" height="1214" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-features__full marketing-reveal">
+          <h3>Rideability Matrix</h3>
+          <p>
+            Hour-by-hour Beaufort wind and gust, waves, direction, probability, and score — inset spot map, mate-tone notes when a window is borderline, and solid blocks for your <strong class="text-slate-400 font-normal">longest shared window</strong> across models. On today’s session, a <strong class="text-slate-400 font-normal">live strip</strong> from the nearest station sits on the card too — same confidence idea as the curve on Watching.
+          </p>
+          <div class="marketing-feature-card__media marketing-feature-card__media--full">
+            <img src="/assets/marketing-matrix.png" alt="Rideability matrix heatmap with direction, wind, gust, wave, and probability rows" width="2707" height="662" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-reveal">
+          <h3>Legend</h3>
+          <p>Read the colors once: Beaufort bands, waves, shared windows, offshore blocked stripes, direction cues.</p>
+          <div class="marketing-feature-card__media marketing-feature-card__media--tall">
+            <img src="/assets/legend.png" alt="" width="1334" height="720" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-reveal">
+          <h3>Your setup</h3>
+          <p>Sport-specific thresholds, search radius, favorites-only mode, and <strong class="text-slate-400 font-normal">min session window (hrs)</strong> — the departure planner uses that same bar everywhere.</p>
+          <div class="marketing-feature-card__media marketing-feature-card__media--tall">
+            <img src="/assets/settings1.png" alt="" width="667" height="900" loading="lazy" />
+          </div>
+        </article>
+
+        <article class="marketing-feature-card marketing-reveal">
+          <h3>Alerts &amp; ranking</h3>
+          <p>Email when a good day appears. Drag to reorder what matters — wind, gusts, waves, distance, confidence.</p>
+          <div class="marketing-feature-card__media marketing-feature-card__media--tall">
+            <img src="/assets/settings2.png" alt="" width="667" height="900" loading="lazy" />
+          </div>
+        </article>
+      </div>
+
+      <figure class="mt-12 marketing-reveal">
+        <img
+          src="/assets/windmate-with-unsure-sessions-screenshot.png"
+          alt="Full Windmate dashboard — watching curve, horizon planner, ranked spots, and unsure sessions"
+          class="marketing-feature-img w-full"
+          width="1334"
+          height="2999"
+          loading="lazy"
+        />
+        <figcaption class="mt-3 text-center text-xs text-slate-500">
+          Session day — live curve vs forecast from the nearest station, ranked discovery, honest Unsure when the window won’t hold.
+        </figcaption>
+      </figure>
+    </section>
+
+    <section id="free" class="marketing-section-title marketing-reveal rounded-2xl border border-emerald-600/20 bg-gradient-to-b from-emerald-950/25 to-base-card/40 px-6 py-12 md:px-12 text-center">
+      <h2 class="text-2xl md:text-3xl font-bold text-white">Free. Open. Yours.</h2>
+      <p class="mt-4 text-slate-400 max-w-2xl mx-auto leading-relaxed">
+        Community-driven — contributors sync spots, tune ride rules, and ship what we use on the beach. If it saves you one pointless drive, it’s done its job.
+      </p>
+      <p class="mt-6 text-sm text-slate-500">
+        <a href="https://github.com/smorel/windmate" class="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline" rel="noopener noreferrer" target="_blank">GitHub</a>
+        · self-host or join a community instance · pull requests welcome
+      </p>
+      <a
+        href="/"
+        class="mt-8 inline-flex items-center justify-center rounded-xl px-8 py-3.5 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-500 transition"
+      >
+        Try Windmate now
+      </a>
+    </section>
+  </main>
+
+  <footer class="border-t border-base-border py-8 text-center text-xs text-slate-600">
+    <p>Windmate — your wind mate. See you on the water.</p>
+  </footer>
+
+  <script>
+    (function () {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      var nodes = document.querySelectorAll('.marketing-reveal');
+      if (!nodes.length || !('IntersectionObserver' in window)) {
+        nodes.forEach(function (el) { el.classList.add('is-visible'); });
+        return;
+      }
+      var io = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-visible');
+              io.unobserve(entry.target);
+            }
+          });
+        },
+        { rootMargin: '0px 0px -8% 0px', threshold: 0.08 }
+      );
+      nodes.forEach(function (el) { io.observe(el); });
+    })();
+  </script>
+</body>
+</html>

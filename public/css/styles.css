@@ -1532,6 +1532,21 @@ body.modal-open {
   display: none;
 }
 
+/* Dashboard refresh — block stale interactive UI while loading */
+body.dashboard-pending .dashboard-planner,
+body.dashboard-pending .watchlist-strip {
+  pointer-events: none;
+  user-select: none;
+}
+body.dashboard-pending .dashboard-planner {
+  opacity: 0.72;
+}
+.sport-selector--busy .sport-selector-trigger {
+  pointer-events: none;
+  opacity: 0.72;
+  cursor: wait;
+}
+
 /* Sport selector */
 .sport-selector { position: relative; max-width: 20rem; }
 .sport-selector-trigger {

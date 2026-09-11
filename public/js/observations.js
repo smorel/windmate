@@ -7,6 +7,12 @@ const WindmateObservations = (() => {
   let nowMarkerTimer = null;
   let autoRefreshCallback = null;
 
+  function collapseAll() {
+    expanded.clear();
+    clearAutoRefresh();
+    clearNowMarkerRefresh();
+  }
+
   function clearAutoRefresh() {
     if (autoRefreshTimer) {
       clearInterval(autoRefreshTimer);
@@ -798,6 +804,7 @@ const WindmateObservations = (() => {
     renderVerdictBanner,
     setAutoRefreshCallback,
     hasExpandedCurves,
+    collapseAll,
     EXPANDED_REFRESH_MS,
   };
 })();

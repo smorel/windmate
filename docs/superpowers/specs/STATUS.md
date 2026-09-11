@@ -24,6 +24,7 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 | [planner-full-day-forecast](./2026-09-11-planner-full-day-forecast-design.md) | **~95%** — global toggle + matrix; spec acceptance unchecked |
 | [weather-consensus](./2026-09-11-weather-consensus-design.md) | **~95%** — majority rain vote (Open-Meteo + iGetwind APCP); strict majority math |
 | [sport-favorites-only](./2026-09-11-sport-favorites-only-design.md) | **~95%** — per-sport `favorites_only` + `selectSpotsForProfile`; spec checklist unchecked |
+| [saved-planning-locations](./2026-09-11-saved-planning-locations-design.md) | **0%** — spec only (saved places, planning TZ, per-place×sport favorites, GPS nearest-place snap) |
 
 **Also shipped (not in original MVP):** settings modal, auto-save prefs, spot search, **per-sport favorites** (incl. out-of-radius), customizable radius, Beaufort matrix colors, 3-band wind/gust/wave blocks, session warning time fix, **sport-scoped watchlist** (spot + date + sport), watchlist card navigation, eye icon for watch vs ★ for favorite, per-sport horizon alert cron, **inline spot map picker** (Leaflet, manual spots, Nominatim), **departure leave-by line** on matrix + watchlist cards, **local calendar date** (no UTC “today” rollover), **favorite-aware matrix ranking** (in-radius favorites first, distant favorites last), **session go/no-go on rideability payload** (`sessionGoNoGoByDate`).
 

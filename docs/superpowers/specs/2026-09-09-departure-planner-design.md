@@ -25,7 +25,7 @@ Show this on the **spot card** for the selected planner day (and on watched sess
 
 | Input | Source | Notes |
 |---|---|---|
-| Home origin | `user_preferences.home_lat/lng` or browser GPS / manual coords | Persisted home beats ephemeral GPS for planning |
+| Home origin | **Active saved planning location** ([Saved Planning Locations](./2026-09-11-saved-planning-locations-design.md)); legacy: `home_lat/lng` or browser GPS | Active place beats ephemeral GPS |
 | Spot destination | `spots.latitude`, `spots.longitude` | |
 | Session date | Horizon Planner selected day or watchlist `session_date` | |
 | Rideable hours | Forecast + rideability rules for that day | Same pipeline as matrix |

@@ -86,6 +86,7 @@ let refreshCountdownTimer = null;
 let nextHourlyRefreshAt = 0;
 let hourlyRefreshInFlight = false;
 let lastDashboardFetchAt = 0;
+let dashboardRefreshGeneration = 0;
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -439,7 +440,12 @@ async function persistPreferences({ fullRefresh = true } = {}) {
       });
       applyFullPreferences(updated);
       if (fullRefresh) {
-        await refreshDashboard({ silent: true });
+        await refreshDashboard({
+          silent: true,
+          pending: true,
+          loadingMessage: WindmateCopy.loading.saved,
+          includeHorizonSummary: false,
+        });
       } else {
         applyRankOrderToMatrix();
       }
@@ -463,7 +469,12 @@ async function persistSportEnabled(sport, enabled) {
       body: JSON.stringify({ enabled: enabled ? 1 : 0 }),
     });
     applyFullPreferences(updated);
-    await refreshDashboard({ silent: true });
+    await refreshDashboard({
+      silent: true,
+      pending: true,
+      loadingMessage: WindmateCopy.loading.saved,
+      includeHorizonSummary: false,
+    });
   } catch (err) {
     setSettingsSaveStatus(err.message, true);
   }
@@ -471,12 +482,31 @@ async function persistSportEnabled(sport, enabled) {
 
 async function switchActiveSport(sport) {
   activeSport = sport;
-  const updated = await api('/api/preferences', {
+  WindmateSportSelector.setState({
+    profiles: sportProfiles.map((p) => ({
+      ...p,
+      display_name: SPORT_DISPLAY_NAMES[p.sport],
+    })),
+    activeSport: sport,
+    summary: horizonSummary,
+  });
+  const persistActiveSport = api('/api/preferences', {
     method: 'PUT',
     body: JSON.stringify({ active_sport: sport }),
+  })
+    .then((updated) => {
+      applyFullPreferences(updated);
+    })
+    .catch((err) => {
+      console.error(err);
+    });
+  await refreshDashboard({
+    silent: true,
+    pending: true,
+    loadingMessage: WindmateCopy.loading.switchingSport,
+    includeHorizonSummary: false,
   });
-  applyFullPreferences(updated);
-  await refreshDashboard({ silent: true });
+  await persistActiveSport;
 }
 
 function bindPreferencesAutoSave() {
@@ -866,6 +896,11 @@ function setDashboardLoading(message) {
   els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${message}</p>`;
 }
 
+function setDashboardPending(pending) {
+  document.body.classList.toggle('dashboard-pending', pending);
+  WindmateSportSelector.setBusy(pending);
+}
+
 function observationsQueryString({ bypassCache = false } = {}) {
   const profile = getActiveProfile();
   const radius = profile?.radius_km ?? getSearchRadiusKm();
@@ -949,7 +984,7 @@ async function runHourlyDashboardRefresh() {
   renderRefreshCountdownBanner();
   try {
     if (!document.hidden) {
-      await refreshDashboard({ silent: true, bypassCache: true });
+      await refreshDashboard({ silent: true, bypassCache: true, pending: true });
     }
   } finally {
     hourlyRefreshInFlight = false;
@@ -1035,28 +1070,48 @@ async function refreshLiveObservations() {
   }
 }
 
-async function refreshDashboard({ silent = false, bypassCache = false } = {}) {
+async function refreshDashboard({
+  silent = false,
+  bypassCache = false,
+  pending = false,
+  loadingMessage = null,
+  includeHorizonSummary = null,
+} = {}) {
+  const generation = ++dashboardRefreshGeneration;
   const viewingToday =
     selectedDayDate != null && selectedDayDate === WindmateForecastTime.localDateString();
   const scrollY = silent ? window.scrollY : null;
+  const showLoading = !silent || pending;
+  const fetchHorizonSummary =
+    includeHorizonSummary ?? (bypassCache || !silent);
 
-  if (!silent) {
-    setDashboardLoading(WindmateCopy.loading.dashboard);
+  if (showLoading) {
+    WindmateObservations.collapseAll();
+    setDashboardLoading(loadingMessage ?? WindmateCopy.loading.dashboard);
+    setDashboardPending(true);
   }
   try {
     await WindmateWatchlist.load();
+    if (generation !== dashboardRefreshGeneration) return;
+
     const { query, watchedQuery, refreshQuery } = observationsQueryString({ bypassCache });
+
+    const summaryRequest = fetchHorizonSummary
+      ? api(
+          `/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}${refreshQuery}`
+        ).catch(() => null)
+      : Promise.resolve(horizonSummary);
 
     const [rideRes, obsRes, summaryRes] = await Promise.all([
       api(`/api/rideability?${query}${refreshQuery}`),
       api(`/api/observations?${query}${watchedQuery}${refreshQuery}`).catch(() => ({ spots: [] })),
-      api(
-        `/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}${refreshQuery}`
-      ).catch(() => null),
+      summaryRequest,
     ]);
+    if (generation !== dashboardRefreshGeneration) return;
+
     rideabilityData = rideRes;
     observationsData = obsRes;
-    horizonSummary = summaryRes;
+    if (summaryRes != null) horizonSummary = summaryRes;
     activeSport = rideabilityData.preferences?.sport ?? activeSport;
     rideabilityData.preferences = prefsForRanking(rideabilityData.preferences);
     rankCriteriaOrder = rideabilityData.preferences.rank_criteria_order;
@@ -1079,9 +1134,14 @@ async function refreshDashboard({ silent = false, bypassCache = false } = {}) {
     lastDashboardFetchAt = Date.now();
     restoreScrollAfterSilentRefresh(scrollY);
   } catch (err) {
+    if (generation !== dashboardRefreshGeneration) return;
     const msg = WindmateCopy.errors.loadFailed(err.message);
     els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
     els.rideabilityMatrix.innerHTML = `<p class="text-red-400">${msg}</p>`;
+  } finally {
+    if (generation === dashboardRefreshGeneration && showLoading) {
+      setDashboardPending(false);
+    }
   }
 }
 
@@ -1235,7 +1295,12 @@ async function persistFavorites({ fullRefresh = true } = {}) {
   });
   applyFullPreferences(updated);
   if (fullRefresh) {
-    await refreshDashboard({ silent: true });
+    await refreshDashboard({
+      silent: true,
+      pending: true,
+      loadingMessage: WindmateCopy.loading.saved,
+      includeHorizonSummary: false,
+    });
   } else {
     applyRankOrderToMatrix();
   }
@@ -2749,7 +2814,9 @@ els.manualLocBtn.addEventListener('click', () => {
   initFavoriteToggles();
   initPlannerFullDayToggle();
   WindmateSportSelector.init(els.sportSelector, { onSwitch: switchActiveSport });
-  WindmateWatchlist.setOnChange(() => refreshDashboard({ silent: true }));
+  WindmateWatchlist.setOnChange(() =>
+    refreshDashboard({ silent: true, pending: true, includeHorizonSummary: false })
+  );
   WindmateWatchlist.setOnNavigate(goToWatchedSession);
   WindmateObservations.setAutoRefreshCallback(() => refreshLiveObservations());
   setDashboardLoading(WindmateCopy.loading.dashboard);

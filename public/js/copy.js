@@ -41,6 +41,7 @@ const WindmateCopy = {
   loading: {
     dashboard: 'Checking the forecast for you…',
     saved: 'Saved — refreshing your spots…',
+    switchingSport: 'Switching sport — updating your forecast…',
   },
 
   refreshCountdown: {

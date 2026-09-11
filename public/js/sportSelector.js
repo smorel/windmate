@@ -15,6 +15,7 @@ const WindmateSportSelector = (() => {
   let profiles = [];
   let activeSport = 'wingfoiling';
   let onSwitch = null;
+  let busy = false;
 
   function dotClass(hasOpportunity) {
     return hasOpportunity ? 'sport-dot sport-dot--green' : 'sport-dot sport-dot--gray';
@@ -108,6 +109,7 @@ const WindmateSportSelector = (() => {
 
     container.innerHTML = `${trigger}${menu}`;
     container.classList.toggle('sport-selector--open', open);
+    container.classList.toggle('sport-selector--busy', busy);
 
     if (!single) {
       const btn = container.querySelector('.sport-selector-trigger');
@@ -120,7 +122,7 @@ const WindmateSportSelector = (() => {
         opt.addEventListener('click', async (e) => {
           e.stopPropagation();
           const sport = opt.dataset.sport;
-          if (sport === activeSport) {
+          if (sport === activeSport || busy) {
             closeMenu();
             return;
           }
@@ -168,5 +170,10 @@ const WindmateSportSelector = (() => {
     return activeSport;
   }
 
-  return { init, setState, getActiveSport, closeMenu };
+  function setBusy(nextBusy) {
+    busy = Boolean(nextBusy);
+    render();
+  }
+
+  return { init, setState, getActiveSport, closeMenu, setBusy };
 })();

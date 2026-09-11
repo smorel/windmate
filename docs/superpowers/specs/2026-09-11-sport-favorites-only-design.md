@@ -3,7 +3,7 @@
 **Date:** 2026-09-11  
 **Status:** Implemented (v1)  
 **Parent:** [Windmate Design Spec](./2026-09-08-windwatch-design.md)  
-**Related:** [Per-Sport Preferences & Alerts](./2026-09-09-per-sport-preferences-alerts-design.md), [Planner Full-Day Forecast](./2026-09-11-planner-full-day-forecast-design.md), [Spot Map Picker](./2026-09-09-spot-map-picker-design.md)
+**Related:** [Per-Sport Preferences & Alerts](./2026-09-09-per-sport-preferences-alerts-design.md), [Planner Full-Day Forecast](./2026-09-11-planner-full-day-forecast-design.md), [Spot Map Picker](./2026-09-09-spot-map-picker-design.md), [Saved Planning Locations](./2026-09-11-saved-planning-locations-design.md)
 
 ## Goal
 
@@ -27,7 +27,7 @@ A **per-sport** setting limits dashboard data to favorites while **search and ma
 | Default | **Off** (`0`) — current radius + limit + out-of-radius favorites behavior |
 | Discovery | **Unchanged** — `/api/spots/search`, bbox, map picker still show the wider catalog |
 | Dashboard data | Rideability, observations, horizon planner, matrix ranking, sport-selector dots, horizon **email** cron |
-| Favorite source | That sport's `favorite_spot_ids` (not global `user_preferences.favorite_spot_ids`) |
+| Favorite source | That sport's `favorite_spot_ids` for the **active planning place** ([Saved Planning Locations](./2026-09-11-saved-planning-locations-design.md)); until that ships, `sport_profiles.favorite_spot_ids` |
 | Zero favorites when ON | **Empty dashboard** for that sport; **no** weather API calls; dedicated empty copy |
 | Enable gate | User **may** turn ON with zero favorites (empty state, not blocked in Settings) |
 | Full-day planner toggle | **No change** — global `planner_full_day_forecast`; with favorites-only, all loaded spots are favorites |

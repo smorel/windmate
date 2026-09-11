@@ -7,16 +7,30 @@ const WindmateDeparture = (() => {
   let watchDepartureGeneration = 0;
   let watchDepartureInFlight = null;
   const plannerPlanByKey = new Map();
+  const plannerMapsContextByKey = new Map();
 
   function plannerPlanCacheKey(spotId, dateStr) {
     return `${spotId}|${dateStr}`;
   }
 
-  function rememberPlannerPlan(spotId, dateStr, plan) {
+  function rememberPlannerPlan(spotId, dateStr, plan, mapsContext) {
     if (!spotId || !dateStr) return;
     const key = plannerPlanCacheKey(spotId, dateStr);
-    if (plan?.onWaterStart && plan?.onWaterEnd) plannerPlanByKey.set(key, plan);
-    else plannerPlanByKey.delete(key);
+    if (plan?.onWaterStart && plan?.onWaterEnd) {
+      plannerPlanByKey.set(key, plan);
+      const origin = mapsContext?.origin;
+      const destination = mapsContext?.destination ?? plan.destination;
+      if (origin && destination) {
+        plannerMapsContextByKey.set(key, { origin, destination });
+      }
+    } else {
+      plannerPlanByKey.delete(key);
+      plannerMapsContextByKey.delete(key);
+    }
+  }
+
+  function plannerMapsContext(spotId, dateStr) {
+    return plannerMapsContextByKey.get(plannerPlanCacheKey(spotId, dateStr)) ?? null;
   }
 
   function cachedPlannerRange(spotId, dateStr) {
@@ -66,17 +80,22 @@ const WindmateDeparture = (() => {
     const verdict = verdictForSession?.(session);
     const minHours = minRideableHoursForWatchSession(session, curveSyncContext);
     const unchanged = samePlannerPlan(prevPlan, plan) && slot.querySelector('.departure-line');
+    const mapsCtx =
+      data.origin && (data.destination ?? plan?.destination)
+        ? { origin: data.origin, destination: data.destination ?? plan.destination }
+        : plannerMapsContext(session.spot_id, session.session_date);
+    const lineData = { ...data, ...mapsCtx, plan };
 
     if (!plan || data.status === 'no_window') {
-      rememberPlannerPlan(session.spot_id, session.session_date, plan);
-      if (!unchanged) slot.innerHTML = renderLine(data, verdict, minHours);
+      rememberPlannerPlan(session.spot_id, session.session_date, plan, mapsCtx);
+      if (!unchanged) slot.innerHTML = renderLine(lineData, verdict, minHours);
       return false;
     }
 
-    rememberPlannerPlan(session.spot_id, session.session_date, plan);
+    rememberPlannerPlan(session.spot_id, session.session_date, plan, mapsCtx);
 
     if (!unchanged) {
-      slot.innerHTML = renderLine({ ...data, plan }, verdict, minHours);
+      slot.innerHTML = renderLine(lineData, verdict, minHours);
       card.querySelector(`[data-departure-group="${key}"]`)?.classList.add('has-departure-line');
       if (refreshCurve && curveSyncContext) {
         const obsEntry = curveSyncContext.obsBySpot?.get(session.spot_id);
@@ -139,6 +158,38 @@ const WindmateDeparture = (() => {
     return `${plan.driveMinutes} min drive${traffic}`;
   }
 
+  function mapsArriveByUnixSeconds(wallClockIso) {
+    const m = String(wallClockIso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return null;
+    return Math.floor(
+      Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) / 1000
+    );
+  }
+
+  function buildArriveByMapsUrl(origin, destination, arriveAtIso) {
+    if (!origin || !destination) return null;
+    if (!Number.isFinite(origin.lat) || !Number.isFinite(origin.lng)) return null;
+    if (!Number.isFinite(destination.lat) || !Number.isFinite(destination.lng)) return null;
+    const arriveUnix = mapsArriveByUnixSeconds(arriveAtIso);
+    if (arriveUnix == null) return null;
+    const o = `${origin.lat},${origin.lng}`;
+    const d = `${destination.lat},${destination.lng}`;
+    const timing = `!3m1!1e3!4m6!4m5!2m3!6e1!7e2!8j${arriveUnix}!3e0`;
+    return `https://www.google.com/maps/dir/${o}/${d}/data=${timing}`;
+  }
+
+  function mapsUrlForDeparture(data, plan) {
+    const built = buildArriveByMapsUrl(
+      data?.origin,
+      data?.destination ?? plan?.destination,
+      plan?.arriveAtSpot ?? plan?.readyAtShore
+    );
+    if (built) return built;
+    const legacy = plan?.mapsUrl;
+    if (legacy && !legacy.includes('api=1')) return legacy;
+    return null;
+  }
+
   function renderLine(data, sessionVerdict, minRideableWindowHours) {
     const plan = data?.plan;
     if (!plan || data.status === 'no_window') return '';
@@ -189,8 +240,9 @@ const WindmateDeparture = (() => {
       .filter(Boolean)
       .join('\n');
 
-    const mapsLink = plan.mapsUrl
-      ? `<a href="${escapeAttr(plan.mapsUrl)}" target="_blank" rel="noopener" class="departure-line__maps">${WindmateCopy.departure.openMaps}</a>`
+    const mapsUrl = mapsUrlForDeparture(data, plan);
+    const mapsLink = mapsUrl
+      ? `<a href="${escapeAttr(mapsUrl)}" target="_blank" rel="noopener" class="departure-line__maps">${WindmateCopy.departure.openMaps}</a>`
       : '';
 
     return `
@@ -615,7 +667,10 @@ const WindmateDeparture = (() => {
         const verdict = sessionVerdictBySpot?.get(data.spotId);
         const grid = card?.querySelector(`[data-matrix-grid="${data.spotId}"]`);
         const plan = data.plan;
-        rememberPlannerPlan(data.spotId, dateStr, plan);
+        rememberPlannerPlan(data.spotId, dateStr, plan, {
+          origin: data.origin,
+          destination: data.destination ?? plan?.destination,
+        });
         syncDepartureWindowOnGrid(grid, plan);
         slot.innerHTML = renderLine({ ...data, plan }, verdict, minRideableWindowHours);
         if (plan) {

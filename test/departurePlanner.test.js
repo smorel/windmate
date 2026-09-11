@@ -22,6 +22,8 @@ const {
   haversineDriveMinutes,
   localDepartureIsoToRfc3339,
   googleMapsTrafficEnabled,
+  mapsArriveByUnixSeconds,
+  buildMapsUrl,
 } = require('../src/services/travelTime');
 const {
   resolveModelHourAtTimeline,
@@ -423,6 +425,15 @@ describe('travelTime helpers', () => {
   it('converts local departure ISO to UTC for Google using client tz offset', () => {
     const rfc = localDepartureIsoToRfc3339('2026-09-10T17:40', 240);
     assert.equal(rfc, '2026-09-10T21:40:00.000Z');
+  });
+
+  it('encodes arrive-by wall clock for Google Maps data= URLs', () => {
+    assert.equal(mapsArriveByUnixSeconds('2026-09-11T12:10'), 1789128600);
+    const origin = { lat: 45.5017, lng: -73.5673 };
+    const dest = { lat: 45.4962554, lng: -74.1742641 };
+    const url = buildMapsUrl(origin, dest, '2026-09-11T12:10:00');
+    assert.match(url, /^https:\/\/www\.google\.com\/maps\/dir\/45\.5017,-73\.5673\//);
+    assert.ok(url.includes('!3m1!1e3!4m6!4m5!2m3!6e1!7e2!8j1789128600!3e0'));
   });
 
   it('treats blank GOOGLE_MAPS_API_KEY as traffic disabled', () => {

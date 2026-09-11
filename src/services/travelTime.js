@@ -172,11 +172,30 @@ async function getDriveDuration(db, origin, dest, departureIso, tzOffsetMinutes)
   return result;
 }
 
-function buildMapsUrl(origin, dest) {
+/**
+ * Google Maps "Arrive by" links encode wall-clock YYYY-MM-DDTHH:mm as UTC components (see 8j in data=).
+ * @param {string} wallClockIso - e.g. 2026-09-11T12:10 or 2026-09-11T12:10:00
+ */
+function mapsArriveByUnixSeconds(wallClockIso) {
+  const m = String(wallClockIso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return null;
+  return Math.floor(
+    Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) / 1000
+  );
+}
+
+function buildMapsUrl(origin, dest, arriveByWallClock) {
+  const o = `${origin.lat},${origin.lng}`;
+  const d = `${dest.lat},${dest.lng}`;
+  const arriveUnix = arriveByWallClock ? mapsArriveByUnixSeconds(arriveByWallClock) : null;
+  if (arriveUnix != null) {
+    const timing = `!3m1!1e3!4m6!4m5!2m3!6e1!7e2!8j${arriveUnix}!3e0`;
+    return `https://www.google.com/maps/dir/${o}/${d}/data=${timing}`;
+  }
   const params = new URLSearchParams({
     api: '1',
-    origin: `${origin.lat},${origin.lng}`,
-    destination: `${dest.lat},${dest.lng}`,
+    origin: o,
+    destination: d,
     travelmode: 'driving',
   });
   return `https://www.google.com/maps/dir/?${params.toString()}`;
@@ -191,5 +210,6 @@ module.exports = {
   haversineDriveMinutes,
   googleMapsTrafficEnabled,
   getDriveDuration,
+  mapsArriveByUnixSeconds,
   buildMapsUrl,
 };

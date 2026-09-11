@@ -89,11 +89,14 @@ function createDepartureRouter(db) {
         tzOffsetMinutes,
       });
 
+      const destination = { lat: spot.latitude, lng: spot.longitude };
+
       if (result.status === 'no_window') {
         return res.json({
           spotId,
           date,
           origin,
+          destination,
           minRideableWindowHours: prefs.min_rideable_window_hours,
           rigMinutes: DEFAULT_RIG_MINUTES,
           plan: null,
@@ -106,6 +109,7 @@ function createDepartureRouter(db) {
         spotId,
         date,
         origin,
+        destination,
         minRideableWindowHours: prefs.min_rideable_window_hours,
         rigMinutes: DEFAULT_RIG_MINUTES,
         plan: result.plan,

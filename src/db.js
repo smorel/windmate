@@ -192,6 +192,7 @@ function migrateDb(db) {
     );
   `);
 
+  seedPreferences(db);
   migrateSportProfiles(db);
   migrateWatchlistUniqueBySport(db);
   migrateSportFavorites(db);
@@ -368,22 +369,23 @@ function migrateSportProfiles(db) {
   for (const sport of VALID_SPORTS) {
     const defaults = SPORT_DEFAULTS[sport];
     const isActive = sport === activeSport;
+    const fromLegacy = isActive && legacy;
     insert.run(
       sport,
-      isActive ? legacy.min_wind_knots : defaults.min_wind_knots,
-      isActive ? legacy.max_gust_knots : defaults.max_gust_knots,
-      isActive ? legacy.min_air_temp_c : defaults.min_air_temp_c,
-      isActive ? legacy.min_water_temp_c : defaults.min_water_temp_c,
-      isActive ? (legacy.offshore_wind_ok ? 1 : 0) : (defaults.offshore_wind_ok ? 1 : 0),
+      fromLegacy ? legacy.min_wind_knots : defaults.min_wind_knots,
+      fromLegacy ? legacy.max_gust_knots : defaults.max_gust_knots,
+      fromLegacy ? legacy.min_air_temp_c : defaults.min_air_temp_c,
+      fromLegacy ? legacy.min_water_temp_c : defaults.min_water_temp_c,
+      fromLegacy ? (legacy.offshore_wind_ok ? 1 : 0) : (defaults.offshore_wind_ok ? 1 : 0),
       SPORT_WAVE_DEFAULTS[sport] ?? 'flat',
       null,
-      isActive ? parseSearchRadiusKm(legacy.radius_km) : DEFAULT_SEARCH_RADIUS_KM,
-      isActive
+      fromLegacy ? parseSearchRadiusKm(legacy.radius_km) : DEFAULT_SEARCH_RADIUS_KM,
+      fromLegacy
         ? parseMinRideableWindowHours(legacy.min_rideable_window_hours)
         : parseMinRideableWindowHours(2),
       JSON.stringify(
         parseRankCriteriaOrder(
-          isActive ? legacy.rank_criteria_order : DEFAULT_RANK_ORDER_BY_SPORT[sport]
+          fromLegacy ? legacy.rank_criteria_order : DEFAULT_RANK_ORDER_BY_SPORT[sport]
         )
       ),
       JSON.stringify(DEFAULT_ALERT_SCHEDULE_BY_SPORT[sport])

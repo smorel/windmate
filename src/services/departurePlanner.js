@@ -1,7 +1,7 @@
 const { pickBestQualifyingWindow, buildConsensusHours, getDayHours } = require('./sessionRank');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 const { computeSessionWarnings } = require('./weatherHazards');
-const { getDriveDuration, buildMapsUrl } = require('./travelTime');
+const { getDriveDuration, buildMapsUrl, googleMapsTrafficEnabled } = require('./travelTime');
 const {
   formatForecastClock,
   subtractForecastMinutes,
@@ -137,7 +137,10 @@ function pickDepartureQualifyingWindow(
   return pick;
 }
 
-async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs }) {
+async function buildDeparturePlan(
+  db,
+  { origin, spot, dateStr, rideEntry, prefs, tzOffsetMinutes }
+) {
   const timelineHours = getDayHours(rideEntry, dateStr);
   const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours);
   const dest = { lat: spot.latitude, lng: spot.longitude };
@@ -145,41 +148,65 @@ async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs 
   const bufferMinutes = DEFAULT_DEPARTURE_BUFFER_MINUTES;
   const minWindowHours = parseMinRideableWindowHours(prefs.min_rideable_window_hours);
   const asOf = new Date();
-  const nowForPick = dateStr === localDateString(asOf) ? asOf : undefined;
+  const trafficAware = googleMapsTrafficEnabled();
+  const nowForPick = trafficAware && dateStr === localDateString(asOf) ? asOf : undefined;
   const pickOptions = {
     rigMinutes,
     bufferMinutes,
     now: nowForPick,
   };
 
-  let drive = await getDriveDuration(db, origin, dest, bootstrapDepartureIso(dateStr, asOf));
-  let windowPick = pickDepartureQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
-    ...pickOptions,
-    driveMinutes: drive.driveMinutes,
-  });
-
-  for (let round = 0; round < 2 && windowPick; round += 1) {
-    const { onWaterEnd, rideableHours } = trimWindowEndForHazards(dayHours, windowPick.run, prefs);
-    if (rideableHours < minWindowHours) {
-      windowPick = null;
-      break;
+  const pickWindow = (driveMinutes) => {
+    if (!trafficAware) {
+      return pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
     }
-
-    const arriveAtSpot = subtractForecastMinutes(windowPick.run.start, rigMinutes);
-    const leaveGuess = subtractForecastMinutes(arriveAtSpot, drive.driveMinutes);
-    const driveAtLeave = await getDriveDuration(db, origin, dest, leaveGuess);
-    const nextPick = pickDepartureQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
+    return pickDepartureQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
       ...pickOptions,
-      driveMinutes: driveAtLeave.driveMinutes,
+      driveMinutes,
     });
+  };
 
-    const sameDrive = driveAtLeave.driveMinutes === drive.driveMinutes;
-    const sameWindow =
-      nextPick &&
-      hourTimeKey(nextPick.run.start) === hourTimeKey(windowPick.run.start);
-    drive = driveAtLeave;
-    if (nextPick) windowPick = nextPick;
-    if (sameDrive && sameWindow) break;
+  let drive = await getDriveDuration(
+    db,
+    origin,
+    dest,
+    bootstrapDepartureIso(dateStr, asOf),
+    tzOffsetMinutes
+  );
+  let windowPick = pickWindow(drive.driveMinutes);
+
+  if (trafficAware) {
+    const maxRounds = nowForPick ? 4 : 2;
+    for (let round = 0; round < maxRounds && windowPick; round += 1) {
+      const { rideableHours } = trimWindowEndForHazards(dayHours, windowPick.run, prefs);
+      if (rideableHours < minWindowHours) {
+        windowPick = null;
+        break;
+      }
+
+      const arriveAtSpot = subtractForecastMinutes(windowPick.run.start, rigMinutes);
+      const leaveGuess = subtractForecastMinutes(arriveAtSpot, drive.driveMinutes);
+      const driveAtLeave = await getDriveDuration(db, origin, dest, leaveGuess, tzOffsetMinutes);
+      const nextPick = pickWindow(driveAtLeave.driveMinutes);
+
+      const sameDrive = driveAtLeave.driveMinutes === drive.driveMinutes;
+      const sameWindow =
+        nextPick &&
+        hourTimeKey(nextPick.run.start) === hourTimeKey(windowPick.run.start);
+      drive = driveAtLeave;
+      if (nextPick) windowPick = nextPick;
+      if (sameDrive && sameWindow) break;
+    }
+  }
+
+  if (!windowPick) {
+    const fallback = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
+    if (fallback) {
+      const trimmed = trimWindowEndForHazards(dayHours, fallback.run, prefs);
+      if (trimmed.rideableHours >= minWindowHours) {
+        windowPick = fallback;
+      }
+    }
   }
 
   if (!windowPick) {
@@ -191,7 +218,8 @@ async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs 
 
   const { run, windowScore, topReasons, sessionWindowHours } = windowPick;
   const resolvedMinHours = sessionWindowHours ?? minWindowHours;
-  const { onWaterEnd, rideableHours } = trimWindowEndForHazards(dayHours, run, prefs);
+  let trim = trimWindowEndForHazards(dayHours, run, prefs);
+  let { onWaterEnd, rideableHours } = trim;
 
   if (rideableHours < resolvedMinHours) {
     return {
@@ -200,14 +228,19 @@ async function buildDeparturePlan(db, { origin, spot, dateStr, rideEntry, prefs 
     };
   }
 
-  const onWaterStart = run.start;
-  const arriveAtSpot = subtractForecastMinutes(onWaterStart, rigMinutes);
-  const leaveBy = subtractForecastMinutes(
+  let onWaterStart = run.start;
+  let arriveAtSpot = subtractForecastMinutes(onWaterStart, rigMinutes);
+  let leaveBy = subtractForecastMinutes(
     subtractForecastMinutes(arriveAtSpot, drive.driveMinutes),
     bufferMinutes
   );
 
-  const status = resolveDepartureStatus(dateStr, leaveBy, onWaterStart, onWaterEnd);
+  let status = resolveDepartureStatus(dateStr, leaveBy, onWaterStart, onWaterEnd);
+
+  if (status === 'leave_now') {
+    const departNowIso = bootstrapDepartureIso(dateStr, asOf);
+    arriveAtSpot = addForecastMinutes(departNowIso, drive.driveMinutes);
+  }
 
   const plan = {
     leaveBy: `${leaveBy}:00`,

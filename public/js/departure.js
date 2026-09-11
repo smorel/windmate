@@ -1,11 +1,22 @@
 /** Departure planner — leave-by times on spot cards */
 const WindmateDeparture = (() => {
+  const SESSION_DAY_REFRESH_MS = 10 * 60 * 1000;
+  let sessionDayRefreshTimer = null;
+  let sessionDayRefreshHandler = null;
+  let matrixDepartureGeneration = 0;
+  let watchDepartureGeneration = 0;
+
+  function clientTzOffsetMinutes() {
+    return String(new Date().getTimezoneOffset());
+  }
+
   async function fetchPlan(spotId, date, lat, lng, sport) {
     const params = new URLSearchParams({
       spotId,
       date,
       lat: String(lat),
       lng: String(lng),
+      tzOffset: clientTzOffsetMinutes(),
     });
     if (sport) params.set('sport', sport);
 
@@ -437,9 +448,33 @@ const WindmateDeparture = (() => {
     return `watch-${sessionId}`;
   }
 
+  function clearSessionDayRefresh() {
+    if (sessionDayRefreshTimer) {
+      clearInterval(sessionDayRefreshTimer);
+      sessionDayRefreshTimer = null;
+    }
+    if (sessionDayRefreshHandler) {
+      document.removeEventListener('visibilitychange', sessionDayRefreshHandler);
+      sessionDayRefreshHandler = null;
+    }
+  }
+
+  function scheduleSessionDayRefresh(isSessionDay, reloadFn) {
+    clearSessionDayRefresh();
+    if (!isSessionDay || !reloadFn) return;
+
+    sessionDayRefreshHandler = () => {
+      if (document.visibilityState === 'visible') reloadFn();
+    };
+    document.addEventListener('visibilitychange', sessionDayRefreshHandler);
+    sessionDayRefreshTimer = setInterval(reloadFn, SESSION_DAY_REFRESH_MS);
+  }
+
   async function loadForMatrix(container, spotIds, dateStr, lat, lng, sport, sessionVerdictBySpot) {
     if (!container || !spotIds.length || !dateStr) return;
 
+    const loadGeneration = ++matrixDepartureGeneration;
+    clearSessionDayRefresh();
     untrackContainer(container);
 
     for (const spotId of spotIds) {
@@ -453,26 +488,48 @@ const WindmateDeparture = (() => {
       )
     );
 
-    for (const data of results) {
-      if (!data?.spotId) continue;
-      const card = container.querySelector(`[data-spot-id="${data.spotId}"]`);
-      const slot = card?.querySelector(`[data-departure-for="${data.spotId}"]`);
-      if (!slot) continue;
-      const verdict = sessionVerdictBySpot?.get(data.spotId);
-      const grid = card?.querySelector(`[data-matrix-grid="${data.spotId}"]`);
-      const plan = data.plan;
-      syncDepartureWindowOnGrid(grid, plan);
-      slot.innerHTML = renderLine({ ...data, plan }, verdict);
-      if (plan) {
-        trackDepartureStroke(container, card, data.spotId, plan, 'matrix');
-        scheduleDepartureStroke(card, data.spotId, plan, 'matrix');
+    const applyResults = (batch) => {
+      if (loadGeneration !== matrixDepartureGeneration) return;
+      for (const data of batch) {
+        if (!data?.spotId) continue;
+        const card = container.querySelector(`[data-spot-id="${data.spotId}"]`);
+        const slot = card?.querySelector(`[data-departure-for="${data.spotId}"]`);
+        if (!slot) continue;
+        const verdict = sessionVerdictBySpot?.get(data.spotId);
+        const grid = card?.querySelector(`[data-matrix-grid="${data.spotId}"]`);
+        const plan = data.plan;
+        syncDepartureWindowOnGrid(grid, plan);
+        slot.innerHTML = renderLine({ ...data, plan }, verdict);
+        if (plan) {
+          trackDepartureStroke(container, card, data.spotId, plan, 'matrix');
+          scheduleDepartureStroke(card, data.spotId, plan, 'matrix');
+        }
       }
+    };
+
+    applyResults(results);
+
+    const isSessionDay =
+      dateStr === WindmateForecastTime.localDateString();
+    const needsTrafficRefresh = results.some((data) => data?.plan?.driveSource === 'google');
+    if (isSessionDay && needsTrafficRefresh && loadGeneration === matrixDepartureGeneration) {
+      const reload = () => {
+        if (loadGeneration !== matrixDepartureGeneration) return;
+        Promise.all(
+          spotIds.map((spotId) =>
+            fetchPlan(spotId, dateStr, lat, lng, sport).catch(() => null)
+          )
+        ).then(applyResults);
+      };
+      scheduleSessionDayRefresh(true, reload);
     }
   }
 
   async function loadForWatchlist(container, sessions, lat, lng, verdictForSession) {
     if (!container || !sessions?.length || lat == null || lng == null) return;
 
+    const loadGeneration = ++watchDepartureGeneration;
+    clearSessionDayRefresh();
     untrackContainer(container);
 
     for (const session of sessions) {
@@ -487,19 +544,41 @@ const WindmateDeparture = (() => {
       )
     );
 
-    for (let i = 0; i < sessions.length; i++) {
-      const session = sessions[i];
-      const data = results[i];
-      const key = watchDepartureKey(session.id);
-      const card = container.querySelector(`[data-watch-id="${session.id}"]`);
-      const slot = card?.querySelector(`[data-departure-for="${key}"]`);
-      if (!slot) continue;
-      const verdict = verdictForSession?.(session);
-      const plan = data?.plan;
-      slot.innerHTML = renderLine(plan ? { ...data, plan } : data, verdict);
-      if (plan) {
-        card.querySelector(`[data-departure-group="${key}"]`)?.classList.add('has-departure-line');
+    const applyWatchResults = (batch) => {
+      if (loadGeneration !== watchDepartureGeneration) return;
+      for (let i = 0; i < sessions.length; i++) {
+        const session = sessions[i];
+        const data = batch[i];
+        const key = watchDepartureKey(session.id);
+        const card = container.querySelector(`[data-watch-id="${session.id}"]`);
+        const slot = card?.querySelector(`[data-departure-for="${key}"]`);
+        if (!slot) continue;
+        const verdict = verdictForSession?.(session);
+        const plan = data?.plan;
+        slot.innerHTML = renderLine(plan ? { ...data, plan } : data, verdict);
+        if (plan) {
+          card.querySelector(`[data-departure-group="${key}"]`)?.classList.add('has-departure-line');
+        }
       }
+    };
+
+    applyWatchResults(results);
+
+    const today = WindmateForecastTime.localDateString();
+    const hasSessionToday = sessions.some((s) => s.session_date === today);
+    const needsTrafficRefresh = results.some((data) => data?.plan?.driveSource === 'google');
+    if (hasSessionToday && needsTrafficRefresh && loadGeneration === watchDepartureGeneration) {
+      const reload = () => {
+        if (loadGeneration !== watchDepartureGeneration) return;
+        Promise.all(
+          sessions.map((session) =>
+            fetchPlan(session.spot_id, session.session_date, lat, lng, session.sport).catch(
+              () => null
+            )
+          )
+        ).then(applyWatchResults);
+      };
+      scheduleSessionDayRefresh(true, reload);
     }
   }
 

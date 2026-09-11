@@ -1521,6 +1521,19 @@ function isFarFavoritesOnlyHorizonDay(spots, dateStr, prefs, radiusKm) {
   return anyFarWindow && !anyPlannedWindow;
 }
 
+/** True when an in-radius favorite has rideable wind on this day. */
+function isPlannedFavoriteHorizonDay(spots, dateStr, prefs, radiusKm, favoriteSpotIds) {
+  const favorites = new Set(favoriteSpotIds ?? []);
+  if (favorites.size === 0) return false;
+  for (const entry of spots) {
+    const id = entry.spot?.id;
+    if (!id || !favorites.has(id)) continue;
+    if (!isPlannedHorizonSpot(entry, radiusKm)) continue;
+    if (getConsensusRideableHours(entry, dateStr, prefs) > 0) return true;
+  }
+  return false;
+}
+
 function renderHorizonFarCuriosityBlock() {
   const line = WindmateCopy.horizon.farAwayCuriosity;
   const title = WindmateCopy.horizon.farAwayCuriosityTitle;
@@ -1670,6 +1683,16 @@ function renderHorizonPlanner(data) {
       const todayTag = isTodayCard
         ? '<span class="text-[10px] text-emerald-400 font-medium">Today</span>'
         : '';
+      const favoriteRideableDay = isPlannedFavoriteHorizonDay(
+        data.spots,
+        day.date,
+        data.preferences,
+        radiusKm,
+        favoriteSpotIds
+      );
+      const favoriteDayStar = favoriteRideableDay
+        ? `<span class="horizon-day-favorite-star" role="img" aria-label="${escapeHtml(WindmateCopy.horizon.favoriteRideableTitle)}" title="${escapeHtml(WindmateCopy.horizon.favoriteRideableTitle)}">★</span>`
+        : '';
 
       let horizonStickers;
       let forecastBlock;
@@ -1717,7 +1740,10 @@ function renderHorizonPlanner(data) {
             <div class="text-xs text-slate-400 uppercase">${dayName}</div>
             ${todayTag}
           </div>
-          <div class="text-lg font-semibold text-white">${monthDay}</div>
+          <div class="flex items-center gap-1.5">
+            <div class="text-lg font-semibold text-white">${monthDay}</div>
+            ${favoriteDayStar}
+          </div>
           ${forecastBlock}
           ${rideableFooter}
         </button>`;

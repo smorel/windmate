@@ -176,6 +176,13 @@ body.refresh-countdown-active .horizon-planner-sticky {
   margin-bottom: 0;
 }
 
+.horizon-day-favorite-star {
+  font-size: 1rem;
+  line-height: 1;
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
 .matrix-hour-track {
   position: relative;
   min-width: 0;

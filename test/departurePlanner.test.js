@@ -17,7 +17,12 @@ const {
 } = require('../src/services/departurePlanner');
 const { localDateString, earliestFeasibleOnWaterStartKey } = require('../src/utils/forecastTime');
 const { subtractForecastMinutes } = require('../src/utils/forecastTime');
-const { roundDepartureBucket, haversineDriveMinutes } = require('../src/services/travelTime');
+const {
+  roundDepartureBucket,
+  haversineDriveMinutes,
+  localDepartureIsoToRfc3339,
+  googleMapsTrafficEnabled,
+} = require('../src/services/travelTime');
 const {
   resolveModelHourAtTimeline,
   findNearestModelHour,
@@ -413,6 +418,21 @@ describe('travelTime helpers', () => {
     const result = haversineDriveMinutes(origin, dest);
     assert.ok(result.driveMinutes >= 30);
     assert.equal(result.source, 'haversine');
+  });
+
+  it('converts local departure ISO to UTC for Google using client tz offset', () => {
+    const rfc = localDepartureIsoToRfc3339('2026-09-10T17:40', 240);
+    assert.equal(rfc, '2026-09-10T21:40:00.000Z');
+  });
+
+  it('treats blank GOOGLE_MAPS_API_KEY as traffic disabled', () => {
+    const prev = process.env.GOOGLE_MAPS_API_KEY;
+    delete process.env.GOOGLE_MAPS_API_KEY;
+    assert.equal(googleMapsTrafficEnabled(), false);
+    process.env.GOOGLE_MAPS_API_KEY = '  ';
+    assert.equal(googleMapsTrafficEnabled(), false);
+    if (prev === undefined) delete process.env.GOOGLE_MAPS_API_KEY;
+    else process.env.GOOGLE_MAPS_API_KEY = prev;
   });
 });
 

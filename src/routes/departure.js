@@ -64,6 +64,12 @@ function createDepartureRouter(db) {
     const prefs = getPreferences(db, req.query.sport);
     if (!prefs) return res.status(500).json({ error: 'Preferences not configured' });
 
+    const tzRaw = req.query.tzOffset;
+    const tzOffsetMinutes =
+      tzRaw != null && tzRaw !== '' && Number.isFinite(Number(tzRaw))
+        ? Number(tzRaw)
+        : undefined;
+
     const origin = {
       lat,
       lng,
@@ -80,6 +86,7 @@ function createDepartureRouter(db) {
         dateStr: date,
         rideEntry,
         prefs,
+        tzOffsetMinutes,
       });
 
       if (result.status === 'no_window') {

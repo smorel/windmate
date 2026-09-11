@@ -2,6 +2,10 @@ const { haversineKm } = require('../utils/geo');
 const { getTravelTimeCache, upsertTravelTimeCache } = require('../db');
 
 const TRAVEL_CACHE_TTL_MS = parseInt(process.env.TRAVEL_CACHE_TTL_MS ?? '1800000', 10);
+const SESSION_DAY_TRAVEL_CACHE_TTL_MS = parseInt(
+  process.env.SESSION_DAY_TRAVEL_CACHE_TTL_MS ?? '300000',
+  10
+);
 const HAVERSINE_SPEED_KMH = parseFloat(process.env.HAVERSINE_DRIVE_SPEED_KMH ?? '55');
 const FUTURE_DEPARTURE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -27,11 +31,35 @@ function cacheKey(origin, dest, departureIso) {
   };
 }
 
-function cacheTtlMs(departureIso) {
-  const departureMs = Date.parse(`${departureIso}:00`);
-  if (Number.isNaN(departureMs)) return TRAVEL_CACHE_TTL_MS;
+function cacheTtlMs(departureIso, tzOffsetMinutes) {
+  const departureMs = localDepartureIsoToEpochMs(departureIso, tzOffsetMinutes);
+  if (departureMs == null) return TRAVEL_CACHE_TTL_MS;
   const delta = departureMs - Date.now();
+  if (delta <= 3 * 60 * 60 * 1000) return SESSION_DAY_TRAVEL_CACHE_TTL_MS;
   return delta <= 24 * 60 * 60 * 1000 ? TRAVEL_CACHE_TTL_MS : FUTURE_DEPARTURE_TTL_MS;
+}
+
+/**
+ * @param {string} departureIso - Local calendar time YYYY-MM-DDTHH:mm (no zone)
+ * @param {number|undefined} tzOffsetMinutes - Same as `Date.getTimezoneOffset()` (e.g. 240 for EDT)
+ */
+function localDepartureIsoToEpochMs(departureIso, tzOffsetMinutes) {
+  const m = String(departureIso).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return null;
+  if (tzOffsetMinutes == null || !Number.isFinite(tzOffsetMinutes)) {
+    const ms = Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00`);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  return (
+    Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) +
+    tzOffsetMinutes * 60 * 1000
+  );
+}
+
+function localDepartureIsoToRfc3339(departureIso, tzOffsetMinutes) {
+  const ms = localDepartureIsoToEpochMs(departureIso, tzOffsetMinutes);
+  if (ms == null) return null;
+  return new Date(ms).toISOString();
 }
 
 function haversineDriveMinutes(origin, dest) {
@@ -53,11 +81,18 @@ function parseDurationSeconds(duration) {
   return null;
 }
 
-async function fetchGoogleDriveMinutes(origin, dest, departureIso) {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) return null;
+function googleMapsTrafficEnabled() {
+  const key = process.env.GOOGLE_MAPS_API_KEY;
+  return typeof key === 'string' && key.trim().length > 0;
+}
 
-  const departureTime = `${departureIso}:00Z`;
+async function fetchGoogleDriveMinutes(origin, dest, departureIso, tzOffsetMinutes) {
+  if (!googleMapsTrafficEnabled()) return null;
+
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY.trim();
+
+  const departureTime = localDepartureIsoToRfc3339(departureIso, tzOffsetMinutes);
+  if (!departureTime) return null;
   const body = {
     origin: {
       location: { latLng: { latitude: origin.lat, longitude: origin.lng } },
@@ -100,10 +135,10 @@ async function fetchGoogleDriveMinutes(origin, dest, departureIso) {
   };
 }
 
-async function getDriveDuration(db, origin, dest, departureIso) {
+async function getDriveDuration(db, origin, dest, departureIso, tzOffsetMinutes) {
   const key = cacheKey(origin, dest, departureIso);
   const cached = getTravelTimeCache(db, key);
-  if (cached && Date.now() - cached.fetched_at < cacheTtlMs(departureIso)) {
+  if (cached && Date.now() - cached.fetched_at < cacheTtlMs(departureIso, tzOffsetMinutes)) {
     return {
       driveMinutes: Math.max(1, Math.round(cached.duration_seconds / 60)),
       distanceM: cached.distance_m,
@@ -113,10 +148,12 @@ async function getDriveDuration(db, origin, dest, departureIso) {
   }
 
   let result = null;
-  try {
-    result = await fetchGoogleDriveMinutes(origin, dest, departureIso);
-  } catch (err) {
-    console.warn('[travelTime] Google Routes failed:', err.message);
+  if (googleMapsTrafficEnabled()) {
+    try {
+      result = await fetchGoogleDriveMinutes(origin, dest, departureIso, tzOffsetMinutes);
+    } catch (err) {
+      console.warn('[travelTime] Google Routes failed:', err.message);
+    }
   }
 
   if (!result) {
@@ -149,7 +186,10 @@ module.exports = {
   roundCoord,
   roundDepartureBucket,
   cacheKey,
+  localDepartureIsoToEpochMs,
+  localDepartureIsoToRfc3339,
   haversineDriveMinutes,
+  googleMapsTrafficEnabled,
   getDriveDuration,
   buildMapsUrl,
 };

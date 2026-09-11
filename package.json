@@ -10,7 +10,7 @@
     "assets:sync": "node scripts/sync-assets.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20 <23"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",

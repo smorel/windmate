@@ -2,10 +2,11 @@
 const WindmateSpotMapPicker = (() => {
   const MONTREAL = { lat: 45.5017, lng: -73.5673 };
   const BBOX_DEBOUNCE_MS = 300;
-  const DEFAULT_ZOOM = 10;
-
   let map = null;
   let markersLayer = null;
+  let homeLayer = null;
+  let userLocationMarker = null;
+  let radiusCircle = null;
   let tempMarker = null;
   let bboxTimer = null;
   let bboxRequestId = 0;
@@ -64,6 +65,88 @@ const WindmateSpotMapPicker = (() => {
     if (els.panel) {
       els.panel.classList.toggle('hidden', !open);
       els.panel.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+  }
+
+  function buildUserLocationIcon() {
+    if (typeof L === 'undefined') return null;
+    return L.divIcon({
+      className: 'spot-map-user-location',
+      html: '<span class="spot-map-user-location__dot"></span>',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+  }
+
+  function resolveHomeCenter() {
+    const home = opts.getHome?.();
+    if (home?.lat != null && home?.lng != null) {
+      return { lat: home.lat, lng: home.lng };
+    }
+    return null;
+  }
+
+  function getRadiusMeters() {
+    const km = opts.getRadiusKm?.();
+    const n = Number(km);
+    if (!Number.isFinite(n) || n <= 0) return 80_000;
+    return n * 1000;
+  }
+
+  /** Bounds that contain the search-radius circle (no map projection required). */
+  function boundsForHomeRadius(lat, lng, radiusM) {
+    return L.latLng(lat, lng).toBounds(radiusM).pad(0.08);
+  }
+
+  function updateHomeOverlay({ refit = false } = {}) {
+    if (!map || !homeLayer || typeof L === 'undefined') return;
+
+    const center = resolveHomeCenter();
+    if (!center) {
+      if (userLocationMarker) {
+        homeLayer.removeLayer(userLocationMarker);
+        userLocationMarker = null;
+      }
+      if (radiusCircle) {
+        homeLayer.removeLayer(radiusCircle);
+        radiusCircle = null;
+      }
+      return;
+    }
+
+    const latLng = [center.lat, center.lng];
+    const radiusM = getRadiusMeters();
+
+    if (!radiusCircle) {
+      radiusCircle = L.circle(latLng, {
+        radius: radiusM,
+        color: '#3b82f6',
+        weight: 2,
+        opacity: 0.65,
+        fillColor: '#3b82f6',
+        fillOpacity: 0.12,
+        interactive: false,
+      });
+      homeLayer.addLayer(radiusCircle);
+    } else {
+      radiusCircle.setLatLng(latLng);
+      radiusCircle.setRadius(radiusM);
+    }
+
+    if (!userLocationMarker) {
+      userLocationMarker = L.marker(latLng, {
+        icon: buildUserLocationIcon(),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 500,
+      });
+      homeLayer.addLayer(userLocationMarker);
+    } else {
+      userLocationMarker.setLatLng(latLng);
+    }
+
+    if (refit) {
+      map.fitBounds(boundsForHomeRadius(center.lat, center.lng, radiusM));
     }
   }
 
@@ -147,6 +230,7 @@ const WindmateSpotMapPicker = (() => {
       maxZoom: 20,
     }).addTo(map);
 
+    homeLayer = L.layerGroup().addTo(map);
     markersLayer = L.layerGroup().addTo(map);
     map.on('moveend', scheduleBboxFetch);
     map.on('dblclick', onMapDblClick);
@@ -165,45 +249,15 @@ const WindmateSpotMapPicker = (() => {
       map.remove();
       map = null;
       markersLayer = null;
-    }
-  }
-
-  async function loadFavoriteCoords() {
-    const sport = opts.getActiveSport?.() ?? '';
-    try {
-      const data = await api(`/api/spots/favorites?sport=${encodeURIComponent(sport)}`);
-      return (data.spots ?? []).filter((s) => s.latitude != null && s.longitude != null);
-    } catch {
-      return [];
+      homeLayer = null;
+      userLocationMarker = null;
+      radiusCircle = null;
     }
   }
 
   async function setInitialView() {
     if (!map) return;
-
-    const favorites = await loadFavoriteCoords();
-    if (favorites.length >= 1) {
-      const bounds = L.latLngBounds(favorites.map((s) => [s.latitude, s.longitude]));
-      map.fitBounds(bounds.pad(0.15), { maxZoom: 11 });
-      return;
-    }
-
-    const home = opts.getHome?.();
-    if (home?.lat != null && home?.lng != null) {
-      map.setView([home.lat, home.lng], DEFAULT_ZOOM);
-      return;
-    }
-
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => map.setView([pos.coords.latitude, pos.coords.longitude], DEFAULT_ZOOM),
-        () => map.setView([MONTREAL.lat, MONTREAL.lng], DEFAULT_ZOOM),
-        { timeout: 8000, maximumAge: 60000 }
-      );
-      return;
-    }
-
-    map.setView([MONTREAL.lat, MONTREAL.lng], DEFAULT_ZOOM);
+    updateHomeOverlay({ refit: true });
   }
 
   function clearTempMarker() {
@@ -336,9 +390,11 @@ const WindmateSpotMapPicker = (() => {
 
     if (!initMap()) return;
 
-    await setInitialView();
-    await refreshMarkers();
-    requestAnimationFrame(() => map?.invalidateSize());
+    requestAnimationFrame(() => {
+      map?.invalidateSize();
+      setInitialView();
+      refreshMarkers();
+    });
   }
 
   function closePanel() {
@@ -458,6 +514,7 @@ const WindmateSpotMapPicker = (() => {
     flyTo,
     fitBounds: fitSpots,
     refreshMarkers,
+    updateHomeOverlay,
     focusSpot,
     handleSearchEnter,
     showToast,

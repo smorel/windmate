@@ -923,6 +923,9 @@ body.modal-open {
 }
 
 .spot-map-panel {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
   margin-top: 0.625rem;
   border: 1px solid #1a2235;
   border-radius: 0.75rem;
@@ -988,6 +991,37 @@ body.modal-open {
   }
 }
 
+.spot-map-user-location {
+  background: transparent;
+  border: none;
+}
+
+.spot-map-user-location__dot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 1px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #eff6ff;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+  animation: spot-map-user-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes spot-map-user-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.88);
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.15);
+  }
+}
+
 .spot-map-marker {
   display: flex;
   align-items: center;
@@ -1016,9 +1050,43 @@ body.modal-open {
   margin-top: -0.75rem !important;
 }
 
-.leaflet-container {
+/* Leaflet defaults use z-index 400+; keep picker map below modals (z-index 50+). */
+.spot-map-container .leaflet-container {
   font-family: inherit;
   background: #0b0f19;
+  z-index: 0;
+}
+
+.spot-map-container .leaflet-pane {
+  z-index: 1;
+}
+
+.spot-map-container .leaflet-tile-pane {
+  z-index: 1;
+}
+
+.spot-map-container .leaflet-overlay-pane {
+  z-index: 2;
+}
+
+.spot-map-container .leaflet-shadow-pane {
+  z-index: 3;
+}
+
+.spot-map-container .leaflet-marker-pane {
+  z-index: 4;
+}
+
+.spot-map-container .leaflet-tooltip-pane {
+  z-index: 5;
+}
+
+.spot-map-container .leaflet-popup-pane {
+  z-index: 6;
+}
+
+.spot-map-container .leaflet-control {
+  z-index: 7;
 }
 
 .spot-create-duplicate {

@@ -102,6 +102,9 @@ async function api(path, options = {}) {
 function setLocation(lat, lng, label) {
   userLocation = { lat, lng };
   els.locationStatus.textContent = label ?? WindmateCopy.geo.yourLocation(lat, lng);
+  if (WindmateSpotMapPicker.isOpen()) {
+    WindmateSpotMapPicker.updateHomeOverlay({ refit: true });
+  }
   refreshDashboard();
 }
 
@@ -479,7 +482,12 @@ async function switchActiveSport(sport) {
 function bindPreferencesAutoSave() {
   for (const input of [els.searchRadius, els.minWind, els.maxGust, els.minAir, els.minWater, els.minRideableWindow]) {
     if (!input) continue;
-    input.addEventListener('input', () => schedulePreferencesSave({ fullRefresh: true }));
+    input.addEventListener('input', () => {
+      if (input === els.searchRadius && WindmateSpotMapPicker.isOpen()) {
+        WindmateSpotMapPicker.updateHomeOverlay();
+      }
+      schedulePreferencesSave({ fullRefresh: true });
+    });
     input.addEventListener('change', () => schedulePreferencesSave({ fullRefresh: true, delayMs: 0 }));
   }
   els.offshoreWind?.addEventListener('change', () => {
@@ -560,6 +568,9 @@ function loadSettingsFormForSport(sport) {
   els.minAir.value = profile.min_air_temp_c ?? '';
   els.minWater.value = profile.min_water_temp_c ?? '';
   if (els.searchRadius) els.searchRadius.value = profile.radius_km ?? 80;
+  if (WindmateSpotMapPicker.isOpen()) {
+    WindmateSpotMapPicker.updateHomeOverlay();
+  }
   if (els.minRideableWindow) {
     els.minRideableWindow.value = getMinRideableWindowHours(profile);
   }
@@ -1369,6 +1380,7 @@ function initSpotMapPicker() {
     getFavoriteIds: () => favoriteSpotIds,
     getActiveSport: () => activeSport,
     getHome: () => userLocation,
+    getRadiusKm: () => getSearchRadiusKm(),
     onFavorite: favoriteFromMap,
     onCreated: favoriteCreatedSpot,
   });

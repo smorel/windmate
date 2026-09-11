@@ -2,7 +2,7 @@ const express = require('express');
 const { getAllSpots, getPreferences } = require('../db');
 const { fetchForecast } = require('../services/weather');
 const { fetchSpotObservations } = require('../services/observations');
-const { selectDashboardSpots } = require('../utils/spotSelection');
+const { selectSpotsForProfile } = require('../utils/spotSelection');
 
 function createObservationsRouter(db) {
   const router = express.Router();
@@ -32,13 +32,13 @@ function createObservationsRouter(db) {
     );
     const skipCache = req.query.refresh === '1' || req.query.refresh === 'true';
 
-    const nearbySpots = selectDashboardSpots(
+    const nearbySpots = selectSpotsForProfile(
       getAllSpots(db),
       lat,
       lng,
-      effectiveRadius,
+      prefs,
       limit,
-      prefs.favorite_spot_ids
+      effectiveRadius
     );
 
     if (!nearbySpots.length) {

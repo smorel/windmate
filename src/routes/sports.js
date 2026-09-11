@@ -1,7 +1,7 @@
 const express = require('express');
 const { getGlobalPreferences, getSportProfiles } = require('../db');
 const { getAllSpots } = require('../db');
-const { selectDashboardSpots } = require('../utils/spotSelection');
+const { selectSpotsForProfile } = require('../utils/spotSelection');
 const { SPORT_COLORS, SPORT_DISPLAY_NAMES } = require('../utils/sports');
 const { hasHorizonOpportunity, buildSpotRideabilityEntry } = require('../services/alertQualification');
 
@@ -24,13 +24,12 @@ function createSportsRouter(db) {
       const sports = [];
 
       for (const profile of profiles) {
-        const spots = selectDashboardSpots(
+        const spots = selectSpotsForProfile(
           getAllSpots(db),
           lat,
           lng,
-          profile.radius_km,
-          parseInt(process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10),
-          global.favorite_spot_ids
+          profile,
+          parseInt(process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10)
         );
 
         const rideabilityBySpotId = new Map();

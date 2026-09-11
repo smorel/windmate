@@ -106,7 +106,12 @@ function showMatrixCriterionSegment(hour, elapsed, fullDayMode) {
 }
 
 /** Matrix slot shows forecast swatches for curiosity only (full-day, not rideable). */
-function matrixSlotShowsFullDayCuriosity(modelHoursAtSlot, elapsed, fullDayMode) {
+  /** Probability row: only hours inside a qualifying rideable window (not isolated bust hours). */
+  function matrixSlotShowsProbability(slot) {
+    return Boolean(slot?.inRideableWindow);
+  }
+
+  function matrixSlotShowsFullDayCuriosity(modelHoursAtSlot, elapsed, fullDayMode) {
   if (!fullDayMode || elapsed) return false;
   const present = (modelHoursAtSlot ?? []).filter((hour) => hour != null);
   if (!present.length) return false;
@@ -126,8 +131,9 @@ function filterMatrixSpotsForDay(rankedRows, favoriteSpotIds, fullDayMode) {
 
 module.exports = {
   hourHasMatrixConditionData,
-  showMatrixCriterionSegment,
-  matrixSlotShowsFullDayCuriosity,
+    showMatrixCriterionSegment,
+    matrixSlotShowsProbability,
+    matrixSlotShowsFullDayCuriosity,
   filterMatrixSpotsForDay,
   filterMatrixPlanningHours,
   buildPlanningHourConditionStats,

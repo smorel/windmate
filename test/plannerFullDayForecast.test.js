@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   showMatrixCriterionSegment,
+  matrixSlotShowsProbability,
   matrixSlotShowsFullDayCuriosity,
   filterMatrixSpotsForDay,
   filterMatrixPlanningHours,
@@ -24,6 +25,14 @@ describe('showMatrixCriterionSegment', () => {
 
   it('shows elapsed hours with data regardless of mode', () => {
     assert.equal(showMatrixCriterionSegment(hour, true, false), true);
+  });
+});
+
+describe('matrixSlotShowsProbability', () => {
+  it('is true only inside a qualifying rideable window', () => {
+    assert.equal(matrixSlotShowsProbability({ rideable: true, inRideableWindow: true }), true);
+    assert.equal(matrixSlotShowsProbability({ rideable: true, inRideableWindow: false }), false);
+    assert.equal(matrixSlotShowsProbability({ rideable: false, inRideableWindow: false }), false);
   });
 });
 

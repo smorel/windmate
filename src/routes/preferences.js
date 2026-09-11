@@ -122,6 +122,7 @@ function createPreferencesRouter(db) {
         alert_enabled: body.alert_enabled,
         alert_schedule: body.alert_schedule,
         favorite_spot_ids: body.favorite_spot_ids,
+        favorites_only: body.favorites_only,
       });
       if (windPrefsChanged) clearObservationCache(db);
       res.json(getFullPreferences(db));

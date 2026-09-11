@@ -12,7 +12,7 @@ const {
 } = require('../services/rideability');
 const { SPORT_COLORS } = require('../utils/sports');
 const { MODEL_COLORS } = require('../utils/models');
-const { selectDashboardSpots } = require('../utils/spotSelection');
+const { selectSpotsForProfile } = require('../utils/spotSelection');
 const { attachSessionGoNoGoByDate } = require('../services/sessionGoNoGo');
 const { localDateString } = require('../utils/forecastTime');
 
@@ -39,13 +39,13 @@ function createRideabilityRouter(db) {
         : prefs.radius_km;
     const sportColor = SPORT_COLORS[prefs.sport] ?? SPORT_COLORS.wingfoiling;
 
-    const nearbySpots = selectDashboardSpots(
+    const nearbySpots = selectSpotsForProfile(
       getAllSpots(db),
       lat,
       lng,
-      effectiveRadius,
+      prefs,
       limit,
-      prefs.favorite_spot_ids
+      effectiveRadius
     );
 
     if (nearbySpots.length === 0) {

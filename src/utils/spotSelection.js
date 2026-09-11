@@ -1,14 +1,52 @@
 const { haversineKm } = require('./geo');
 const { parseFavoriteSpotIds } = require('./favoriteSpots');
 
+/** Starred spots only (used when sport profile has favorites_only). */
+function selectFavoriteOnlySpots(allSpots, lat, lng, radiusKm, favoriteSpotIds) {
+  const favSet = new Set(parseFavoriteSpotIds(favoriteSpotIds));
+  if (favSet.size === 0) return [];
+
+  const byId = new Map(allSpots.map((spot) => [spot.id, spot]));
+  const selected = [];
+  for (const id of favSet) {
+    const spot = byId.get(id);
+    if (!spot) continue;
+    const distance_km = haversineKm(lat, lng, spot.latitude, spot.longitude);
+    selected.push({
+      ...spot,
+      distance_km,
+      outside_radius: distance_km > radiusKm,
+    });
+  }
+  selected.sort((a, b) => a.distance_km - b.distance_km);
+  return selected;
+}
+
 /**
- * Nearby spots (radius + limit) plus favorited spots outside the radius.
  * @param {object[]} allSpots
  * @param {number} lat
  * @param {number} lng
- * @param {number} radiusKm
+ * @param {{ favorites_only?: number, radius_km: number, favorite_spot_ids: string[] }} profile
  * @param {number} limit
- * @param {string[]} favoriteSpotIds
+ * @param {number} [radiusKmOverride]
+ */
+function selectSpotsForProfile(allSpots, lat, lng, profile, limit, radiusKmOverride) {
+  const radiusKm = radiusKmOverride ?? profile.radius_km;
+  if (profile.favorites_only) {
+    return selectFavoriteOnlySpots(allSpots, lat, lng, radiusKm, profile.favorite_spot_ids);
+  }
+  return selectDashboardSpots(
+    allSpots,
+    lat,
+    lng,
+    radiusKm,
+    limit,
+    profile.favorite_spot_ids
+  );
+}
+
+/**
+ * Nearby spots (radius + limit) plus favorited spots outside the radius.
  */
 function selectDashboardSpots(allSpots, lat, lng, radiusKm, limit, favoriteSpotIds) {
   const favSet = new Set(parseFavoriteSpotIds(favoriteSpotIds));
@@ -72,5 +110,7 @@ function searchSpots(allSpots, query, lat, lng, limit, favoriteSpotIds) {
 
 module.exports = {
   selectDashboardSpots,
+  selectFavoriteOnlySpots,
+  selectSpotsForProfile,
   searchSpots,
 };

@@ -422,13 +422,14 @@ const WindmateRideableWindow = (() => {
       if (!hour) return null;
       if (options.rideableOnly && !hour.rideable) return null;
 
-      return {
+      const aligned = {
         ...hour,
         time: slot.time,
         probabilityInferred,
-        allModelsRideable: allModelsRideableAt(hour, windowMaps),
-        inRideableWindow: isInWindow(hour, windowMaps),
       };
+      aligned.allModelsRideable = allModelsRideableAt(aligned, windowMaps);
+      aligned.inRideableWindow = Boolean(windowMaps?.windowByTime?.get(key));
+      return aligned;
     });
   }
 

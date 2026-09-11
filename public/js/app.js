@@ -39,6 +39,9 @@ const els = {
   minWind: document.getElementById('min-wind'),
   maxGust: document.getElementById('max-gust'),
   searchRadius: document.getElementById('search-radius'),
+  favoritesOnly: document.getElementById('favorites-only'),
+  favoritesOnlyLabel: document.getElementById('favorites-only-label'),
+  favoritesOnlyHint: document.getElementById('favorites-only-hint'),
   minAir: document.getElementById('min-air'),
   minWater: document.getElementById('min-water'),
   offshoreWind: document.getElementById('offshore-wind'),
@@ -373,6 +376,7 @@ function buildSportProfilePayload() {
       today_alerts: current?.alert_schedule?.today_alerts ?? true,
       min_session_score: current?.alert_schedule?.min_session_score ?? 0.55,
     },
+    favorites_only: els.favoritesOnly?.checked ? 1 : 0,
   };
 }
 
@@ -488,6 +492,9 @@ function bindPreferencesAutoSave() {
   els.alertDaysPreset?.addEventListener('change', () =>
     schedulePreferencesSave({ fullRefresh: true, delayMs: 0 })
   );
+  els.favoritesOnly?.addEventListener('change', () =>
+    schedulePreferencesSave({ fullRefresh: true, delayMs: 0 })
+  );
   els.prefsForm.addEventListener('submit', (e) => e.preventDefault());
 }
 
@@ -564,8 +571,18 @@ function loadSettingsFormForSport(sport) {
   if (els.alertDaysPreset) {
     els.alertDaysPreset.value = alertDaysPresetFromSchedule(profile.alert_schedule);
   }
+  if (els.favoritesOnly) {
+    els.favoritesOnly.checked = Boolean(profile.favorites_only);
+  }
   rankCriteriaOrder = WindmateSessionRank.normalizeOrder(profile.rank_criteria_order);
   renderRankCriteriaList(rankCriteriaOrder);
+}
+
+function dashboardNoSpotsCopy(prefs) {
+  if (prefs?.favorites_only) {
+    return WindmateCopy.empty.favoritesOnlyNoSpots;
+  }
+  return WindmateCopy.empty.noSpotsNearby;
 }
 
 function isPlannerFullDayActive() {
@@ -710,6 +727,13 @@ function initLegendModal() {
 function initSettingsModal() {
   const title = document.getElementById('settings-modal-title');
   if (title) title.textContent = WindmateCopy.settings.title;
+
+  if (els.favoritesOnlyLabel) {
+    els.favoritesOnlyLabel.textContent = WindmateCopy.settings.favoritesOnly;
+  }
+  if (els.favoritesOnlyHint) {
+    els.favoritesOnlyHint.textContent = WindmateCopy.settings.favoritesOnlyHint;
+  }
 
   if (els.settingsBtn) {
     els.settingsBtn.textContent = WindmateCopy.settings.button;
@@ -1684,7 +1708,7 @@ async function goToWatchedSession({ spotId, sessionDate, sport }) {
 function renderHorizonPlanner(data) {
   if (!data.spots.length) {
     els.horizonPlanner.innerHTML =
-      `<p class="col-span-full text-slate-400">${WindmateCopy.empty.noSpotsNearby}</p>`;
+      `<p class="col-span-full text-slate-400">${dashboardNoSpotsCopy(data.preferences)}</p>`;
     return;
   }
 
@@ -1847,6 +1871,10 @@ function criterionHourBlockClass(timelineSlot, modelHoursAtSlot, dateStr, fullDa
   const classes = ['hour-block'];
   if (isMatrixNightSlot(timelineSlot, modelHoursAtSlot)) {
     classes.push('hour-block--night');
+    const present = modelHoursAtSlot.filter((hour) => hour != null);
+    if (present.some((hour) => WindmateWeatherHazards.hasForecastRain(hour))) {
+      classes.push('rain-hour');
+    }
     return classes.join(' ');
   }
   const elapsed = dateStr && !isMatrixSessionPlanningHour(timelineSlot.time, dateStr);
@@ -1966,13 +1994,37 @@ function renderMatrixRainOverlay(hours) {
 
   return hours
     .map((hour, index) => {
-      if (isMatrixNightHour(hour)) return '';
       if (!WindmateWeatherHazards.hasForecastRain(hour)) return '';
       const left = (index / count) * 100;
       const width = (1 / count) * 100;
-      return `<div class="matrix-rain-segment" style="left:${left}%;width:${width}%"></div>`;
+      const nightClass = isMatrixNightHour(hour) ? ' matrix-rain-segment--night' : '';
+      return `<div class="matrix-rain-segment${nightClass}" style="left:${left}%;width:${width}%"></div>`;
     })
     .join('');
+}
+
+function matrixDirectionCellClass(hour, dateStr, fullDayMode) {
+  const classes = ['matrix-direction'];
+  const elapsed = Boolean(dateStr && !isMatrixSessionPlanningHour(hour.time, dateStr));
+  const show = WindmatePlannerFullDay.showMatrixCriterionSegment(hour, elapsed, fullDayMode);
+  if (!show) {
+    classes.push('matrix-direction--inactive');
+    return classes.join(' ');
+  }
+  const exposure = hour.windExposure ?? 'unknown';
+  classes.push(`matrix-direction--${exposure}`);
+  if (elapsed) {
+    classes.push('matrix-direction--elapsed');
+  } else if (hour.rideable && !hour.inRideableWindow) {
+    classes.push('matrix-direction--isolated');
+  } else if (
+    fullDayMode &&
+    !hour.rideable &&
+    WindmatePlannerFullDay.hourHasMatrixConditionData(hour)
+  ) {
+    classes.push('matrix-direction--full-day-curiosity');
+  }
+  return classes.join(' ');
 }
 
 function renderDirectionRow(hours, dateStr, fullDayMode) {
@@ -1983,23 +2035,16 @@ function renderDirectionRow(hours, dateStr, fullDayMode) {
       if (isMatrixNightHour(hour)) {
         return '<div class="matrix-direction matrix-direction--night" aria-hidden="true"></div>';
       }
+      const cls = matrixDirectionCellClass(hour, dateStr, fullDayMode);
+      if (cls.includes('matrix-direction--inactive')) {
+        return `<div class="${cls}" aria-hidden="true"></div>`;
+      }
       const exposure = hour.windExposure ?? 'unknown';
       const exposureLabel = WindmateCopy.direction.exposure[exposure] ?? exposure;
       const hourLabel = hour.time.slice(11, 16);
       const title = `${hourLabel} ${hour.direction} · ${exposureLabel}`;
       const tip = escapeHtml(title);
-      const elapsed =
-        dateStr && !isMatrixSessionPlanningHour(hour.time, dateStr)
-          ? ' matrix-direction--elapsed'
-          : '';
-      const curiosity =
-        fullDayMode &&
-        !elapsed &&
-        !hour.rideable &&
-        WindmatePlannerFullDay.hourHasMatrixConditionData(hour)
-          ? ' matrix-direction--full-day-curiosity'
-          : '';
-      return `<div class="matrix-direction matrix-direction--${exposure}${elapsed}${curiosity}"><span>${hour.direction}</span><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
+      return `<div class="${cls}"><span>${hour.direction}</span><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
     })
     .join('');
 
@@ -2061,10 +2106,10 @@ function renderCriterionSegments(modelHoursAtSlot, criterion, elapsed, night, fu
     .join('');
 }
 
-function renderProbabilitySegments(modelHoursAtSlot, slotAgreement) {
+function renderProbabilitySegments(modelHoursAtSlot, slotAgreement, slotShowsProbability) {
   return modelHoursAtSlot
     .map((hour) => {
-      if (hour == null || !hour.rideable) {
+      if (!slotShowsProbability || hour == null || !hour.rideable) {
         if (isOffshoreBlockedMatrixHour(hour)) {
           return matrixOffshoreBlockedSegmentHtml();
         }
@@ -2080,11 +2125,6 @@ function renderProbabilitySegments(modelHoursAtSlot, slotAgreement) {
       return `<div class="hour-block-seg${inferredClass}" style="background:${color}"></div>`;
     })
     .join('');
-}
-
-function probabilitySlotHasRideable(modelHoursAtSlot, slot) {
-  if (modelHoursAtSlot.some((hour) => hour?.rideable)) return true;
-  return slot?.rideable === true;
 }
 
 function probabilityTooltipLines(modelHours, time, slotAgreement, slotHasMeteo) {
@@ -2169,9 +2209,10 @@ function renderProbabilityRow(timelineHours, modelEntries, getModelHours, window
       const night = isMatrixNightSlot(slot, modelHoursAtSlot);
       const slotAgreement =
         hourlyAgreement.get(WindmateRideableWindow.hourTimeKey(slot.time)) ?? 0;
+      const slotShowsProbability = WindmatePlannerFullDay.matrixSlotShowsProbability(slot);
       const segments = night
         ? matrixEmptyHourSegments(modelHoursAtSlot.length)
-        : renderProbabilitySegments(modelHoursAtSlot, slotAgreement);
+        : renderProbabilitySegments(modelHoursAtSlot, slotAgreement, slotShowsProbability);
       if (night) {
         return `<div class="hour-block hour-block--probability hour-block--night" aria-hidden="true"><div class="hour-block-segments">${segments}</div></div>`;
       }
@@ -2180,11 +2221,14 @@ function renderProbabilityRow(timelineHours, modelEntries, getModelHours, window
         hour: model.hours[index],
       }));
       const slotHasMeteo = probabilitySlotHasMeteo(modelHoursAtSlot);
-      const tipText = probabilitySlotHasRideable(modelHoursAtSlot, slot)
+      const tipText = slotShowsProbability
         ? probabilityTooltipLines(modelHours, slot.time, slotAgreement, slotHasMeteo).join('\n')
         : `${WindmateCopy.matrix.probabilityRow} · ${slot.time.slice(11, 16)}\n${WindmateCopy.matrix.probabilityNotRideable}`;
       const tip = escapeHtml(tipText);
-      return `<div class="hour-block hour-block--probability"><div class="hour-block-segments">${segments}</div><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
+      const probCls = slotShowsProbability
+        ? 'hour-block hour-block--probability'
+        : 'hour-block hour-block--probability hour-block--non-rideable-slot';
+      return `<div class="${probCls}"><div class="hour-block-segments">${segments}</div><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
     })
     .join('');
 
@@ -2456,7 +2500,10 @@ function applyFullDayVerdictSummary(verdict, dayHours, dateStr, fullDayMode) {
 
 function renderRideabilityMatrix(data, observations) {
   if (!data.spots.length) {
-    els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${WindmateCopy.empty.noSpotsInRange}</p>`;
+    const emptyCopy = data.preferences?.favorites_only
+      ? WindmateCopy.empty.favoritesOnlyNoSpots
+      : WindmateCopy.empty.noSpotsInRange;
+    els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${emptyCopy}</p>`;
     return;
   }
 

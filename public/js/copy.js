@@ -27,6 +27,8 @@ const WindmateCopy = {
       'Nothing rideable this day mate — tap another day in the planner above.',
     noRideableHoursForDayFullDay:
       'Nothing rideable and no favorites to show for this day — pick another day or favorite a spot.',
+    favoritesOnlyNoSpots:
+      'Star at least one spot for this sport to see forecasts — use search or the map.',
   },
 
   planner: {
@@ -58,6 +60,9 @@ const WindmateCopy = {
     saving: 'Saving…',
     saved: 'Saved',
     saveFailed: 'Could not save — try again',
+    favoritesOnly: 'Only starred spots',
+    favoritesOnlyHint:
+      'Forecast and planner ignore other spots — star your club on the map.',
   },
 
   favorites: {

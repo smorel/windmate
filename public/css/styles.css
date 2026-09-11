@@ -243,6 +243,16 @@ body.refresh-countdown-active .horizon-planner-sticky {
   border-radius: 3px;
 }
 
+/* Night hours hide wind/gust/wave segments but still show planned rain (e.g. camping). */
+.matrix-rain-segment--night {
+  background: rgba(239, 68, 68, 0.32);
+}
+
+.hour-block--night.rain-hour {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
 .matrix-hour-blocks {
   position: relative;
   z-index: 1;
@@ -265,8 +275,13 @@ body.refresh-countdown-active .horizon-planner-sticky {
   opacity: 0.42;
 }
 
+.matrix-direction--isolated {
+  opacity: 0.5;
+}
+
 .hour-block--night,
 .matrix-direction--night,
+.matrix-direction--inactive,
 .matrix-score-cell--inactive {
   border-color: transparent;
   background: transparent;
@@ -1224,6 +1239,10 @@ body.modal-open {
 
 .hour-block--probability {
   opacity: 0.95;
+}
+
+.hour-block--probability.hour-block--non-rideable-slot {
+  opacity: 0.38;
 }
 
 .hour-block.storm-hour:not(.rideable) {

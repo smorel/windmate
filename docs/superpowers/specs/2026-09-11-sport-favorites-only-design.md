@@ -1,7 +1,7 @@
 # Per-Sport Favorites-Only Spots — Design Spec
 
 **Date:** 2026-09-11  
-**Status:** Approved (requirements locked; implementation pending)  
+**Status:** Implemented (v1)  
 **Parent:** [Windmate Design Spec](./2026-09-08-windwatch-design.md)  
 **Related:** [Per-Sport Preferences & Alerts](./2026-09-09-per-sport-preferences-alerts-design.md), [Planner Full-Day Forecast](./2026-09-11-planner-full-day-forecast-design.md), [Spot Map Picker](./2026-09-09-spot-map-picker-design.md)
 

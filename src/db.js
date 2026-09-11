@@ -195,6 +195,7 @@ function migrateDb(db) {
   migrateSportProfiles(db);
   migrateWatchlistUniqueBySport(db);
   migrateSportFavorites(db);
+  migrateSportFavoritesOnly(db);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS spot_intel_cache (
@@ -241,6 +242,14 @@ function migrateSportFavorites(db) {
         activeSport
       );
     }
+  }
+}
+
+/** @param {import('better-sqlite3').Database} db */
+function migrateSportFavoritesOnly(db) {
+  const columns = db.prepare('PRAGMA table_info(sport_profiles)').all();
+  if (!columns.some((c) => c.name === 'favorites_only')) {
+    db.exec(`ALTER TABLE sport_profiles ADD COLUMN favorites_only INTEGER NOT NULL DEFAULT 0`);
   }
 }
 
@@ -415,6 +424,7 @@ function parseSportProfileRow(row) {
     alert_enabled: row.alert_enabled ? 1 : 0,
     alert_schedule: alertSchedule,
     favorite_spot_ids: favoriteSpotIds,
+    favorites_only: row.favorites_only ? 1 : 0,
   };
 }
 
@@ -523,6 +533,8 @@ function updateSportProfile(db, sport, prefs) {
     prefs.favorite_spot_ids !== undefined
       ? parseFavoriteSpotIds(prefs.favorite_spot_ids)
       : current.favorite_spot_ids;
+  const favoritesOnly =
+    prefs.favorites_only !== undefined ? (prefs.favorites_only ? 1 : 0) : current.favorites_only;
 
   db.prepare(`
     UPDATE sport_profiles SET
@@ -539,7 +551,8 @@ function updateSportProfile(db, sport, prefs) {
       rank_criteria_order = ?,
       alert_enabled = ?,
       alert_schedule = ?,
-      favorite_spot_ids = ?
+      favorite_spot_ids = ?,
+      favorites_only = ?
     WHERE sport = ?
   `).run(
     enabled,
@@ -558,6 +571,7 @@ function updateSportProfile(db, sport, prefs) {
     prefs.alert_enabled !== undefined ? (prefs.alert_enabled ? 1 : 0) : current.alert_enabled,
     JSON.stringify(alertSchedule),
     JSON.stringify(favoriteSpotIds),
+    favoritesOnly,
     sport
   );
 

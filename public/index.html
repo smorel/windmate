@@ -204,6 +204,13 @@
               <input id="search-radius" type="number" min="5" max="300" step="5" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
               <span class="text-[10px] text-slate-500">Nearby spots within this range; favorites can be farther</span>
             </label>
+            <label class="flex items-start gap-2 sm:col-span-2">
+              <input id="favorites-only" type="checkbox" class="mt-1 rounded border-base-border" />
+              <span class="text-sm text-slate-300">
+                <span id="favorites-only-label"></span>
+                <span id="favorites-only-hint" class="block text-[10px] text-slate-500 mt-0.5"></span>
+              </span>
+            </label>
             <label class="block">
               <span class="text-xs uppercase tracking-wide text-slate-400">Min wind (kt)</span>
               <input id="min-wind" type="number" min="0" max="60" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />

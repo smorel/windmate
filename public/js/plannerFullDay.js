@@ -100,6 +100,11 @@ const WindmatePlannerFullDay = (() => {
     return Boolean(hour.rideable);
   }
 
+  /** Probability row: only hours inside a qualifying rideable window (not isolated bust hours). */
+  function matrixSlotShowsProbability(slot) {
+    return Boolean(slot?.inRideableWindow);
+  }
+
   function matrixSlotShowsFullDayCuriosity(modelHoursAtSlot, elapsed, fullDayMode) {
     if (!fullDayMode || elapsed) return false;
     const present = (modelHoursAtSlot ?? []).filter((hour) => hour != null);
@@ -121,6 +126,7 @@ const WindmatePlannerFullDay = (() => {
   return {
     hourHasMatrixConditionData,
     showMatrixCriterionSegment,
+    matrixSlotShowsProbability,
     matrixSlotShowsFullDayCuriosity,
     filterMatrixSpotsForDay,
     filterMatrixPlanningHours,

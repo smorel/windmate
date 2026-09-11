@@ -32,8 +32,9 @@ function selectFavoriteOnlySpots(allSpots, lat, lng, radiusKm, favoriteSpotIds) 
  */
 function selectSpotsForProfile(allSpots, lat, lng, profile, limit, radiusKmOverride) {
   const radiusKm = radiusKmOverride ?? profile.radius_km;
-  if (profile.favorites_only) {
-    return selectFavoriteOnlySpots(allSpots, lat, lng, radiusKm, profile.favorite_spot_ids);
+  const favoriteIds = parseFavoriteSpotIds(profile.favorite_spot_ids);
+  if (profile.favorites_only && favoriteIds.length > 0) {
+    return selectFavoriteOnlySpots(allSpots, lat, lng, radiusKm, favoriteIds);
   }
   return selectDashboardSpots(
     allSpots,
@@ -41,7 +42,7 @@ function selectSpotsForProfile(allSpots, lat, lng, profile, limit, radiusKmOverr
     lng,
     radiusKm,
     limit,
-    profile.favorite_spot_ids
+    favoriteIds
   );
 }
 

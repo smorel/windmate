@@ -10,6 +10,7 @@ const {
   updateWatchedSessionStatus,
   getSpotById,
   todayIsoDate,
+  getActiveLocation,
 } = require('../db');
 const { fetchForecast } = require('../services/weather');
 const { fetchOpenMeteoContext } = require('../services/openMeteoContext');
@@ -70,15 +71,14 @@ function createWatchlistRouter(db) {
       return { ...session, status: 'unknown', statusTrend: 'new' };
     }
 
-    const global = getGlobalPreferences(db);
-    const distance_km =
-      global?.lat != null && global?.lng != null
-        ? haversineKm(global.lat, global.lng, spot.latitude, spot.longitude)
-        : prefs.radius_km ?? 50;
+    const origin = getActiveLocation(db);
+    const distance_km = origin
+      ? haversineKm(origin.lat, origin.lng, spot.latitude, spot.longitude)
+      : prefs.radius_km ?? 50;
     const spotWithDistance = { ...spot, distance_km };
     const rideEntry = await buildRideEntry(spotWithDistance, prefs);
     let observation = null;
-    if (session.session_date === todayIsoDate()) {
+    if (session.session_date === todayIsoDate(db)) {
       const forecast = await fetchForecast(db, spot.id, spot);
       observation = await fetchSpotObservations(db, spotWithDistance, prefs, forecast, {
         ttlMs: WATCHED_OBSERVATION_TTL_MS,
@@ -100,7 +100,7 @@ function createWatchlistRouter(db) {
       summary: evaluation.summary,
       sessionGoNoGo: evaluation.sessionGoNoGo,
       excitement: evaluation.excitement,
-      observation: session.session_date === todayIsoDate() ? observation : null,
+      observation: session.session_date === todayIsoDate(db) ? observation : null,
     };
   }
 
@@ -116,7 +116,7 @@ function createWatchlistRouter(db) {
 
   router.get('/today', async (_req, res) => {
     try {
-      const today = todayIsoDate();
+      const today = todayIsoDate(db);
       const sessions = getWatchedSessions(db).filter((s) => s.session_date === today);
       const enriched = await Promise.all(sessions.map((s) => enrichSession(s)));
       res.json({ sessions: enriched, date: today });
@@ -131,7 +131,7 @@ function createWatchlistRouter(db) {
     if (!spotId || !sessionDate) {
       return res.status(400).json({ error: 'spotId and sessionDate are required' });
     }
-    if (sessionDate < todayIsoDate()) {
+    if (sessionDate < todayIsoDate(db)) {
       return res.status(400).json({ error: 'Cannot watch past session dates' });
     }
 

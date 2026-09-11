@@ -4,6 +4,7 @@ const {
   localDateString,
   isSessionPlanningHour,
   isElapsedLocalDayHour,
+  calendarDateStringInTz,
 } = require('../src/utils/forecastTime');
 
 describe('localDateString', () => {
@@ -15,6 +16,13 @@ describe('localDateString', () => {
   it('does not use UTC toISOString slice', () => {
     const d = new Date(2026, 8, 9, 20, 34);
     assert.notEqual(localDateString(d), d.toISOString().slice(0, 10));
+  });
+});
+
+describe('calendarDateStringInTz', () => {
+  it('formats date in America/Los_Angeles', () => {
+    const d = new Date('2026-09-11T04:30:00Z');
+    assert.equal(calendarDateStringInTz(d, 'America/Los_Angeles'), '2026-09-10');
   });
 });
 

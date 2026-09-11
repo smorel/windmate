@@ -1,6 +1,8 @@
 /** Open-Meteo hourly times are wall-clock at the spot — never use toISOString(). */
 const WindmateForecastTime = (() => {
   const FORECAST_TIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/;
+  let planningTimezoneId = null;
+  let planningPlaceNickname = null;
 
   function parseForecastParts(isoTime) {
     const match = String(isoTime).match(FORECAST_TIME_RE);
@@ -64,6 +66,82 @@ const WindmateForecastTime = (() => {
     return warning.message ?? '';
   }
 
+  function partValue(parts, type) {
+    return parts.find((p) => p.type === type)?.value;
+  }
+
+  function calendarDateStringInTz(now, timezoneId) {
+    if (!timezoneId) return localDateString(now);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezoneId,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(now);
+    const y = partValue(parts, 'year');
+    const mo = partValue(parts, 'month');
+    const d = partValue(parts, 'day');
+    return `${y}-${mo}-${d}`;
+  }
+
+  function wallClockInTz(now, timezoneId) {
+    if (!timezoneId) {
+      const h = String(now.getHours()).padStart(2, '0');
+      const mi = String(now.getMinutes()).padStart(2, '0');
+      return `${h}:${mi}`;
+    }
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezoneId,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    return `${partValue(parts, 'hour')}:${partValue(parts, 'minute')}`;
+  }
+
+  function timezoneOffsetMinutesAt(now, timezoneId) {
+    if (!timezoneId) return now.getTimezoneOffset();
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezoneId,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(now);
+    const y = Number(partValue(parts, 'year'));
+    const mo = Number(partValue(parts, 'month'));
+    const d = Number(partValue(parts, 'day'));
+    const h = Number(partValue(parts, 'hour'));
+    const mi = Number(partValue(parts, 'minute'));
+    const sec = Number(partValue(parts, 'second'));
+    const asUtc = Date.UTC(y, mo - 1, d, h, mi, sec);
+    return Math.round((asUtc - now.getTime()) / 60000);
+  }
+
+  function planningDiffersFromDevice(now = new Date()) {
+    if (!planningTimezoneId) return false;
+    if (localDateString(now) !== calendarDateStringInTz(now, planningTimezoneId)) return true;
+    return (
+      Math.abs(now.getTimezoneOffset() - timezoneOffsetMinutesAt(now, planningTimezoneId)) >= 60
+    );
+  }
+
+  function setPlanningContext(place) {
+    planningTimezoneId = place?.timezone_id ?? null;
+    planningPlaceNickname = place?.nickname ?? null;
+  }
+
+  function getPlanningPlaceNickname() {
+    return planningPlaceNickname;
+  }
+
+  function getPlanningTimezoneId() {
+    return planningTimezoneId;
+  }
+
   /** Local calendar date — never use toISOString() (UTC rolls over early evening in NA). */
   function localDateString(date = new Date()) {
     const y = date.getFullYear();
@@ -72,18 +150,37 @@ const WindmateForecastTime = (() => {
     return `${y}-${mo}-${d}`;
   }
 
-  /** Calendar today in the browser — matches watchlist / GO·NO-GO (not days[0], which can be yesterday). */
+  function planningToday(date = new Date()) {
+    return planningTimezoneId ? calendarDateStringInTz(date, planningTimezoneId) : localDateString(date);
+  }
+
+  /** Calendar today for planning — watchlist / GO·NO-GO / matrix elapsed hours. */
   function forecastTodayFromRideability(_data) {
-    return localDateString();
+    return planningToday();
   }
 
   function defaultPlannerDayDate(days) {
-    const today = localDateString();
+    const today = planningToday();
     if (days?.some((d) => d.date === today)) return today;
     return days?.[0]?.date ?? today;
   }
 
   function currentLocalHourStartKey(date = new Date()) {
+    if (planningTimezoneId) {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: planningTimezoneId,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hour12: false,
+      }).formatToParts(date);
+      const y = partValue(parts, 'year');
+      const mo = partValue(parts, 'month');
+      const d = partValue(parts, 'day');
+      const h = partValue(parts, 'hour');
+      return `${y}-${mo}-${d}T${h}:00`;
+    }
     const y = date.getFullYear();
     const mo = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
@@ -98,18 +195,17 @@ const WindmateForecastTime = (() => {
   }
 
   function isSessionPlanningHour(timeKey, sessionDate, date = new Date()) {
-    if (sessionDate !== localDateString(date)) return true;
+    const today = planningToday(date);
+    if (sessionDate !== today) return true;
     return !isElapsedLocalDayHour(timeKey, sessionDate, date);
   }
 
-  /** Wall-clock hour + fraction from forecast ISO (local spot time, not UTC Date). */
   function fractionalHourFromForecastTime(isoTime) {
     const parts = parseForecastParts(isoTime);
     if (!parts) return 0;
     return parts.h + parts.mi / 60;
   }
 
-  /** Center of the hour slot [h, h+1) for hourly :00 buckets (matrix column alignment). */
   function fractionalHourSlotCenter(isoTime) {
     const parts = parseForecastParts(isoTime);
     if (!parts) return 0;
@@ -126,6 +222,21 @@ const WindmateForecastTime = (() => {
   ) {
     const leadMs = (driveMinutes + rigMinutes + bufferMinutes) * 60 * 1000;
     const ready = new Date(now.getTime() + leadMs);
+    if (planningTimezoneId) {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: planningTimezoneId,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hour12: false,
+      }).formatToParts(ready);
+      const y = partValue(parts, 'year');
+      const mo = partValue(parts, 'month');
+      const d = partValue(parts, 'day');
+      const h = partValue(parts, 'hour');
+      return `${y}-${mo}-${d}T${h}:00`;
+    }
     const y = ready.getFullYear();
     const mo = String(ready.getMonth() + 1).padStart(2, '0');
     const d = String(ready.getDate()).padStart(2, '0');
@@ -143,11 +254,18 @@ const WindmateForecastTime = (() => {
     fractionalHourFromForecastTime,
     fractionalHourSlotCenter,
     localDateString,
+    planningToday,
     forecastTodayFromRideability,
     defaultPlannerDayDate,
     currentLocalHourStartKey,
     isElapsedLocalDayHour,
     isSessionPlanningHour,
     earliestFeasibleOnWaterStartKey,
+    setPlanningContext,
+    getPlanningPlaceNickname,
+    getPlanningTimezoneId,
+    wallClockInTz,
+    planningDiffersFromDevice,
+    timezoneOffsetMinutesAt,
   };
 })();

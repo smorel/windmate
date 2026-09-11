@@ -110,6 +110,109 @@ function bootstrapDepartureIso(dateStr, now = new Date()) {
   return `${y}-${mo}-${d}T${h}:${mi}`;
 }
 
+function partsInTimeZone(date, timeZone) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+}
+
+function partValue(parts, type) {
+  return parts.find((p) => p.type === type)?.value;
+}
+
+/** @param {Date} [now] @param {string} timezoneId */
+function calendarDateStringInTz(now = new Date(), timezoneId) {
+  if (!timezoneId) return localDateString(now);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezoneId,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const y = partValue(parts, 'year');
+  const mo = partValue(parts, 'month');
+  const d = partValue(parts, 'day');
+  return `${y}-${mo}-${d}`;
+}
+
+/** @param {Date} [now] @param {string} timezoneId */
+function wallClockInTz(now = new Date(), timezoneId) {
+  if (!timezoneId) {
+    const h = String(now.getHours()).padStart(2, '0');
+    const mi = String(now.getMinutes()).padStart(2, '0');
+    return `${h}:${mi}`;
+  }
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezoneId,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const h = partValue(parts, 'hour');
+  const mi = partValue(parts, 'minute');
+  return `${h}:${mi}`;
+}
+
+/** Same convention as `Date.getTimezoneOffset()` for the given IANA zone at `now`. */
+function timezoneOffsetMinutesAt(now = new Date(), timezoneId) {
+  if (!timezoneId) return now.getTimezoneOffset();
+  const parts = partsInTimeZone(now, timezoneId);
+  const y = Number(partValue(parts, 'year'));
+  const mo = Number(partValue(parts, 'month'));
+  const d = Number(partValue(parts, 'day'));
+  const h = Number(partValue(parts, 'hour'));
+  const mi = Number(partValue(parts, 'minute'));
+  const sec = Number(partValue(parts, 'second'));
+  const asUtc = Date.UTC(y, mo - 1, d, h, mi, sec);
+  return Math.round((asUtc - now.getTime()) / 60000);
+}
+
+function planningDiffersFromDevice(timezoneId, now = new Date()) {
+  if (!timezoneId) return false;
+  const deviceToday = localDateString(now);
+  const planningToday = calendarDateStringInTz(now, timezoneId);
+  if (deviceToday !== planningToday) return true;
+  const deviceOffset = now.getTimezoneOffset();
+  const planningOffset = timezoneOffsetMinutesAt(now, timezoneId);
+  return Math.abs(deviceOffset - planningOffset) >= 60;
+}
+
+function currentHourStartKeyInTz(now = new Date(), timezoneId) {
+  if (!timezoneId) return currentLocalHourStartKey(now);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezoneId,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const y = partValue(parts, 'year');
+  const mo = partValue(parts, 'month');
+  const d = partValue(parts, 'day');
+  const h = partValue(parts, 'hour');
+  return `${y}-${mo}-${d}T${h}:00`;
+}
+
+function isElapsedDayHourInTz(timeKey, today, now = new Date(), timezoneId) {
+  const key = String(timeKey).replace(' ', 'T').slice(0, 16);
+  if (!key.startsWith(today)) return false;
+  return key < currentHourStartKeyInTz(now, timezoneId);
+}
+
+function isSessionPlanningHourInTz(timeKey, sessionDate, now = new Date(), timezoneId) {
+  const today = timezoneId ? calendarDateStringInTz(now, timezoneId) : localDateString(now);
+  if (sessionDate !== today) return true;
+  return !isElapsedDayHourInTz(timeKey, sessionDate, now, timezoneId);
+}
+
 module.exports = {
   parseForecastParts,
   formatForecastClock,
@@ -123,4 +226,11 @@ module.exports = {
   isSessionPlanningHour,
   earliestFeasibleOnWaterStartKey,
   bootstrapDepartureIso,
+  calendarDateStringInTz,
+  wallClockInTz,
+  timezoneOffsetMinutesAt,
+  planningDiffersFromDevice,
+  currentHourStartKeyInTz,
+  isElapsedDayHourInTz,
+  isSessionPlanningHourInTz,
 };

@@ -22,6 +22,7 @@ const { syncAssets } = require('../scripts/sync-assets');
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const db = initDb();
 const app = express();
+app.set('trust proxy', 1);
 const repoAssets = path.join(__dirname, '..', 'assets');
 const publicAssets = path.join(__dirname, '..', 'public', 'assets');
 

@@ -1,5 +1,5 @@
 const express = require('express');
-const { getAllSpots, getPreferences, getSpotById } = require('../db');
+const { getAllSpots, getPreferences, getSpotById, planningTodayIsoDate, getPlanningTimezoneId } = require('../db');
 const { haversineKm } = require('../utils/geo');
 const { fetchForecast, getProvider, getPrimaryHourlyForecast } = require('../services/weather');
 const { fetchOpenMeteoContext } = require('../services/openMeteoContext');
@@ -19,6 +19,10 @@ const { localDateString } = require('../utils/forecastTime');
 
 function createRideabilityRouter(db) {
   const router = express.Router();
+
+  function planningContext() {
+    return { today: planningTodayIsoDate(db), timezoneId: getPlanningTimezoneId(db) };
+  }
 
   router.get('/', async (req, res) => {
     const lat = parseFloat(req.query.lat);
@@ -124,7 +128,7 @@ function createRideabilityRouter(db) {
               rideableToday: mixed.rideableToday,
               warnings: mixed.warnings,
               tempSummary: mixed.tempSummary,
-              sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs),
+              sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs, planningContext()),
             };
           }
 
@@ -156,7 +160,7 @@ function createRideabilityRouter(db) {
             rideableToday: rideableTodayHours.length,
             warnings: computeSessionWarnings(todayHours, prefs),
             tempSummary: buildTempSummary(rideableTodayHours),
-            sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs),
+            sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs, planningContext()),
           };
         })
       );

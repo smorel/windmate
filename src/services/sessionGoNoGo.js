@@ -14,6 +14,7 @@ const {
   formatForecastClock,
   addForecastMinutes,
   isSessionPlanningHour,
+  isSessionPlanningHourInTz,
 } = require('../utils/forecastTime');
 
 const ON_TRACK_MIN_SCORE = parseFloat(process.env.WATCHLIST_STATUS_ON_TRACK_MIN_SCORE ?? '0.55');
@@ -169,6 +170,13 @@ function liveMismatchReason(mismatch, current) {
   return null;
 }
 
+function planningHourOk(timeKey, sessionDate, planning) {
+  if (planning?.timezoneId) {
+    return isSessionPlanningHourInTz(timeKey, sessionDate, new Date(), planning.timezoneId);
+  }
+  return isSessionPlanningHour(timeKey, sessionDate);
+}
+
 /**
  * Session-level go / caution / no_go for a watched date (forecast + hazards + live on today).
  * @param {object} params
@@ -183,6 +191,8 @@ function computeSessionGoNoGo({
   prefs,
   observation = null,
   omitHazardFromBanner = null,
+  planningToday,
+  planning,
 }) {
   const minWindow = parseMinRideableWindowHours(prefs.min_rideable_window_hours);
   const hours = getDayHours(rideEntry, sessionDate);
@@ -203,7 +213,8 @@ function computeSessionGoNoGo({
     windowStats && windowHours > 0
       ? formatForecastSummary(windowHours, windowStats, windowSpan)
       : '';
-  const isToday = sessionDate === todayIsoDate();
+  const today = planningToday ?? todayIsoDate();
+  const isToday = sessionDate === today;
   const omitDuplicateLiveDetail =
     omitHazardFromBanner ?? (isToday && observation != null);
 
@@ -215,7 +226,7 @@ function computeSessionGoNoGo({
     reasons.push('Forecast unavailable for this session');
   } else if (windowHours < minWindow) {
     const scatteredRideable = hours.filter(
-      (h) => h.rideable && isSessionPlanningHour(hourTimeKey(h.time), sessionDate)
+      (h) => h.rideable && planningHourOk(hourTimeKey(h.time), sessionDate, planning)
     ).length;
     if (windowHours > 0) {
       state = 'no_go';
@@ -281,14 +292,17 @@ function computeSessionGoNoGo({
  * @param {{ primaryModel: string, models: object, days: object[] }} rideEntry
  * @param {object} prefs
  */
-function attachSessionGoNoGoByDate(rideEntry, prefs) {
+function attachSessionGoNoGoByDate(rideEntry, prefs, planningContext = {}) {
+  const today = planningContext.today ?? todayIsoDate();
   const sessionGoNoGoByDate = {};
   for (const day of rideEntry.days ?? []) {
     sessionGoNoGoByDate[day.date] = computeSessionGoNoGo({
       rideEntry,
       sessionDate: day.date,
       prefs,
-      omitHazardFromBanner: day.date === todayIsoDate(),
+      omitHazardFromBanner: day.date === today,
+      planningToday: today,
+      planning: planningContext,
     });
   }
   return sessionGoNoGoByDate;

@@ -77,7 +77,7 @@ async function runWatchlistDigest(db) {
   if (!sessions.length) return;
 
   const lines = [];
-  const today = todayIsoDate();
+  const today = todayIsoDate(db);
 
   for (const session of sessions) {
     const prefs = getPreferences(db, session.sport);

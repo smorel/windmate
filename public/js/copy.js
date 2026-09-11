@@ -2,6 +2,27 @@
 const WindmateCopy = {
   tagline: 'Your wind mate — spots, sessions, and heads-ups',
 
+  location: {
+    planningFrom: (name) => `Planning from: ${name}`,
+    addPlace: 'Add place…',
+    editPlace: 'Edit active place…',
+    addNewPlace: 'Add new place…',
+    privacyBlurb:
+      'Windmate stores only a name you choose and map coordinates for each place. We don’t save your street address.',
+    autoSelectedPlace: (name) => `Planning from ${name} — you're nearby.`,
+    farFromAllPlacesTitle: "GPS isn't near any saved place",
+    farFromAllPlacesBody: (name) => `Add a place here or keep planning from ${name}.`,
+    stayOnPlace: (name) => `Stay on ${name}`,
+    useGpsForPin: 'Set pin to GPS',
+    timeAtPlace: (name, time) => `${name} ${time}`,
+    timeAtPlaceAria: (name, time) => `Local time at ${name}, ${time}`,
+    favoritesScoped: (place) => `Stars are saved for ${place} and this sport.`,
+    planningPlacesTitle: 'Planning places',
+    searchArea: 'Search area',
+    searchAreaHint: 'Moves the map pin only — not saved as an address.',
+    mapPinHint: 'Pan and zoom the map — latitude and longitude update to the pin at the center.',
+  },
+
   geo: {
     locating: 'Finding you…',
     locatingAccurate: 'Getting a precise fix…',
@@ -69,6 +90,7 @@ const WindmateCopy = {
     remove: (name) => `Unfavorite ${name}`,
     inList: 'In your list',
     outsideRadius: 'Outside search radius',
+    switchedPlace: (place) => `Switched to ${place} — your starred spots for here are showing.`,
   },
 
   search: {

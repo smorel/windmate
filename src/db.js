@@ -13,7 +13,8 @@ const { parseFavoriteSpotIds } = require('./utils/favoriteSpots');
 const { DEFAULT_SEARCH_RADIUS_KM, parseSearchRadiusKm } = require('./utils/searchRadius');
 const { parseMinRideableWindowHours } = require('./utils/rideableWindow');
 const { haversineKm } = require('./utils/geo');
-const { localDateString } = require('./utils/forecastTime');
+const { localDateString, calendarDateStringInTz } = require('./utils/forecastTime');
+const { randomUUID } = require('crypto');
 const MONTREAL_SPOTS = require('./seed/montreal-spots');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -197,6 +198,7 @@ function migrateDb(db) {
   migrateWatchlistUniqueBySport(db);
   migrateSportFavorites(db);
   migrateSportFavoritesOnly(db);
+  migrateSavedLocations(db);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS spot_intel_cache (
@@ -252,6 +254,222 @@ function migrateSportFavoritesOnly(db) {
   if (!columns.some((c) => c.name === 'favorites_only')) {
     db.exec(`ALTER TABLE sport_profiles ADD COLUMN favorites_only INTEGER NOT NULL DEFAULT 0`);
   }
+}
+
+const DEFAULT_HOME = { lat: 45.5017, lng: -73.5673, nickname: 'Home' };
+
+/** @param {import('better-sqlite3').Database} db */
+function migrateSavedLocations(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS saved_locations (
+      id TEXT PRIMARY KEY,
+      nickname TEXT NOT NULL,
+      lat REAL NOT NULL,
+      lng REAL NOT NULL,
+      timezone_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS location_sport_favorites (
+      location_id TEXT NOT NULL REFERENCES saved_locations(id) ON DELETE CASCADE,
+      sport TEXT NOT NULL,
+      favorite_spot_ids TEXT NOT NULL DEFAULT '[]',
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (location_id, sport)
+    );
+  `);
+
+  const prefColumns = db.prepare('PRAGMA table_info(user_preferences)').all().map((c) => c.name);
+  if (!prefColumns.includes('active_location_id')) {
+    db.exec(`ALTER TABLE user_preferences ADD COLUMN active_location_id TEXT`);
+  }
+
+  const count = db.prepare('SELECT COUNT(*) AS n FROM saved_locations').get().n;
+  if (count > 0) return;
+
+  const now = Date.now();
+  const homeId = randomUUID();
+  db.prepare(`
+    INSERT INTO saved_locations (id, nickname, lat, lng, timezone_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?)
+  `).run(homeId, DEFAULT_HOME.nickname, DEFAULT_HOME.lat, DEFAULT_HOME.lng, now, now);
+
+  const profiles = db.prepare('SELECT sport, favorite_spot_ids FROM sport_profiles').all();
+  const insertFav = db.prepare(`
+    INSERT INTO location_sport_favorites (location_id, sport, favorite_spot_ids, updated_at)
+    VALUES (?, ?, ?, ?)
+  `);
+  for (const row of profiles) {
+    insertFav.run(homeId, row.sport, row.favorite_spot_ids ?? '[]', now);
+  }
+
+  db.prepare('UPDATE user_preferences SET active_location_id = ? WHERE id = 1').run(homeId);
+}
+
+function parseSavedLocationRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    nickname: row.nickname,
+    lat: row.lat,
+    lng: row.lng,
+    timezone_id: row.timezone_id ?? null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+/** @param {import('better-sqlite3').Database} db */
+function getSavedLocations(db) {
+  return db
+    .prepare('SELECT * FROM saved_locations ORDER BY created_at ASC')
+    .all()
+    .map(parseSavedLocationRow);
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string} id */
+function getSavedLocationById(db, id) {
+  const row = db.prepare('SELECT * FROM saved_locations WHERE id = ?').get(id);
+  return parseSavedLocationRow(row);
+}
+
+/** @param {import('better-sqlite3').Database} db */
+function getActiveLocationId(db) {
+  const row = db.prepare('SELECT active_location_id FROM user_preferences WHERE id = 1').get();
+  return row?.active_location_id ?? null;
+}
+
+/** @param {import('better-sqlite3').Database} db */
+function getActiveLocation(db) {
+  const id = getActiveLocationId(db);
+  if (!id) return null;
+  return getSavedLocationById(db, id);
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string} locationId @param {string} sport */
+function getFavoriteSpotIdsForLocation(db, locationId, sport) {
+  if (!locationId) return null;
+  const row = db
+    .prepare(
+      'SELECT favorite_spot_ids FROM location_sport_favorites WHERE location_id = ? AND sport = ?'
+    )
+    .get(locationId, sport);
+  if (!row) return [];
+  try {
+    return parseFavoriteSpotIds(JSON.parse(row.favorite_spot_ids ?? '[]'));
+  } catch {
+    return [];
+  }
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string} locationId @param {string} sport @param {string[]} ids */
+function setFavoriteSpotIdsForLocation(db, locationId, sport, ids) {
+  const parsed = parseFavoriteSpotIds(ids);
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO location_sport_favorites (location_id, sport, favorite_spot_ids, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(location_id, sport) DO UPDATE SET
+      favorite_spot_ids = excluded.favorite_spot_ids,
+      updated_at = excluded.updated_at
+  `).run(locationId, sport, JSON.stringify(parsed), now);
+  return parsed;
+}
+
+function seedLocationFavoritesForAllSports(db, locationId) {
+  const now = Date.now();
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO location_sport_favorites (location_id, sport, favorite_spot_ids, updated_at)
+    VALUES (?, ?, '[]', ?)
+  `);
+  for (const sport of VALID_SPORTS) {
+    insert.run(locationId, sport, now);
+  }
+}
+
+/** @param {import('better-sqlite3').Database} db */
+function getPlanningTimezoneId(db) {
+  const active = getActiveLocation(db);
+  return active?.timezone_id ?? null;
+}
+
+/** @param {import('better-sqlite3').Database} db */
+function planningTodayIsoDate(db) {
+  const tz = getPlanningTimezoneId(db);
+  if (tz) return calendarDateStringInTz(new Date(), tz);
+  return localDateString();
+}
+
+/** @param {import('better-sqlite3').Database} db @param {{ nickname: string, lat: number, lng: number, timezone_id?: string | null }} input */
+function createSavedLocation(db, input) {
+  const now = Date.now();
+  const id = randomUUID();
+  const nickname = String(input.nickname ?? '').trim().slice(0, 40);
+  if (!nickname) throw new Error('nickname is required');
+  const lat = Number(input.lat);
+  const lng = Number(input.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new Error('lat and lng are required');
+  }
+  db.prepare(`
+    INSERT INTO saved_locations (id, nickname, lat, lng, timezone_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, nickname, lat, lng, input.timezone_id ?? null, now, now);
+  seedLocationFavoritesForAllSports(db, id);
+  const locations = getSavedLocations(db);
+  if (locations.length === 1) {
+    db.prepare('UPDATE user_preferences SET active_location_id = ? WHERE id = 1').run(id);
+  }
+  return getSavedLocationById(db, id);
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string} id @param {object} patch */
+function updateSavedLocation(db, id, patch) {
+  const current = getSavedLocationById(db, id);
+  if (!current) return null;
+  const nickname =
+    patch.nickname !== undefined ? String(patch.nickname).trim().slice(0, 40) : current.nickname;
+  if (!nickname) throw new Error('nickname is required');
+  const lat = patch.lat !== undefined ? Number(patch.lat) : current.lat;
+  const lng = patch.lng !== undefined ? Number(patch.lng) : current.lng;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new Error('Invalid coordinates');
+  }
+  const timezone_id =
+    patch.timezone_id !== undefined ? patch.timezone_id : current.timezone_id;
+  const now = Date.now();
+  db.prepare(`
+    UPDATE saved_locations SET nickname = ?, lat = ?, lng = ?, timezone_id = ?, updated_at = ?
+    WHERE id = ?
+  `).run(nickname, lat, lng, timezone_id, now, id);
+  return getSavedLocationById(db, id);
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string} id */
+function deleteSavedLocation(db, id) {
+  const activeId = getActiveLocationId(db);
+  const result = db.prepare('DELETE FROM saved_locations WHERE id = ?').run(id);
+  if (result.changes === 0) return { deleted: false };
+  if (activeId === id) {
+    const next = db
+      .prepare('SELECT id FROM saved_locations ORDER BY created_at ASC LIMIT 1')
+      .get();
+    db.prepare('UPDATE user_preferences SET active_location_id = ? WHERE id = 1').run(
+      next?.id ?? null
+    );
+  }
+  return { deleted: true, active_location_id: getActiveLocationId(db) };
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string | null} locationId */
+function setActiveLocationId(db, locationId) {
+  if (locationId) {
+    const place = getSavedLocationById(db, locationId);
+    if (!place) throw new Error('Unknown planning place');
+  }
+  db.prepare('UPDATE user_preferences SET active_location_id = ? WHERE id = 1').run(locationId);
+  return getActiveLocationId(db);
 }
 
 /** @param {import('better-sqlite3').Database} db */
@@ -465,6 +683,22 @@ function getSportProfile(db, sport) {
   return row ? parseSportProfileRow(row) : null;
 }
 
+function locationConfigFromEnv() {
+  return {
+    location_auto_select_km: parseFloat(process.env.LOCATION_AUTO_SELECT_KM ?? '40'),
+    location_gps_max_accuracy_m: parseInt(process.env.LOCATION_GPS_MAX_ACCURACY_M ?? '500', 10),
+  };
+}
+
+/** @param {import('better-sqlite3').Database} db @param {object} profile @param {string} sport */
+function favoriteSpotIdsForActivePlace(db, sport, profile) {
+  const locationId = getActiveLocationId(db);
+  if (locationId) {
+    return getFavoriteSpotIdsForLocation(db, locationId, sport);
+  }
+  return profile.favorite_spot_ids;
+}
+
 /** @param {import('better-sqlite3').Database} db @param {string} [sport] */
 function getPreferences(db, sport) {
   const global = getGlobalPreferences(db);
@@ -476,6 +710,7 @@ function getPreferences(db, sport) {
 
   return {
     ...profile,
+    favorite_spot_ids: favoriteSpotIdsForActivePlace(db, activeSport, profile),
     sport: activeSport,
     active_sport: global.active_sport,
     alerts_master_enabled: global.alerts_master_enabled,
@@ -486,12 +721,20 @@ function getPreferences(db, sport) {
 /** @param {import('better-sqlite3').Database} db */
 function getFullPreferences(db) {
   const global = getGlobalPreferences(db);
-  const profiles = getSportProfiles(db);
+  const locationId = getActiveLocationId(db);
+  const profiles = getSportProfiles(db).map((p) => ({
+    ...p,
+    favorite_spot_ids: favoriteSpotIdsForActivePlace(db, p.sport, p),
+  }));
   const active = getPreferences(db);
   return {
     ...global,
     ...active,
     sport_profiles: profiles,
+    saved_locations: getSavedLocations(db),
+    active_location_id: locationId,
+    active_location: getActiveLocation(db),
+    ...locationConfigFromEnv(),
   };
 }
 
@@ -531,10 +774,15 @@ function updateSportProfile(db, sport, prefs) {
 
   const alertSchedule =
     prefs.alert_schedule !== undefined ? prefs.alert_schedule : current.alert_schedule;
-  const favoriteSpotIds =
+  const locationId = getActiveLocationId(db);
+  let favoriteSpotIds =
     prefs.favorite_spot_ids !== undefined
       ? parseFavoriteSpotIds(prefs.favorite_spot_ids)
-      : current.favorite_spot_ids;
+      : favoriteSpotIdsForActivePlace(db, sport, current);
+  if (prefs.favorite_spot_ids !== undefined && locationId) {
+    setFavoriteSpotIdsForLocation(db, locationId, sport, favoriteSpotIds);
+    favoriteSpotIds = [];
+  }
   const favoritesOnly =
     prefs.favorites_only !== undefined ? (prefs.favorites_only ? 1 : 0) : current.favorites_only;
 
@@ -592,7 +840,12 @@ function updateSportProfile(db, sport, prefs) {
     }
   }
 
-  return getSportProfile(db, sport);
+  const updated = getSportProfile(db, sport);
+  if (!updated) return null;
+  return {
+    ...updated,
+    favorite_spot_ids: favoriteSpotIdsForActivePlace(db, sport, updated),
+  };
 }
 
 /** @param {import('better-sqlite3').Database} db @param {object} prefs */
@@ -607,12 +860,15 @@ function updatePreferences(db, prefs) {
   return getPreferences(db, sport);
 }
 
-function todayIsoDate() {
+/** @param {import('better-sqlite3').Database} [db] */
+function todayIsoDate(db) {
+  if (db) return planningTodayIsoDate(db);
   return localDateString();
 }
 
 /** @param {import('better-sqlite3').Database} db */
 function getWatchedSessions(db) {
+  const today = planningTodayIsoDate(db);
   return db
     .prepare(`
       SELECT ws.*, s.name AS spot_name, s.latitude, s.longitude, s.ideal_directions, s.source_url
@@ -621,8 +877,8 @@ function getWatchedSessions(db) {
       WHERE ws.session_date >= ?
       ORDER BY ws.session_date ASC, ws.created_at ASC
     `)
-    .all(todayIsoDate())
-    .map(parseWatchedSessionRow);
+    .all(today)
+    .map((row) => parseWatchedSessionRow(row, today));
 }
 
 /** @param {import('better-sqlite3').Database} db @param {string} id */
@@ -635,10 +891,12 @@ function getWatchedSessionById(db, id) {
       WHERE ws.id = ?
     `)
     .get(id);
-  return row ? parseWatchedSessionRow(row) : null;
+  const today = planningTodayIsoDate(db);
+  return row ? parseWatchedSessionRow(row, today) : null;
 }
 
-function parseWatchedSessionRow(row) {
+function parseWatchedSessionRow(row, today) {
+  const todayStr = today ?? localDateString();
   let statusSnapshot = null;
   if (row.status_snapshot) {
     try {
@@ -668,13 +926,14 @@ function parseWatchedSessionRow(row) {
       ideal_directions: JSON.parse(row.ideal_directions ?? '[]'),
       source_url: row.source_url,
     },
-    isToday: row.session_date === todayIsoDate(),
+    isToday: row.session_date === todayStr,
   };
 }
 
 /** @param {import('better-sqlite3').Database} db */
 function purgeExpiredWatchedSessions(db) {
-  return db.prepare('DELETE FROM watched_sessions WHERE session_date < ?').run(todayIsoDate()).changes;
+  const today = planningTodayIsoDate(db);
+  return db.prepare('DELETE FROM watched_sessions WHERE session_date < ?').run(today).changes;
 }
 
 /** @param {import('better-sqlite3').Database} db @param {object} row */
@@ -855,6 +1114,18 @@ module.exports = {
   updatePreferences,
   updateGlobalPreferences,
   updateSportProfile,
+  getSavedLocations,
+  getSavedLocationById,
+  getActiveLocation,
+  getActiveLocationId,
+  createSavedLocation,
+  updateSavedLocation,
+  deleteSavedLocation,
+  setActiveLocationId,
+  getFavoriteSpotIdsForLocation,
+  setFavoriteSpotIdsForLocation,
+  getPlanningTimezoneId,
+  planningTodayIsoDate,
   getAllSpots,
   getSpotById,
   getSpotsByIds,

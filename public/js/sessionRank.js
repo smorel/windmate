@@ -417,7 +417,7 @@ const WindmateSessionRank = (() => {
     });
 
     const consensusOptions =
-      dateStr === WindmateForecastTime.localDateString()
+      dateStr === WindmateForecastTime.planningToday()
         ? { today: dateStr, now: new Date() }
         : undefined;
 
@@ -524,7 +524,7 @@ const WindmateSessionRank = (() => {
     }
 
     const consensusOptions =
-      dateStr === WindmateForecastTime.localDateString()
+      dateStr === WindmateForecastTime.planningToday()
         ? { today: dateStr, now: new Date() }
         : undefined;
 
@@ -593,7 +593,7 @@ const WindmateSessionRank = (() => {
     }
 
     const consensusOptions =
-      dateStr === WindmateForecastTime.localDateString()
+      dateStr === WindmateForecastTime.planningToday()
         ? { today: dateStr, now: new Date() }
         : undefined;
 
@@ -877,7 +877,7 @@ const WindmateSessionRank = (() => {
       driveMinutes ?? estimateDriveMinutesFromDistanceKm(distanceKm);
     const asOf = now ?? new Date();
 
-    if (!Number.isFinite(drive) || dateStr !== WindmateForecastTime.localDateString(asOf)) {
+    if (!Number.isFinite(drive) || dateStr !== WindmateForecastTime.planningToday(asOf)) {
       return pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours);
     }
 

@@ -111,7 +111,7 @@ const WindmateObservations = (() => {
   }
 
   function isTodayCurveDate(sessionDate, forecast) {
-    const today = WindmateForecastTime.localDateString();
+    const today = WindmateForecastTime.planningToday();
     const dateStr = sessionDate ?? forecast[0]?.time?.slice(0, 10);
     return dateStr === today;
   }

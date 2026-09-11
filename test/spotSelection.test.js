@@ -87,4 +87,10 @@ describe('selectSpotsForProfile', () => {
     const result = selectSpotsForProfile(spots, 45.5, -73.5, onlyFav, 12);
     assert.deepEqual(result.map((s) => s.id), ['far-fav']);
   });
+
+  it('falls back to radius when favorites_only is on but no stars yet', () => {
+    const noStars = { ...profile, favorites_only: 1, favorite_spot_ids: [] };
+    const result = selectSpotsForProfile(spots, 45.5, -73.5, noStars, 12);
+    assert.ok(result.some((s) => s.id === 'near-1'));
+  });
 });

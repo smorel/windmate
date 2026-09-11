@@ -128,7 +128,12 @@ const WindmateDeparture = (() => {
     }
   }
 
-  function clientTzOffsetMinutes() {
+  function clientTzOffsetMinutes(sessionDate) {
+    const tz = WindmateForecastTime.getPlanningTimezoneId();
+    if (tz) {
+      const ref = sessionDate ? new Date(`${sessionDate}T12:00:00`) : new Date();
+      return String(WindmateForecastTime.timezoneOffsetMinutesAt(ref, tz));
+    }
     return String(new Date().getTimezoneOffset());
   }
 
@@ -138,7 +143,7 @@ const WindmateDeparture = (() => {
       date,
       lat: String(lat),
       lng: String(lng),
-      tzOffset: clientTzOffsetMinutes(),
+      tzOffset: clientTzOffsetMinutes(date),
     });
     if (sport) params.set('sport', sport);
 
@@ -691,7 +696,7 @@ const WindmateDeparture = (() => {
     applyResults(results);
 
     const isSessionDay =
-      dateStr === WindmateForecastTime.localDateString();
+      dateStr === WindmateForecastTime.planningToday();
     const needsTrafficRefresh = results.some((data) => data?.plan?.driveSource === 'google');
     if (isSessionDay && needsTrafficRefresh && loadGeneration === matrixDepartureGeneration) {
       const reload = () => {
@@ -753,7 +758,7 @@ const WindmateDeparture = (() => {
 
     applyWatchResults(results);
 
-    const today = WindmateForecastTime.localDateString();
+    const today = WindmateForecastTime.planningToday();
     const hasSessionToday = sessions.some((s) => s.session_date === today);
     const needsTrafficRefresh = results.some((data) => data?.plan?.driveSource === 'google');
     if (hasSessionToday && needsTrafficRefresh && loadGeneration === watchDepartureGeneration) {

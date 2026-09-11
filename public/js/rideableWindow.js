@@ -308,7 +308,7 @@ const WindmateRideableWindow = (() => {
     }
 
     const consensusOptions = {
-      ...(dateStr === WindmateForecastTime.localDateString()
+      ...(dateStr === WindmateForecastTime.planningToday()
         ? { today: dateStr, now: new Date() }
         : {}),
       ...(prefs ? { prefs } : {}),

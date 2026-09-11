@@ -127,6 +127,134 @@ body.refresh-countdown-active .horizon-planner-sticky {
   color: #6ee7b7;
 }
 
+.refresh-countdown-banner__place {
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.35rem;
+}
+
+.refresh-countdown-banner__place::before {
+  content: '·';
+  margin-right: 0.35rem;
+  color: #475569;
+}
+
+.planning-location-control {
+  width: 100%;
+  max-width: 20rem;
+}
+
+.planning-location {
+  position: relative;
+}
+
+.planning-location__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  font-size: 0.875rem;
+  color: #e2e8f0;
+  background: #1e293b;
+  border: 1px solid var(--color-base-border, #1a2235);
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+}
+
+.planning-location__trigger:hover {
+  background: #334155;
+}
+
+.planning-location__chevron {
+  color: #64748b;
+  font-size: 0.65rem;
+}
+
+.planning-location__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  min-width: 12rem;
+  background: #0f1422;
+  border: 1px solid #1a2235;
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 0.25rem 0;
+}
+
+.planning-location__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #cbd5e1;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.planning-location__item:hover {
+  background: #1e293b;
+}
+
+.planning-location__item--action {
+  color: #6ee7b7;
+}
+
+.planning-location__divider {
+  height: 1px;
+  background: #1a2235;
+  margin: 0.25rem 0;
+}
+
+.planning-location__radio {
+  width: 1rem;
+  color: #10b981;
+}
+
+.place-editor-map-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+.place-editor-map {
+  height: 280px;
+  width: 100%;
+}
+
+.place-editor-map-pin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  pointer-events: none;
+  z-index: 1000;
+  border: 3px solid #10b981;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 0 2px rgba(11, 15, 25, 0.65);
+}
+
+.place-editor-map-pin::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: 10px;
+  margin-left: -1px;
+  background: #10b981;
+}
+
 .horizon-day-card {
   cursor: pointer;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;

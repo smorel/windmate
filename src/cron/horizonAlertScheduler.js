@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { getGlobalPreferences, getSportProfiles } = require('../db');
+const { getGlobalPreferences, getSportProfiles, getActiveLocation, getFavoriteSpotIdsForLocation } = require('../db');
 const { getAllSpots } = require('../db');
 const { selectSpotsForProfile } = require('../utils/spotSelection');
 const { hasHorizonOpportunity, buildSpotRideabilityEntry } = require('../services/alertQualification');
@@ -26,16 +26,24 @@ async function runHorizonAlertScan(db) {
   const profiles = getSportProfiles(db).filter((p) => p.enabled && p.alert_enabled);
   if (!profiles.length) return;
 
-  const lat = parseFloat(process.env.ALERT_ORIGIN_LAT ?? '45.5017');
-  const lng = parseFloat(process.env.ALERT_ORIGIN_LNG ?? '-73.5673');
+  const activePlace = getActiveLocation(db);
+  const lat = activePlace?.lat ?? parseFloat(process.env.ALERT_ORIGIN_LAT ?? '45.5017');
+  const lng = activePlace?.lng ?? parseFloat(process.env.ALERT_ORIGIN_LNG ?? '-73.5673');
   const candidates = [];
 
   for (const profile of profiles) {
+    const locationId = activePlace?.id;
+    const profileForScan = locationId
+      ? {
+          ...profile,
+          favorite_spot_ids: getFavoriteSpotIdsForLocation(db, locationId, profile.sport),
+        }
+      : profile;
     const spots = selectSpotsForProfile(
       getAllSpots(db),
       lat,
       lng,
-      profile,
+      profileForScan,
       parseInt(process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10)
     );
 

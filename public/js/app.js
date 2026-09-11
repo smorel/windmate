@@ -22,8 +22,12 @@ let plannerFullDayForecast = false;
 const GEO = { DENIED: 1, UNAVAILABLE: 2, TIMEOUT: 3 };
 
 const els = {
+  planningLocationControl: document.getElementById('planning-location-control'),
   locationStatus: document.getElementById('location-status'),
   locateBtn: document.getElementById('locate-btn'),
+  placeEditorModal: document.getElementById('place-editor-modal'),
+  planningPlacesPrivacy: document.getElementById('planning-places-privacy'),
+  planningPlacesManageBtn: document.getElementById('planning-places-manage-btn'),
   manualLocation: document.getElementById('manual-location'),
   manualLat: document.getElementById('manual-lat'),
   manualLng: document.getElementById('manual-lng'),
@@ -98,12 +102,20 @@ async function api(path, options = {}) {
   return res.json();
 }
 
-function setLocation(lat, lng, label) {
+function setPlanningOrigin(lat, lng) {
   userLocation = { lat, lng };
-  els.locationStatus.textContent = label ?? WindmateCopy.geo.yourLocation(lat, lng);
   if (WindmateSpotMapPicker.isOpen()) {
     WindmateSpotMapPicker.updateHomeOverlay({ refit: true });
   }
+}
+
+function setLocation(lat, lng, label) {
+  if (WindmatePlanningLocations.hasSavedPlaces()) {
+    setPlanningOrigin(lat, lng);
+    return;
+  }
+  setPlanningOrigin(lat, lng);
+  els.locationStatus.textContent = label ?? WindmateCopy.geo.yourLocation(lat, lng);
   refreshDashboard();
 }
 
@@ -174,6 +186,9 @@ async function requestIpLocation() {
 }
 
 async function requestLocation({ accurate = false, allowIpFallback = true } = {}) {
+  if (WindmatePlanningLocations.hasSavedPlaces()) {
+    return false;
+  }
   if (locating) return false;
   setLocateButtonBusy(true);
 
@@ -256,7 +271,9 @@ async function handleLocateClick() {
 }
 
 function initGeolocation() {
-  requestLocation();
+  if (!WindmatePlanningLocations.hasSavedPlaces()) {
+    requestLocation();
+  }
 }
 
 function initRankCriteriaSection() {
@@ -618,7 +635,8 @@ function loadSettingsFormForSport(sport) {
 }
 
 function dashboardNoSpotsCopy(prefs) {
-  if (prefs?.favorites_only) {
+  const favCount = prefs?.favorite_spot_ids?.length ?? favoriteSpotIds.length;
+  if (prefs?.favorites_only && favCount > 0) {
     return WindmateCopy.empty.favoritesOnlyNoSpots;
   }
   return WindmateCopy.empty.noSpotsNearby;
@@ -699,6 +717,11 @@ function applyFullPreferences(prefs) {
     activeSport,
     summary: horizonSummary,
   });
+  WindmatePlanningLocations.applyFromPreferences(prefs);
+  const origin = WindmatePlanningLocations.getActiveCoords();
+  if (origin) {
+    setPlanningOrigin(origin.lat, origin.lng);
+  }
 }
 
 function isAnyModalOpen() {
@@ -773,6 +796,9 @@ function initSettingsModal() {
   if (els.favoritesOnlyHint) {
     els.favoritesOnlyHint.textContent = WindmateCopy.settings.favoritesOnlyHint;
   }
+  if (els.planningPlacesPrivacy) {
+    els.planningPlacesPrivacy.textContent = WindmateCopy.location.privacyBlurb;
+  }
 
   if (els.settingsBtn) {
     els.settingsBtn.textContent = WindmateCopy.settings.button;
@@ -792,6 +818,8 @@ function initSettingsModal() {
       WindmateSpotIntel.closeMediaModal();
     } else if (!els.legendModal?.classList.contains('hidden')) {
       closeLegendModal();
+    } else if (!els.placeEditorModal?.classList.contains('hidden')) {
+      els.placeEditorModal.classList.add('hidden');
     } else if (!els.settingsModal?.classList.contains('hidden')) {
       closeSettingsModal();
     }
@@ -957,9 +985,20 @@ function renderRefreshCountdownBanner() {
   setRefreshCountdownLayoutActive(true);
   el.classList.remove('refresh-countdown-banner--updating');
   const time = formatRefreshCountdown(remaining);
+  let placeHtml = '';
+  if (WindmateForecastTime.planningDiffersFromDevice()) {
+    const name = WindmateForecastTime.getPlanningPlaceNickname() ?? '';
+    const clock = WindmateForecastTime.wallClockInTz(
+      new Date(),
+      WindmateForecastTime.getPlanningTimezoneId()
+    );
+    const aria = WindmateCopy.location.timeAtPlaceAria(name, clock);
+    const label = WindmateCopy.location.timeAtPlace(name, clock);
+    placeHtml = `<span class="refresh-countdown-banner__place" aria-label="${aria}">${label}</span>`;
+  }
   el.innerHTML = `<span class="refresh-countdown-banner__pill">
     <span>${WindmateCopy.refreshCountdown.label}</span>
-    <span class="refresh-countdown-banner__time" aria-label="${time} remaining">${time}</span>
+    <span class="refresh-countdown-banner__time" aria-label="${time} remaining">${time}</span>${placeHtml}
   </span>`;
 }
 
@@ -1117,7 +1156,7 @@ async function refreshDashboard({
 } = {}) {
   const generation = ++dashboardRefreshGeneration;
   const viewingToday =
-    selectedDayDate != null && selectedDayDate === WindmateForecastTime.localDateString();
+    selectedDayDate != null && selectedDayDate === WindmateForecastTime.planningToday();
   const scrollY = silent ? window.scrollY : null;
   const showLoading = !silent || pending;
   const fetchHorizonSummary =
@@ -1170,7 +1209,7 @@ async function refreshDashboard({
     renderRankCriteriaList(rankCriteriaOrder);
     renderModelLegend(rideabilityData);
     if (viewingToday) {
-      selectedDayDate = WindmateForecastTime.localDateString();
+      selectedDayDate = WindmateForecastTime.planningToday();
     }
     renderHorizonPlanner(rideabilityData);
     applyObservationsToUi(observationsData);
@@ -2649,9 +2688,11 @@ function applyFullDayVerdictSummary(verdict, dayHours, dateStr, fullDayMode) {
 
 function renderRideabilityMatrix(data, observations) {
   if (!data.spots.length) {
-    const emptyCopy = data.preferences?.favorites_only
-      ? WindmateCopy.empty.favoritesOnlyNoSpots
-      : WindmateCopy.empty.noSpotsInRange;
+    const favCount = data.preferences?.favorite_spot_ids?.length ?? 0;
+    const emptyCopy =
+      data.preferences?.favorites_only && favCount > 0
+        ? WindmateCopy.empty.favoritesOnlyNoSpots
+        : WindmateCopy.empty.noSpotsInRange;
     els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${emptyCopy}</p>`;
     return;
   }
@@ -2876,10 +2917,26 @@ els.manualLocBtn.addEventListener('click', () => {
   }
 });
 
+function showAppToast(message) {
+  WindmateSpotMapPicker.showToast(message);
+}
+
 (async function init() {
   initRankCriteriaSection();
   initLegendModal();
   initSettingsModal();
+  WindmatePlanningLocations.init({
+    controlEl: els.planningLocationControl,
+    locationStatusEl: els.locationStatus,
+    locateBtnEl: els.locateBtn,
+    editorModalEl: els.placeEditorModal,
+    settingsPlacesBtnEl: els.planningPlacesManageBtn,
+    api,
+    applyFullPreferences,
+    setPlanningOrigin,
+    refreshDashboard: (opts) => refreshDashboard({ silent: true, pending: true, ...opts }),
+    showToast: showAppToast,
+  });
   WindmateSpotIntel.init();
   initSpotMapPicker();
   initSpotSearch();
@@ -2894,8 +2951,14 @@ els.manualLocBtn.addEventListener('click', () => {
   setDashboardLoading(WindmateCopy.loading.dashboard);
   els.locationStatus.textContent = WindmateCopy.geo.locating;
   await loadPreferences();
-  els.locationStatus.textContent = WindmateCopy.geo.defaultMontreal;
+  const origin = WindmatePlanningLocations.getActiveCoords();
+  if (origin) {
+    setPlanningOrigin(origin.lat, origin.lng);
+  } else {
+    els.locationStatus.textContent = WindmateCopy.geo.defaultMontreal;
+  }
   await refreshDashboard();
   initHourlyDashboardRefresh();
+  WindmatePlanningLocations.tryLaunchGpsSnap();
   initGeolocation();
 })();

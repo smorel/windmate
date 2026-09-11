@@ -130,7 +130,7 @@ const WindmateWatchlist = (() => {
   }
 
   function sortedSessions() {
-    const today = WindmateForecastTime.localDateString();
+    const today = WindmateForecastTime.planningToday();
     return [...sessions].sort((a, b) => {
       if (a.session_date === today && b.session_date !== today) return -1;
       if (b.session_date === today && a.session_date !== today) return 1;
@@ -153,7 +153,7 @@ const WindmateWatchlist = (() => {
     { observationsBySpot, prefs, rideEntryBySpot, sportProfiles, radiusKm }
   ) {
     if (!container || !canPatchStrip(container)) return false;
-    const today = WindmateForecastTime.localDateString();
+    const today = WindmateForecastTime.planningToday();
     for (const session of sortedSessions()) {
       const card = container.querySelector(`[data-watch-id="${session.id}"]`);
       if (!card) continue;
@@ -219,7 +219,7 @@ const WindmateWatchlist = (() => {
   function renderStrip(container, { activeSport, observationsBySpot, prefs, rideEntryBySpot, sportProfiles, radiusKm }) {
     if (!container) return;
     const sorted = sortedSessions();
-    const today = WindmateForecastTime.localDateString();
+    const today = WindmateForecastTime.planningToday();
 
     if (!sorted.length) {
       container.innerHTML = '';
@@ -376,7 +376,7 @@ const WindmateWatchlist = (() => {
 
   /** Unique spot ids for today's watches (all sports — live strip is per session sport). */
   function getWatchedSpotIdsForToday() {
-    const today = WindmateForecastTime.localDateString();
+    const today = WindmateForecastTime.planningToday();
     const ids = new Set(
       sessions.filter((s) => s.session_date === today).map((s) => s.spot_id)
     );

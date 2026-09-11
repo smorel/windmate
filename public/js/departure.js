@@ -5,6 +5,7 @@ const WindmateDeparture = (() => {
   let sessionDayRefreshHandler = null;
   let matrixDepartureGeneration = 0;
   let watchDepartureGeneration = 0;
+  let watchDepartureInFlight = null;
   const plannerPlanByKey = new Map();
 
   function plannerPlanCacheKey(spotId, dateStr) {
@@ -18,12 +19,6 @@ const WindmateDeparture = (() => {
     else plannerPlanByKey.delete(key);
   }
 
-  function forgetPlannerPlansForSpots(spotIds, dateStr) {
-    for (const spotId of spotIds) {
-      plannerPlanByKey.delete(plannerPlanCacheKey(spotId, dateStr));
-    }
-  }
-
   function cachedPlannerRange(spotId, dateStr) {
     const plan = plannerPlanByKey.get(plannerPlanCacheKey(spotId, dateStr));
     if (!plan?.onWaterStart || !plan?.onWaterEnd) return null;
@@ -31,6 +26,87 @@ const WindmateDeparture = (() => {
       start: hourTimeKey(plan.onWaterStart),
       endExclusive: hourTimeKey(plan.onWaterEnd),
     };
+  }
+
+  function cachedPlannerPlan(spotId, dateStr) {
+    return plannerPlanByKey.get(plannerPlanCacheKey(spotId, dateStr)) ?? null;
+  }
+
+  function samePlannerPlan(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return (
+      a.onWaterStart === b.onWaterStart &&
+      a.onWaterEnd === b.onWaterEnd &&
+      a.leaveBy === b.leaveBy &&
+      a.driveMinutes === b.driveMinutes
+    );
+  }
+
+  function minRideableHoursForWatchSession(session, curveSyncContext) {
+    const prefs = curveSyncContext?.prefsForSession?.(session) ?? curveSyncContext?.prefs;
+    return prefs?.min_rideable_window_hours;
+  }
+
+  function applyWatchDepartureToCard(
+    card,
+    session,
+    data,
+    verdictForSession,
+    curveSyncContext,
+    { refreshCurve = true } = {}
+  ) {
+    if (!card || !session || !data) return false;
+    const key = watchDepartureKey(session.id);
+    const slot = card.querySelector(`[data-departure-for="${key}"]`);
+    if (!slot) return false;
+
+    const plan = data.plan ?? null;
+    const prevPlan = cachedPlannerPlan(session.spot_id, session.session_date);
+    const verdict = verdictForSession?.(session);
+    const minHours = minRideableHoursForWatchSession(session, curveSyncContext);
+    const unchanged = samePlannerPlan(prevPlan, plan) && slot.querySelector('.departure-line');
+
+    if (!plan || data.status === 'no_window') {
+      rememberPlannerPlan(session.spot_id, session.session_date, plan);
+      if (!unchanged) slot.innerHTML = renderLine(data, verdict, minHours);
+      return false;
+    }
+
+    rememberPlannerPlan(session.spot_id, session.session_date, plan);
+
+    if (!unchanged) {
+      slot.innerHTML = renderLine({ ...data, plan }, verdict, minHours);
+      card.querySelector(`[data-departure-group="${key}"]`)?.classList.add('has-departure-line');
+      if (refreshCurve && curveSyncContext) {
+        const obsEntry = curveSyncContext.obsBySpot?.get(session.spot_id);
+        const prefs = curveSyncContext.prefsForSession?.(session) ?? curveSyncContext.prefs;
+        WindmateObservations.refreshPlannerBandOnCard(card, plan, obsEntry, prefs, {
+          warnings: curveSyncContext.warningsBySpot?.get(session.spot_id),
+          rideEntry: curveSyncContext.rideEntryBySpot?.get(session.spot_id),
+          sessionDate: session.session_date,
+        });
+      }
+    }
+
+    return true;
+  }
+
+  function hydrateWatchlistDepartures(container, sessions, verdictForSession, curveSyncContext) {
+    if (!container || !sessions?.length) return;
+    for (const session of sessions) {
+      const plan = cachedPlannerPlan(session.spot_id, session.session_date);
+      if (!plan) continue;
+      const card = container.querySelector(`[data-watch-id="${session.id}"]`);
+      applyWatchDepartureToCard(
+        card,
+        session,
+        { spotId: session.spot_id, plan },
+        verdictForSession,
+        curveSyncContext,
+        { refreshCurve: true }
+      );
+    }
   }
 
   function clientTzOffsetMinutes() {
@@ -518,8 +594,6 @@ const WindmateDeparture = (() => {
     clearSessionDayRefresh();
     untrackContainer(container);
 
-    forgetPlannerPlansForSpots(spotIds, dateStr);
-
     for (const spotId of spotIds) {
       const card = container.querySelector(`[data-spot-id="${spotId}"]`);
       if (card) clearDepartureStroke(card, spotId);
@@ -577,8 +651,19 @@ const WindmateDeparture = (() => {
     }
   }
 
-  async function loadForWatchlist(container, sessions, lat, lng, verdictForSession) {
+  function watchDepartureSignature(sessions) {
+    return sessions
+      .map((session) => `${session.id}:${session.session_date}:${session.sport}:${session.spot_id}`)
+      .join('|');
+  }
+
+  async function loadForWatchlist(container, sessions, lat, lng, verdictForSession, curveSyncContext) {
     if (!container || !sessions?.length || lat == null || lng == null) return;
+
+    const signature = watchDepartureSignature(sessions);
+    if (watchDepartureInFlight?.signature === signature) {
+      return watchDepartureInFlight.promise;
+    }
 
     const loadGeneration = ++watchDepartureGeneration;
     clearSessionDayRefresh();
@@ -590,6 +675,9 @@ const WindmateDeparture = (() => {
       if (card) clearDepartureStroke(card, key);
     }
 
+    hydrateWatchlistDepartures(container, sessions, verdictForSession, curveSyncContext);
+
+    const runLoad = async () => {
     const results = await Promise.all(
       sessions.map((session) =>
         fetchPlan(session.spot_id, session.session_date, lat, lng, session.sport).catch(() => null)
@@ -601,17 +689,10 @@ const WindmateDeparture = (() => {
       for (let i = 0; i < sessions.length; i++) {
         const session = sessions[i];
         const data = batch[i];
-        const key = watchDepartureKey(session.id);
         const card = container.querySelector(`[data-watch-id="${session.id}"]`);
-        const slot = card?.querySelector(`[data-departure-for="${key}"]`);
-        if (!slot) continue;
-        const verdict = verdictForSession?.(session);
-        const plan = data?.plan;
-        rememberPlannerPlan(session.spot_id, session.session_date, plan);
-        slot.innerHTML = renderLine(plan ? { ...data, plan } : data, verdict);
-        if (plan) {
-          card.querySelector(`[data-departure-group="${key}"]`)?.classList.add('has-departure-line');
-        }
+        applyWatchDepartureToCard(card, session, data, verdictForSession, curveSyncContext, {
+          refreshCurve: true,
+        });
       }
     };
 
@@ -633,6 +714,15 @@ const WindmateDeparture = (() => {
       };
       scheduleSessionDayRefresh(true, reload);
     }
+    };
+
+    const promise = runLoad();
+    watchDepartureInFlight = { signature, promise };
+    try {
+      await promise;
+    } finally {
+      if (watchDepartureInFlight?.promise === promise) watchDepartureInFlight = null;
+    }
   }
 
   return {
@@ -646,5 +736,6 @@ const WindmateDeparture = (() => {
     watchDepartureKey,
     exclusiveEndAfterRun,
     cachedPlannerRange,
+    hydrateWatchlistDepartures,
   };
 })();

@@ -106,14 +106,89 @@ const WindmateWatchlist = (() => {
     return session.excitement ?? { tier: null };
   }
 
-  function renderStrip(container, { activeSport, observationsBySpot, prefs, rideEntryBySpot, sportProfiles, radiusKm }) {
-    if (!container) return;
+  function sortedSessions() {
     const today = WindmateForecastTime.localDateString();
-    const sorted = [...sessions].sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       if (a.session_date === today && b.session_date !== today) return -1;
       if (b.session_date === today && a.session_date !== today) return 1;
       return a.session_date.localeCompare(b.session_date);
     });
+  }
+
+  function canPatchStrip(container) {
+    const sorted = sortedSessions();
+    if (!sorted.length || !container) return false;
+    const cards = container.querySelectorAll('[data-watch-id]');
+    if (cards.length !== sorted.length) return false;
+    const ids = [...cards].map((card) => card.dataset.watchId).sort();
+    const expected = sorted.map((session) => String(session.id)).sort();
+    return ids.every((id, index) => id === expected[index]);
+  }
+
+  function patchObservations(
+    container,
+    { observationsBySpot, prefs, rideEntryBySpot, sportProfiles, radiusKm }
+  ) {
+    if (!container || !canPatchStrip(container)) return false;
+    const today = WindmateForecastTime.localDateString();
+    for (const session of sortedSessions()) {
+      const card = container.querySelector(`[data-watch-id="${session.id}"]`);
+      if (!card) continue;
+      const isToday = session.session_date === today;
+      const obs = observationsBySpot?.get(session.spot_id);
+      const verdict = resolveVerdict(session);
+      const liveStrip =
+        isToday && obs
+          ? WindmateObservations.renderLiveStrip(
+              { id: session.spot_id },
+              obs,
+              rideEntryBySpot?.get(session.spot_id),
+              prefs,
+              {
+                curveKey: `watch:${session.id}`,
+                sessionDate: session.session_date,
+                sessionGoNoGo: verdict,
+                suppressVerdictBanner: true,
+              }
+            )
+          : '';
+      const existing = card.querySelector('.live-strip');
+      if (liveStrip && existing) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = liveStrip.trim();
+        const next = wrap.firstElementChild;
+        existing.replaceWith(next);
+        WindmateObservations.syncCurveToggleUi(next, `watch:${session.id}`);
+      } else if (liveStrip && !existing) {
+        const departureGroup = card.querySelector('[data-departure-group]');
+        const wrap = document.createElement('div');
+        wrap.innerHTML = liveStrip.trim();
+        departureGroup?.insertAdjacentElement('beforebegin', wrap.firstElementChild);
+      } else if (!liveStrip && existing) {
+        existing.remove();
+      }
+
+      const forecastSummary = verdict.summary ?? '';
+      const summaryEl = card.querySelector('.session-verdict-banner--go');
+      if (forecastSummary) {
+        if (summaryEl) summaryEl.textContent = forecastSummary;
+        else {
+          const banner = document.createElement('div');
+          banner.className = 'session-verdict-banner session-verdict-banner--go';
+          banner.textContent = forecastSummary;
+          card.querySelector('.flex.flex-wrap.items-start')?.insertAdjacentElement('afterend', banner);
+        }
+      } else if (summaryEl) {
+        summaryEl.remove();
+      }
+    }
+    return true;
+  }
+
+  function renderStrip(container, { activeSport, observationsBySpot, prefs, rideEntryBySpot, sportProfiles, radiusKm }) {
+    if (!container) return;
+    const sorted = sortedSessions();
+    const today = WindmateForecastTime.localDateString();
 
     if (!sorted.length) {
       container.innerHTML = '';
@@ -288,6 +363,8 @@ const WindmateWatchlist = (() => {
     toggle,
     remove,
     renderStrip,
+    canPatchStrip,
+    patchObservations,
     renderWatchButton,
     bindWatchButtons,
     getWatchedSpotIdsForToday,

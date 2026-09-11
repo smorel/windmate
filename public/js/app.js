@@ -1035,25 +1035,56 @@ function rebindObservationToggles(obsBySpot, matrixPrefs) {
     warningsBySpot,
     rideEntryBySpot
   );
+  WindmateObservations.bindToggles(
+    els.rideabilityMatrix,
+    obsBySpot,
+    matrixPrefs,
+    warningsBySpot,
+    rideEntryBySpot
+  );
 }
 
-function applyObservationsToUi(obsRes) {
+function applyObservationsToUi(obsRes, { observationsOnly = false } = {}) {
   observationsData = obsRes;
   if (!rideabilityData) return;
-  renderRideabilityMatrix(rideabilityData, observationsData);
   const obsBySpot = WindmateObservations.mapBySpotId(observationsData);
   const matrixPrefs = prefsForRanking(rideabilityData.preferences);
   const rideEntryBySpot = new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry]));
-  WindmateWatchlist.renderStrip(els.watchlistStrip, {
-    activeSport,
+  const watchStripOpts = {
     observationsBySpot: obsBySpot,
     prefs: matrixPrefs,
     rideEntryBySpot,
     sportProfiles,
     radiusKm: rideabilityData.radius_km ?? getSearchRadiusKm(),
-  });
+  };
+  const departureContext = watchlistDepartureCurveContext(obsBySpot);
+  const verdictForSession = (session) => WindmateWatchlist.resolveVerdict(session);
+
+  if (observationsOnly) {
+    WindmateObservations.patchLiveStripsInRoot(els.rideabilityMatrix, obsBySpot, matrixPrefs, rideEntryBySpot);
+    if (!WindmateWatchlist.patchObservations(els.watchlistStrip, watchStripOpts)) {
+      WindmateWatchlist.renderStrip(els.watchlistStrip, watchStripOpts);
+      WindmateDeparture.hydrateWatchlistDepartures(
+        els.watchlistStrip,
+        WindmateWatchlist.getSessions(),
+        verdictForSession,
+        departureContext
+      );
+    }
+    rebindObservationToggles(obsBySpot, matrixPrefs);
+    return;
+  }
+
+  renderRideabilityMatrix(rideabilityData, observationsData);
+  WindmateWatchlist.renderStrip(els.watchlistStrip, watchStripOpts);
+  WindmateDeparture.hydrateWatchlistDepartures(
+    els.watchlistStrip,
+    WindmateWatchlist.getSessions(),
+    verdictForSession,
+    departureContext
+  );
   rebindObservationToggles(obsBySpot, matrixPrefs);
-  refreshWatchlistDepartures();
+  refreshWatchlistDepartures(obsBySpot);
 }
 
 async function refreshLiveObservations() {
@@ -1064,7 +1095,7 @@ async function refreshLiveObservations() {
     const obsRes = await api(`/api/observations?${query}${watchedQuery}&refresh=1`).catch(() => ({
       spots: [],
     }));
-    applyObservationsToUi(obsRes);
+    applyObservationsToUi(obsRes, { observationsOnly: true });
   } catch {
     /* keep last good data */
   }
@@ -1227,14 +1258,43 @@ function getSpotDayData(entry, dateStr) {
   return { ...(consensusDay ?? {}), date: dateStr, hours };
 }
 
-function refreshWatchlistDepartures() {
+function prefsForWatchSession(session) {
+  const matrixPrefs = rideabilityData ? prefsForRanking(rideabilityData.preferences) : null;
+  const profile = sportProfiles?.find((p) => p.sport === session.sport);
+  const base = profile ?? matrixPrefs;
+  if (!base) return matrixPrefs;
+  return {
+    ...base,
+    sport: session.sport,
+    rank_criteria_order: base.rank_criteria_order ?? matrixPrefs?.rank_criteria_order,
+    favorite_spot_ids: matrixPrefs?.favorite_spot_ids ?? base.favorite_spot_ids,
+  };
+}
+
+function watchlistDepartureCurveContext(obsBySpot) {
+  if (!rideabilityData || !obsBySpot) return null;
+  const matrixPrefs = prefsForRanking(rideabilityData.preferences);
+  return {
+    obsBySpot,
+    prefs: matrixPrefs,
+    prefsForSession: prefsForWatchSession,
+    warningsBySpot: new Map(
+      rideabilityData.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
+    ),
+    rideEntryBySpot: new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry])),
+  };
+}
+
+function refreshWatchlistDepartures(obsBySpot = null) {
   if (!els.watchlistStrip || userLocation.lat == null || userLocation.lng == null) return;
+  const obsMap = obsBySpot ?? (observationsData ? WindmateObservations.mapBySpotId(observationsData) : null);
   WindmateDeparture.loadForWatchlist(
     els.watchlistStrip,
     WindmateWatchlist.getSessions(),
     userLocation.lat,
     userLocation.lng,
-    (session) => WindmateWatchlist.resolveVerdict(session)
+    (session) => WindmateWatchlist.resolveVerdict(session),
+    watchlistDepartureCurveContext(obsMap)
   );
 }
 

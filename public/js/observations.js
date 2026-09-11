@@ -6,6 +6,56 @@ const WindmateObservations = (() => {
   let autoRefreshTimer = null;
   let nowMarkerTimer = null;
   let autoRefreshCallback = null;
+  const toggleContextByRoot = new WeakMap();
+
+  function syncCurveToggleUi(strip, curveKey) {
+    if (!strip) return;
+    const btn = strip.querySelector('.curve-toggle');
+    const panel = strip.querySelector('.curve-panel');
+    const isOpen = expanded.has(curveKey);
+    if (btn) {
+      btn.textContent = isOpen
+        ? WindmateCopy.observations.hideCurve
+        : WindmateCopy.observations.showCurve;
+    }
+    if (panel) panel.classList.toggle('hidden', !isOpen);
+  }
+
+  function handleCurveToggleClick(event) {
+    const btn = event.target.closest('.curve-toggle');
+    if (!btn) return;
+    const root = btn.closest('[data-curve-toggle-root]');
+    if (!root) return;
+    const ctx = toggleContextByRoot.get(root);
+    if (!ctx) return;
+
+    event.stopPropagation();
+    const { observationsBySpot, prefs, warningsBySpot, rideEntryBySpot } = ctx;
+    const spotId = btn.dataset.spotId;
+    const curveKey = btn.dataset.curveKey ?? spotId;
+    const strip = btn.closest('.live-strip');
+    const panel = strip?.querySelector('.curve-panel');
+    if (expanded.has(curveKey)) expanded.delete(curveKey);
+    else expanded.add(curveKey);
+    syncAutoRefresh();
+    const obs = observationsBySpot.get(spotId);
+    syncCurveToggleUi(strip, curveKey);
+    if (panel && expanded.has(curveKey)) {
+      renderCurve(
+        panel,
+        obs,
+        prefs,
+        curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs)
+      );
+      if (autoRefreshCallback) void autoRefreshCallback();
+    }
+  }
+
+  function ensureToggleRoot(root) {
+    if (!root || root.dataset.curveToggleRoot === '1') return;
+    root.dataset.curveToggleRoot = '1';
+    root.addEventListener('click', handleCurveToggleClick);
+  }
 
   function collapseAll() {
     expanded.clear();
@@ -592,8 +642,10 @@ const WindmateObservations = (() => {
 
     const bandTop = yForSpeed(prefs.max_gust_knots);
     const bandBottom = yForSpeed(prefs.min_wind_knots);
-    const plannerRange =
-      options.plannerRange ?? resolvePlannerWindowRange(options.rideEntry, sessionDate, prefs);
+    let plannerRange = options.plannerRange;
+    if (plannerRange === undefined) {
+      plannerRange = resolvePlannerWindowRange(options.rideEntry, sessionDate, prefs);
+    }
     const rideableWindowHours = qualifyingWindowHours(forecast, options.rideEntry, prefs);
     const rideableWindowBands = renderRideableWindowBands(
       rideableWindowHours,
@@ -728,6 +780,34 @@ const WindmateObservations = (() => {
     });
   }
 
+  function patchLiveStripsInRoot(root, observationsBySpot, prefs, rideEntryBySpot) {
+    if (!root) return;
+    root.querySelectorAll('.live-strip').forEach((strip) => {
+      const card = strip.closest('[data-spot-id]');
+      if (!card) return;
+      const spotId = card.dataset.spotId;
+      const obs = observationsBySpot.get(spotId);
+      if (!obs) return;
+      const rideEntry = rideEntryBySpot?.get(spotId);
+      const panel = strip.querySelector('.curve-panel');
+      const sessionDate = panel?.dataset?.sessionDate;
+      const curveToggle = strip.querySelector('.curve-toggle');
+      const curveKey = curveToggle?.dataset?.curveKey ?? `spot:${spotId}`;
+      const html = renderLiveStrip({ id: spotId }, obs, rideEntry, prefs, {
+        curveKey,
+        sessionDate,
+        suppressVerdictBanner: true,
+      });
+      const wrap = document.createElement('div');
+      wrap.innerHTML = html.trim();
+      const next = wrap.firstElementChild;
+      if (next) {
+        strip.replaceWith(next);
+        syncCurveToggleUi(next, curveKey);
+      }
+    });
+  }
+
   function refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot) {
     root.querySelectorAll('.curve-panel').forEach((panel) => {
       const spotId = panel.dataset.spotId;
@@ -745,34 +825,20 @@ const WindmateObservations = (() => {
   }
 
   function bindToggles(root, observationsBySpot, prefs, warningsBySpot = null, rideEntryBySpot = null) {
-    root.querySelectorAll('.curve-toggle').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const spotId = btn.dataset.spotId;
-        const curveKey = btn.dataset.curveKey ?? spotId;
-        const strip = btn.closest('.live-strip');
-        const panel = strip?.querySelector('.curve-panel');
-        const opening = !expanded.has(curveKey);
-        if (opening) expanded.add(curveKey);
-        else expanded.delete(curveKey);
-        syncAutoRefresh();
-        const obs = observationsBySpot.get(spotId);
-        btn.textContent = expanded.has(curveKey)
-          ? WindmateCopy.observations.hideCurve
-          : WindmateCopy.observations.showCurve;
-        if (panel) {
-          panel.classList.toggle('hidden', !expanded.has(curveKey));
-          if (expanded.has(curveKey)) {
-            renderCurve(
-              panel,
-              obs,
-              prefs,
-              curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs)
-            );
-            if (autoRefreshCallback) void autoRefreshCallback();
-          }
-        }
-      });
+    if (!root) return;
+    ensureToggleRoot(root);
+    toggleContextByRoot.set(root, {
+      observationsBySpot,
+      prefs,
+      warningsBySpot,
+      rideEntryBySpot,
+    });
+    root.querySelectorAll('.live-strip').forEach((strip) => {
+      const curveKey =
+        strip.querySelector('.curve-toggle')?.dataset?.curveKey ??
+        strip.querySelector('.curve-panel')?.dataset?.curveKey ??
+        strip.querySelector('.curve-panel')?.dataset?.spotId;
+      if (curveKey) syncCurveToggleUi(strip, curveKey);
     });
     refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot);
   }
@@ -800,6 +866,8 @@ const WindmateObservations = (() => {
     bindToggles,
     mapBySpotId,
     renderCurve,
+    patchLiveStripsInRoot,
+    syncCurveToggleUi,
     refreshPlannerBandOnCard,
     renderVerdictBanner,
     setAutoRefreshCallback,

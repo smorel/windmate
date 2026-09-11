@@ -49,9 +49,7 @@ const els = {
   minRideableWindow: document.getElementById('min-rideable-window'),
   horizonPlanner: document.getElementById('horizon-planner'),
   plannerFullDayToggle: document.getElementById('planner-full-day-toggle'),
-  plannerFullDayLabel: document.getElementById('planner-full-day-label'),
   plannerFullDayText: document.getElementById('planner-full-day-text'),
-  plannerFullDayHint: document.getElementById('planner-full-day-hint'),
   refreshCountdown: document.getElementById('refresh-countdown'),
   rideabilityMatrix: document.getElementById('rideability-matrix'),
   modelLegend: document.getElementById('model-legend'),
@@ -633,25 +631,22 @@ function isPlannerFullDayActive() {
 }
 
 function syncPlannerFullDayToggleUi() {
-  const on = plannerFullDayForecast;
+  const onlyRideableHours = !plannerFullDayForecast;
   if (els.plannerFullDayToggle) {
-    els.plannerFullDayToggle.checked = on;
-    els.plannerFullDayToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+    els.plannerFullDayToggle.checked = onlyRideableHours;
+    els.plannerFullDayToggle.setAttribute(
+      'aria-checked',
+      onlyRideableHours ? 'true' : 'false'
+    );
     els.plannerFullDayToggle.setAttribute('aria-label', WindmateCopy.planner.fullDayToggleAria);
-  }
-  if (els.plannerFullDayLabel) {
-    els.plannerFullDayLabel.title = WindmateCopy.planner.fullDayToggleHint;
   }
   if (els.plannerFullDayText) {
     els.plannerFullDayText.textContent = WindmateCopy.planner.fullDayToggle;
   }
-  if (els.plannerFullDayHint) {
-    els.plannerFullDayHint.textContent = WindmateCopy.planner.fullDayToggleHint;
-  }
 }
 
-async function persistPlannerFullDayForecast(enabled) {
-  plannerFullDayForecast = Boolean(enabled);
+async function persistPlannerFullDayForecast(onlyRideableHours) {
+  plannerFullDayForecast = !Boolean(onlyRideableHours);
   syncPlannerFullDayToggleUi();
   try {
     const updated = await api('/api/preferences', {
@@ -675,7 +670,10 @@ function initPlannerFullDayToggle() {
 }
 
 function applyFullPreferences(prefs) {
-  plannerFullDayForecast = Boolean(prefs.planner_full_day_forecast);
+  plannerFullDayForecast =
+    prefs.planner_full_day_forecast !== undefined && prefs.planner_full_day_forecast !== null
+      ? Boolean(prefs.planner_full_day_forecast)
+      : false;
   syncPlannerFullDayToggleUi();
   sportProfiles = prefs.sport_profiles ?? sportProfiles;
   activeSport = prefs.active_sport ?? activeSport;

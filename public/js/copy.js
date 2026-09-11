@@ -32,10 +32,8 @@ const WindmateCopy = {
   },
 
   planner: {
-    fullDayToggle: 'Full day at favorites',
-    fullDayToggleHint: 'See rain, temp, and wind for the whole day even when nothing’s rideable.',
-    fullDayToggleAria:
-      'Show full-day forecast at favorite spots when the day is not rideable',
+    fullDayToggle: 'Only rideable hours',
+    fullDayToggleAria: 'Limit the planner to rideable spots and session hours',
   },
 
   loading: {

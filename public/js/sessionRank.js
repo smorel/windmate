@@ -976,6 +976,7 @@ const WindmateSessionRank = (() => {
     weightsFromOrder,
     departureWindowOrder,
     weightsForDepartureWindow,
+    getDayHours,
     pickBestQualifyingWindow,
     pickDepartureQualifyingWindow,
     scoreWindowsByStartHour,

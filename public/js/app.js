@@ -2689,10 +2689,11 @@ function renderRideabilityMatrix(data, observations) {
   WindmateWatchlist.bindWatchButtons(els.rideabilityMatrix, data.preferences.sport);
 
   const spotIds = rankedSpots.map((row) => row.entry.spot.id);
+  const matrixPrefs = prefsForRanking(data.preferences);
   const sessionVerdictBySpot = new Map(
     rankedSpots.map((row) => [
       row.entry.spot.id,
-      resolveSessionVerdictForDay(row.entry, selectedDayDate, prefsForRanking(data.preferences)),
+      resolveSessionVerdictForDay(row.entry, selectedDayDate, matrixPrefs),
     ])
   );
   WindmateDeparture.loadForMatrix(
@@ -2703,7 +2704,13 @@ function renderRideabilityMatrix(data, observations) {
     userLocation.lng,
     data.preferences.sport,
     sessionVerdictBySpot,
-    data.preferences.min_rideable_window_hours
+    data.preferences.min_rideable_window_hours,
+    {
+      obsBySpot,
+      prefs: matrixPrefs,
+      warningsBySpot,
+      rideEntryBySpot: new Map(data.spots.map((entry) => [entry.spot.id, entry])),
+    }
   );
   WindmateSpotIntel.bindDrawers(els.rideabilityMatrix, data.preferences.sport);
 }

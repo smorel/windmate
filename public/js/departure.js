@@ -5,6 +5,33 @@ const WindmateDeparture = (() => {
   let sessionDayRefreshHandler = null;
   let matrixDepartureGeneration = 0;
   let watchDepartureGeneration = 0;
+  const plannerPlanByKey = new Map();
+
+  function plannerPlanCacheKey(spotId, dateStr) {
+    return `${spotId}|${dateStr}`;
+  }
+
+  function rememberPlannerPlan(spotId, dateStr, plan) {
+    if (!spotId || !dateStr) return;
+    const key = plannerPlanCacheKey(spotId, dateStr);
+    if (plan?.onWaterStart && plan?.onWaterEnd) plannerPlanByKey.set(key, plan);
+    else plannerPlanByKey.delete(key);
+  }
+
+  function forgetPlannerPlansForSpots(spotIds, dateStr) {
+    for (const spotId of spotIds) {
+      plannerPlanByKey.delete(plannerPlanCacheKey(spotId, dateStr));
+    }
+  }
+
+  function cachedPlannerRange(spotId, dateStr) {
+    const plan = plannerPlanByKey.get(plannerPlanCacheKey(spotId, dateStr));
+    if (!plan?.onWaterStart || !plan?.onWaterEnd) return null;
+    return {
+      start: hourTimeKey(plan.onWaterStart),
+      endExclusive: hourTimeKey(plan.onWaterEnd),
+    };
+  }
 
   function clientTzOffsetMinutes() {
     return String(new Date().getTimezoneOffset());
@@ -482,13 +509,16 @@ const WindmateDeparture = (() => {
     lng,
     sport,
     sessionVerdictBySpot,
-    minRideableWindowHours
+    minRideableWindowHours,
+    curveSyncContext
   ) {
     if (!container || !spotIds.length || !dateStr) return;
 
     const loadGeneration = ++matrixDepartureGeneration;
     clearSessionDayRefresh();
     untrackContainer(container);
+
+    forgetPlannerPlansForSpots(spotIds, dateStr);
 
     for (const spotId of spotIds) {
       const card = container.querySelector(`[data-spot-id="${spotId}"]`);
@@ -511,11 +541,20 @@ const WindmateDeparture = (() => {
         const verdict = sessionVerdictBySpot?.get(data.spotId);
         const grid = card?.querySelector(`[data-matrix-grid="${data.spotId}"]`);
         const plan = data.plan;
+        rememberPlannerPlan(data.spotId, dateStr, plan);
         syncDepartureWindowOnGrid(grid, plan);
         slot.innerHTML = renderLine({ ...data, plan }, verdict, minRideableWindowHours);
         if (plan) {
           trackDepartureStroke(container, card, data.spotId, plan, 'matrix');
           scheduleDepartureStroke(card, data.spotId, plan, 'matrix');
+          if (curveSyncContext) {
+            const obsEntry = curveSyncContext.obsBySpot?.get(data.spotId);
+            WindmateObservations.refreshPlannerBandOnCard(card, plan, obsEntry, curveSyncContext.prefs, {
+              warnings: curveSyncContext.warningsBySpot?.get(data.spotId),
+              rideEntry: curveSyncContext.rideEntryBySpot?.get(data.spotId),
+              sessionDate: dateStr,
+            });
+          }
         }
       }
     };
@@ -568,6 +607,7 @@ const WindmateDeparture = (() => {
         if (!slot) continue;
         const verdict = verdictForSession?.(session);
         const plan = data?.plan;
+        rememberPlannerPlan(session.spot_id, session.session_date, plan);
         slot.innerHTML = renderLine(plan ? { ...data, plan } : data, verdict);
         if (plan) {
           card.querySelector(`[data-departure-group="${key}"]`)?.classList.add('has-departure-line');
@@ -605,5 +645,6 @@ const WindmateDeparture = (() => {
     refreshAllDepartureStrokes,
     watchDepartureKey,
     exclusiveEndAfterRun,
+    cachedPlannerRange,
   };
 })();

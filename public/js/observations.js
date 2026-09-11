@@ -279,10 +279,25 @@ const WindmateObservations = (() => {
     return day?.hours ?? [];
   }
 
+  function plannerRangeFromDeparturePlan(plan) {
+    if (!plan?.onWaterStart || !plan?.onWaterEnd) return null;
+    return {
+      start: WindmateRideableWindow.hourTimeKey(plan.onWaterStart),
+      endExclusive: WindmateRideableWindow.hourTimeKey(plan.onWaterEnd),
+    };
+  }
+
+  function plannerRangeFromMatrixGrid(card) {
+    const grid = card?.querySelector('[data-matrix-grid]');
+    const start = grid?.dataset?.departureWindowStart;
+    const end = grid?.dataset?.departureWindowEnd;
+    if (!start || !end) return null;
+    return { start, endExclusive: end };
+  }
+
   function resolvePlannerWindowRange(rideEntry, dateStr, prefs) {
     if (!rideEntry || !dateStr) return null;
-    const primary = rideEntry.primaryModel;
-    const dayHours = primary ? getModelDayHours(rideEntry, primary, dateStr) : [];
+    const dayHours = WindmateSessionRank.getDayHours(rideEntry, dateStr, getModelDayHours);
     if (!dayHours.length) return null;
     const pick = WindmateSessionRank.pickDepartureQualifyingWindow(
       rideEntry,
@@ -664,17 +679,47 @@ const WindmateObservations = (() => {
     return warningsBySpot?.get(spotId) ?? obs?.today?.warnings ?? [];
   }
 
+  function cardExpectsDeparturePlan(card) {
+    return Boolean(card?.querySelector('[data-departure-group]'));
+  }
+
+  /** Planner band must match /api/departure — no client-side guess on matrix cards. */
+  function resolvePlannerRangeForCurve(card, spotId, sessionDate, rideEntry, prefs) {
+    const fromGrid = plannerRangeFromMatrixGrid(card);
+    if (fromGrid) return fromGrid;
+    if (spotId && sessionDate && WindmateDeparture.cachedPlannerRange) {
+      const fromCache = WindmateDeparture.cachedPlannerRange(spotId, sessionDate);
+      if (fromCache) return fromCache;
+    }
+    if (cardExpectsDeparturePlan(card)) return null;
+    if (sessionDate && rideEntry && prefs) return resolvePlannerWindowRange(rideEntry, sessionDate, prefs);
+    return null;
+  }
+
   function curveRenderOptions(spotId, observationsBySpot, warningsBySpot, rideEntryBySpot, panel, prefs) {
     const rideEntry = rideEntryBySpot?.get(spotId) ?? null;
     const sessionDate = panel?.dataset?.sessionDate;
+    const card = panel?.closest('[data-spot-id]');
     return {
       warnings: curveWarningsFor(spotId, observationsBySpot, warningsBySpot),
       rideEntry,
       sessionDate,
-      plannerRange: sessionDate && rideEntry && prefs
-        ? resolvePlannerWindowRange(rideEntry, sessionDate, prefs)
-        : null,
+      plannerRange: resolvePlannerRangeForCurve(card, spotId, sessionDate, rideEntry, prefs),
     };
+  }
+
+  function refreshPlannerBandOnCard(card, plan, obsEntry, prefs, extras = {}) {
+    const panel = card?.querySelector('.curve-panel');
+    if (!panel || panel.classList.contains('hidden') || !obsEntry) return;
+    const spotId = panel.dataset.spotId;
+    if (!spotId) return;
+    const fromPlan = plannerRangeFromDeparturePlan(plan);
+    renderCurve(panel, obsEntry, prefs, {
+      warnings: extras.warnings,
+      rideEntry: extras.rideEntry,
+      sessionDate: extras.sessionDate ?? panel.dataset.sessionDate,
+      plannerRange: fromPlan ?? plannerRangeFromMatrixGrid(card) ?? extras.fallbackPlannerRange,
+    });
   }
 
   function refreshExpandedCurves(root, observationsBySpot, prefs, warningsBySpot, rideEntryBySpot) {
@@ -749,6 +794,7 @@ const WindmateObservations = (() => {
     bindToggles,
     mapBySpotId,
     renderCurve,
+    refreshPlannerBandOnCard,
     renderVerdictBanner,
     setAutoRefreshCallback,
     hasExpandedCurves,

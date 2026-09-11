@@ -52,6 +52,10 @@ function createPreferencesRouter(db) {
         req.body.alerts_master_enabled !== undefined
           ? req.body.alerts_master_enabled
           : current.alerts_master_enabled,
+      planner_full_day_forecast:
+        req.body.planner_full_day_forecast !== undefined
+          ? req.body.planner_full_day_forecast
+          : current.planner_full_day_forecast,
     });
 
     res.json(updated);

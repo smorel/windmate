@@ -144,6 +144,9 @@ function migrateDb(db) {
   if (!prefColumns.includes('alerts_master_enabled')) {
     db.exec('ALTER TABLE user_preferences ADD COLUMN alerts_master_enabled INTEGER NOT NULL DEFAULT 1');
   }
+  if (!prefColumns.includes('planner_full_day_forecast')) {
+    db.exec('ALTER TABLE user_preferences ADD COLUMN planner_full_day_forecast INTEGER NOT NULL DEFAULT 0');
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS sport_profiles (
@@ -418,7 +421,7 @@ function parseSportProfileRow(row) {
 /** @param {import('better-sqlite3').Database} db */
 function getGlobalPreferences(db) {
   const row = db.prepare(`
-    SELECT active_sport, favorite_spot_ids, alerts_master_enabled
+    SELECT active_sport, favorite_spot_ids, alerts_master_enabled, planner_full_day_forecast
     FROM user_preferences WHERE id = 1
   `).get();
   if (!row) return null;
@@ -432,6 +435,7 @@ function getGlobalPreferences(db) {
     active_sport: row.active_sport ?? 'wingfoiling',
     favorite_spot_ids: favoriteIds,
     alerts_master_enabled: row.alerts_master_enabled ? 1 : 0,
+    planner_full_day_forecast: row.planner_full_day_forecast ? 1 : 0,
   };
 }
 
@@ -463,6 +467,7 @@ function getPreferences(db, sport) {
     sport: activeSport,
     active_sport: global.active_sport,
     alerts_master_enabled: global.alerts_master_enabled,
+    planner_full_day_forecast: global.planner_full_day_forecast,
   };
 }
 
@@ -484,12 +489,15 @@ function updateGlobalPreferences(db, prefs) {
   const activeSport = prefs.active_sport ?? current.active_sport;
   db.prepare(`
     UPDATE user_preferences
-    SET active_sport = ?, sport = ?, alerts_master_enabled = ?
+    SET active_sport = ?, sport = ?, alerts_master_enabled = ?, planner_full_day_forecast = ?
     WHERE id = 1
   `).run(
     activeSport,
     activeSport,
-    prefs.alerts_master_enabled !== undefined ? (prefs.alerts_master_enabled ? 1 : 0) : current.alerts_master_enabled
+    prefs.alerts_master_enabled !== undefined ? (prefs.alerts_master_enabled ? 1 : 0) : current.alerts_master_enabled,
+    prefs.planner_full_day_forecast !== undefined
+      ? (prefs.planner_full_day_forecast ? 1 : 0)
+      : current.planner_full_day_forecast
   );
   return getFullPreferences(db);
 }
@@ -578,6 +586,7 @@ function updatePreferences(db, prefs) {
   updateGlobalPreferences(db, {
     active_sport: sport,
     alerts_master_enabled: prefs.alerts_master_enabled,
+    planner_full_day_forecast: prefs.planner_full_day_forecast,
   });
   return getPreferences(db, sport);
 }

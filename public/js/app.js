@@ -17,6 +17,7 @@ let activeSport = 'wingfoiling';
 let settingsSportTab = 'wingfoiling';
 let locating = false;
 let selectedDayDate = null;
+let plannerFullDayForecast = false;
 
 const GEO = { DENIED: 1, UNAVAILABLE: 2, TIMEOUT: 3 };
 
@@ -44,6 +45,10 @@ const els = {
   offshoreWindHint: document.getElementById('offshore-wind-hint'),
   minRideableWindow: document.getElementById('min-rideable-window'),
   horizonPlanner: document.getElementById('horizon-planner'),
+  plannerFullDayToggle: document.getElementById('planner-full-day-toggle'),
+  plannerFullDayLabel: document.getElementById('planner-full-day-label'),
+  plannerFullDayText: document.getElementById('planner-full-day-text'),
+  plannerFullDayHint: document.getElementById('planner-full-day-hint'),
   refreshCountdown: document.getElementById('refresh-countdown'),
   rideabilityMatrix: document.getElementById('rideability-matrix'),
   modelLegend: document.getElementById('model-legend'),
@@ -563,7 +568,57 @@ function loadSettingsFormForSport(sport) {
   renderRankCriteriaList(rankCriteriaOrder);
 }
 
+function isPlannerFullDayActive() {
+  return Boolean(
+    plannerFullDayForecast || rideabilityData?.preferences?.planner_full_day_forecast
+  );
+}
+
+function syncPlannerFullDayToggleUi() {
+  const on = plannerFullDayForecast;
+  if (els.plannerFullDayToggle) {
+    els.plannerFullDayToggle.checked = on;
+    els.plannerFullDayToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+    els.plannerFullDayToggle.setAttribute('aria-label', WindmateCopy.planner.fullDayToggleAria);
+  }
+  if (els.plannerFullDayLabel) {
+    els.plannerFullDayLabel.title = WindmateCopy.planner.fullDayToggleHint;
+  }
+  if (els.plannerFullDayText) {
+    els.plannerFullDayText.textContent = WindmateCopy.planner.fullDayToggle;
+  }
+  if (els.plannerFullDayHint) {
+    els.plannerFullDayHint.textContent = WindmateCopy.planner.fullDayToggleHint;
+  }
+}
+
+async function persistPlannerFullDayForecast(enabled) {
+  plannerFullDayForecast = Boolean(enabled);
+  syncPlannerFullDayToggleUi();
+  try {
+    const updated = await api('/api/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ planner_full_day_forecast: plannerFullDayForecast ? 1 : 0 }),
+    });
+    applyFullPreferences(updated);
+    if (rideabilityData) {
+      renderRideabilityMatrix(rideabilityData, observationsData);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function initPlannerFullDayToggle() {
+  syncPlannerFullDayToggleUi();
+  els.plannerFullDayToggle?.addEventListener('change', () => {
+    persistPlannerFullDayForecast(els.plannerFullDayToggle.checked);
+  });
+}
+
 function applyFullPreferences(prefs) {
+  plannerFullDayForecast = Boolean(prefs.planner_full_day_forecast);
+  syncPlannerFullDayToggleUi();
   sportProfiles = prefs.sport_profiles ?? sportProfiles;
   activeSport = prefs.active_sport ?? activeSport;
   settingsSportTab = sportProfiles.some((p) => p.sport === settingsSportTab && p.enabled)
@@ -573,6 +628,9 @@ function applyFullPreferences(prefs) {
   favoriteSpotIds = normalizeFavoriteSpotIds(
     activeProfile?.favorite_spot_ids ?? prefs.favorite_spot_ids
   );
+  if (rideabilityData?.preferences) {
+    rideabilityData.preferences.planner_full_day_forecast = plannerFullDayForecast ? 1 : 0;
+  }
   syncPreferencesState(prefs);
   renderMySports();
   renderSportSettingsTabs();
@@ -1854,7 +1912,7 @@ function criterionValueLine(hour, criterion) {
   return `Waves ${WindmateWaveColors.formatWave(hour)}`;
 }
 
-function criterionTooltipLines(modelHours, criterion, time) {
+function criterionTooltipLines(modelHours, criterion, time, fullDayMode) {
   const hourLabel = time.slice(11, 16);
   const criterionLabel =
     criterion === 'wind'
@@ -1869,7 +1927,8 @@ function criterionTooltipLines(modelHours, criterion, time) {
       lines.push(`${label}: — (${modelHourStatus(hour)})`);
       continue;
     }
-    if (!hour.rideable) {
+    const showValue = WindmatePlannerFullDay.showMatrixCriterionSegment(hour, false, fullDayMode);
+    if (!showValue) {
       lines.push(`${label}: — (${modelHourStatus(hour)})`);
       continue;
     }
@@ -1883,8 +1942,8 @@ function criterionTooltipLines(modelHours, criterion, time) {
   return lines;
 }
 
-function criterionTooltipHtml(modelHours, criterion, time) {
-  return escapeHtml(criterionTooltipLines(modelHours, criterion, time).join('\n'));
+function criterionTooltipHtml(modelHours, criterion, time, fullDayMode) {
+  return escapeHtml(criterionTooltipLines(modelHours, criterion, time, fullDayMode).join('\n'));
 }
 
 function renderMatrixRainOverlay(hours) {
@@ -1944,11 +2003,6 @@ function buildAlignedModels(timelineHours, modelEntries, getModelHours, windowMa
   }));
 }
 
-function hourHasMatrixConditionData(hour) {
-  if (hour == null) return false;
-  return hour.windSpeed != null || hour.gusts != null || hour.waveHeightM != null;
-}
-
 /** Same gate as tooltips: wind/weather/temp OK but direction blocked offshore. */
 function isOffshoreBlockedMatrixHour(hour) {
   return (
@@ -1964,12 +2018,16 @@ function matrixOffshoreBlockedSegmentHtml() {
   return '<div class="hour-block-seg hour-block-seg--offshore" aria-hidden="true"></div>';
 }
 
-function renderCriterionSegments(modelHoursAtSlot, criterion, elapsed, night) {
+function renderCriterionSegments(modelHoursAtSlot, criterion, elapsed, night, fullDayMode) {
   if (night) return matrixEmptyHourSegments(modelHoursAtSlot.length);
   return modelHoursAtSlot
     .map((hour) => {
       if (hour == null) return '';
-      const showSegment = elapsed ? hourHasMatrixConditionData(hour) : hour.rideable;
+      const showSegment = WindmatePlannerFullDay.showMatrixCriterionSegment(
+        hour,
+        elapsed,
+        fullDayMode
+      );
       if (!showSegment) {
         if (isOffshoreBlockedMatrixHour(hour)) {
           return matrixOffshoreBlockedSegmentHtml();
@@ -2118,7 +2176,15 @@ function renderProbabilityRow(timelineHours, modelEntries, getModelHours, window
     </div>`;
 }
 
-function renderCriterionRow(timelineHours, alignedModels, criterion, label, windowMaps, dateStr) {
+function renderCriterionRow(
+  timelineHours,
+  alignedModels,
+  criterion,
+  label,
+  windowMaps,
+  dateStr,
+  fullDayMode
+) {
   if (!timelineHours?.length) {
     return `<div class="text-xs text-slate-500 py-1">${WindmateCopy.empty.noModelData(label)}</div>`;
   }
@@ -2135,7 +2201,13 @@ function renderCriterionRow(timelineHours, alignedModels, criterion, label, wind
       const night = isMatrixNightSlot(slot, modelHoursAtSlot);
       const elapsed = !night && dateStr && !isMatrixSessionPlanningHour(slot.time, dateStr);
       const cls = criterionHourBlockClass(slot, modelHoursAtSlot, dateStr);
-      const segments = renderCriterionSegments(modelHoursAtSlot, criterion, elapsed, night);
+      const segments = renderCriterionSegments(
+        modelHoursAtSlot,
+        criterion,
+        elapsed,
+        night,
+        fullDayMode
+      );
       if (night) {
         return `<div class="${cls}" aria-hidden="true"><div class="hour-block-segments">${segments}</div></div>`;
       }
@@ -2143,7 +2215,7 @@ function renderCriterionRow(timelineHours, alignedModels, criterion, label, wind
         label: model.label,
         hour: model.hours[index],
       }));
-      const tip = criterionTooltipHtml(modelHours, criterion, slot.time);
+      const tip = criterionTooltipHtml(modelHours, criterion, slot.time, fullDayMode);
       return `<div class="${cls}"><div class="hour-block-segments">${segments}</div><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
     })
     .join('');
@@ -2297,7 +2369,8 @@ function renderCriterionMatrixRows(
   getModelHours,
   windowMaps,
   entry,
-  dateStr
+  dateStr,
+  fullDayMode
 ) {
   const alignedModels =
     modelEntries.length > 0
@@ -2328,7 +2401,8 @@ function renderCriterionMatrixRows(
         criterion.key,
         criterion.label,
         windowMaps,
-        dateStr
+        dateStr,
+        fullDayMode
       )
     )
     .join('');
@@ -2364,16 +2438,24 @@ function renderRideabilityMatrix(data, observations) {
   const viewingToday = isForecastToday(selectedDayDate, data);
   const obsBySpot = WindmateObservations.mapBySpotId(observations);
 
-  const rankedSpots = sortSpotsForDay(
-    data.spots,
-    selectedDayDate,
-    prefsForRanking(data.preferences),
-    getSearchRadiusKm()
-  ).filter((row) => row.rideableCount > 0);
+  const fullDayMode = isPlannerFullDayActive();
+  const rankedSpots = WindmatePlannerFullDay.filterMatrixSpotsForDay(
+    sortSpotsForDay(
+      data.spots,
+      selectedDayDate,
+      prefsForRanking(data.preferences),
+      getSearchRadiusKm()
+    ),
+    favoriteSpotIds,
+    fullDayMode
+  );
   const minWindowHours = getMinRideableWindowHours(data.preferences);
 
   if (!rankedSpots.length) {
-    els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${WindmateCopy.empty.noRideableHoursForDay}</p>`;
+    const emptyCopy = fullDayMode
+      ? WindmateCopy.empty.noRideableHoursForDayFullDay
+      : WindmateCopy.empty.noRideableHoursForDay;
+    els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${emptyCopy}</p>`;
     return;
   }
 
@@ -2403,7 +2485,8 @@ function renderRideabilityMatrix(data, observations) {
         (modelId) => getModelDayHours(entry, modelId, selectedDayDate),
         windowMaps,
         entry,
-        selectedDayDate
+        selectedDayDate,
+        fullDayMode
       );
 
       const matrixPrefs = prefsForRanking(data.preferences);
@@ -2561,6 +2644,7 @@ els.manualLocBtn.addEventListener('click', () => {
   initSpotMapPicker();
   initSpotSearch();
   initFavoriteToggles();
+  initPlannerFullDayToggle();
   WindmateSportSelector.init(els.sportSelector, { onSwitch: switchActiveSport });
   WindmateWatchlist.setOnChange(() => refreshDashboard({ silent: true }));
   WindmateWatchlist.setOnNavigate(goToWatchedSession);

@@ -6,7 +6,7 @@
   <title>Windmate</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="/css/styles.css?v=24" />
+  <link rel="stylesheet" href="/css/styles.css?v=25" />
   <script>
     tailwind.config = {
       theme: {
@@ -100,7 +100,25 @@
     </div>
 
     <section class="dashboard-planner">
-      <h2 class="text-lg font-semibold text-white mb-4">Horizon Planner</h2>
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+        <h2 class="text-lg font-semibold text-white">Horizon Planner</h2>
+        <label
+          class="planner-full-day-toggle flex items-start gap-2.5 cursor-pointer select-none sm:max-w-xs sm:text-right"
+          id="planner-full-day-label"
+        >
+          <span class="flex flex-col gap-0.5 sm:items-end flex-1 min-w-0">
+            <span class="text-sm font-medium text-slate-200" id="planner-full-day-text"></span>
+            <span class="text-[10px] text-slate-500 leading-snug hidden sm:block" id="planner-full-day-hint"></span>
+          </span>
+          <input
+            id="planner-full-day-toggle"
+            type="checkbox"
+            role="switch"
+            class="planner-full-day-toggle__input shrink-0 mt-0.5"
+            aria-checked="false"
+          />
+        </label>
+      </div>
       <div class="horizon-planner-sticky">
         <div id="horizon-planner" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"></div>
       </div>
@@ -275,7 +293,7 @@
     </div>
   </div>
 
-  <script src="/js/copy.js?v=4"></script>
+  <script src="/js/copy.js?v=5"></script>
   <script src="/js/forecastTime.js"></script>
   <script src="/js/windColors.js"></script>
   <script src="/js/waveColors.js"></script>
@@ -291,8 +309,9 @@
   <script src="/js/observations.js?v=3"></script>
   <script src="/js/sportSelector.js"></script>
   <script src="/js/watchlist.js"></script>
+  <script src="/js/plannerFullDay.js"></script>
   <script src="/js/departure.js?v=13"></script>
   <script src="/js/spotIntel.js?v=3"></script>
-  <script src="/js/app.js?v=20"></script>
+  <script src="/js/app.js?v=21"></script>
 </body>
 </html>

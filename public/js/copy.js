@@ -25,6 +25,15 @@ const WindmateCopy = {
     noModelData: (label) => `${label}: blank on this one for now`,
     noRideableHoursForDay:
       'Nothing rideable this day mate — tap another day in the planner above.',
+    noRideableHoursForDayFullDay:
+      'Nothing rideable and no favorites to show for this day — pick another day or favorite a spot.',
+  },
+
+  planner: {
+    fullDayToggle: 'Full day at favorites',
+    fullDayToggleHint: 'See rain, temp, and wind for the whole day even when nothing’s rideable.',
+    fullDayToggleAria:
+      'Show full-day forecast at favorite spots when the day is not rideable',
   },
 
   loading: {

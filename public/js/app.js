@@ -2430,6 +2430,15 @@ function resolveSessionVerdictForDay(entry, date, prefs) {
   return WindmateSessionGoNoGo.forDay(entry, date, prefs, getModelDayHours);
 }
 
+/** When full-day mode is on, attach min–max wind/gust/wave/air for session hours if no window summary. */
+function applyFullDayVerdictSummary(verdict, dayHours, dateStr, fullDayMode) {
+  if (!fullDayMode || !verdict?.reason || verdict.summary) return verdict;
+  const planningHours = WindmatePlannerFullDay.filterMatrixPlanningHours(dayHours, dateStr);
+  const stats = WindmatePlannerFullDay.buildPlanningHourConditionStats(planningHours);
+  const summary = WindmatePlannerFullDay.formatPlanningHourConditionSummary(stats);
+  return summary ? { ...verdict, summary } : verdict;
+}
+
 function renderRideabilityMatrix(data, observations) {
   if (!data.spots.length) {
     els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${WindmateCopy.empty.noSpotsInRange}</p>`;
@@ -2513,10 +2522,16 @@ function renderRideabilityMatrix(data, observations) {
         data.preferences.sport
       );
       const obsEntry = obsBySpot.get(spot.id);
-      const sessionVerdict = resolveSessionVerdictForDay(
+      let sessionVerdict = resolveSessionVerdictForDay(
         entry,
         selectedDayDate,
         prefsForRanking(data.preferences)
+      );
+      sessionVerdict = applyFullDayVerdictSummary(
+        sessionVerdict,
+        dayHours,
+        selectedDayDate,
+        fullDayMode
       );
       const verdictBanner = WindmateObservations.renderVerdictBanner(sessionVerdict);
       const liveStrip = viewingToday

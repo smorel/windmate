@@ -105,6 +105,15 @@ function showMatrixCriterionSegment(hour, elapsed, fullDayMode) {
   return Boolean(hour.rideable);
 }
 
+/** Matrix slot shows forecast swatches for curiosity only (full-day, not rideable). */
+function matrixSlotShowsFullDayCuriosity(modelHoursAtSlot, elapsed, fullDayMode) {
+  if (!fullDayMode || elapsed) return false;
+  const present = (modelHoursAtSlot ?? []).filter((hour) => hour != null);
+  if (!present.length) return false;
+  if (present.some((hour) => hour.rideable)) return false;
+  return present.some((hour) => showMatrixCriterionSegment(hour, false, true));
+}
+
 function filterMatrixSpotsForDay(rankedRows, favoriteSpotIds, fullDayMode) {
   if (!fullDayMode) {
     return rankedRows.filter((row) => row.rideableCount > 0);
@@ -118,6 +127,7 @@ function filterMatrixSpotsForDay(rankedRows, favoriteSpotIds, fullDayMode) {
 module.exports = {
   hourHasMatrixConditionData,
   showMatrixCriterionSegment,
+  matrixSlotShowsFullDayCuriosity,
   filterMatrixSpotsForDay,
   filterMatrixPlanningHours,
   buildPlanningHourConditionStats,

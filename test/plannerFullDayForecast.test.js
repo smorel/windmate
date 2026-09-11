@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   showMatrixCriterionSegment,
+  matrixSlotShowsFullDayCuriosity,
   filterMatrixSpotsForDay,
   filterMatrixPlanningHours,
   buildPlanningHourConditionStats,
@@ -23,6 +24,33 @@ describe('showMatrixCriterionSegment', () => {
 
   it('shows elapsed hours with data regardless of mode', () => {
     assert.equal(showMatrixCriterionSegment(hour, true, false), true);
+  });
+});
+
+describe('matrixSlotShowsFullDayCuriosity', () => {
+  const nonRideable = [{ rideable: false, windSpeed: 10, gusts: 14 }];
+
+  it('is false when full-day mode is off', () => {
+    assert.equal(matrixSlotShowsFullDayCuriosity(nonRideable, false, false), false);
+  });
+
+  it('is true for non-rideable slots with forecast data in full-day mode', () => {
+    assert.equal(matrixSlotShowsFullDayCuriosity(nonRideable, false, true), true);
+  });
+
+  it('is false when any model hour is rideable', () => {
+    assert.equal(
+      matrixSlotShowsFullDayCuriosity(
+        [{ rideable: true, windSpeed: 12 }, { rideable: false, windSpeed: 8 }],
+        false,
+        true
+      ),
+      false
+    );
+  });
+
+  it('is false for elapsed slots (elapsed styling applies instead)', () => {
+    assert.equal(matrixSlotShowsFullDayCuriosity(nonRideable, true, true), false);
   });
 });
 

@@ -5,6 +5,8 @@ const {
   buildAnchorMinFactors,
   buildAnchorMaxFactors,
   resolveStickerKey,
+  pickBestHorizonExcitement,
+  computeExcitementFromEntry,
 } = require('../src/services/sessionExcitement');
 
 const basePrefs = {
@@ -65,6 +67,64 @@ describe('sessionExcitement', () => {
       const rank = { cool: 1, nice: 2, amazing: 3, epic: 4 };
       assert.ok(rank[high.tier] >= rank[mid.tier]);
     }
+  });
+
+  it('horizon picker ignores bust from non-rideable spots when the day is rideable', () => {
+    const dateStr = '2026-09-15';
+    const prefs = { ...basePrefs, min_wind_knots: 12, max_gust_knots: 40 };
+    const bustHour = (time) => ({
+      time,
+      rideable: false,
+      windOk: false,
+      weatherOk: true,
+      tempOk: true,
+      windSpeed: 6,
+      gusts: 8,
+    });
+    const floorHour = (time) => ({
+      time,
+      rideable: true,
+      windOk: true,
+      weatherOk: true,
+      tempOk: true,
+      windSpeed: 12,
+      gusts: 12,
+      windExposure: 'onshore',
+    });
+    const dayHours = [
+      floorHour(`${dateStr}T09:00`),
+      floorHour(`${dateStr}T10:00`),
+      bustHour(`${dateStr}T11:00`),
+    ];
+    const rideableEntry = {
+      spot: { ideal_directions: ['E'], distance_km: 5 },
+      primaryModel: 'gfs',
+      models: {
+        gfs: { days: [{ date: dateStr, hours: dayHours }] },
+        'open-meteo': { days: [{ date: dateStr, hours: dayHours }] },
+      },
+      days: [{ date: dateStr }],
+    };
+    const noWindowEntry = {
+      spot: { ideal_directions: ['E'], distance_km: 20 },
+      primaryModel: 'gfs',
+      models: {
+        gfs: { days: [{ date: dateStr, hours: dayHours.map((h) => bustHour(h.time)) }] },
+        'open-meteo': { days: [{ date: dateStr, hours: dayHours.map((h) => bustHour(h.time)) }] },
+      },
+      days: [{ date: dateStr }],
+    };
+
+    assert.equal(computeExcitementFromEntry(noWindowEntry, dateStr, prefs, 50).tier, 'bust');
+
+    const horizon = pickBestHorizonExcitement(
+      [noWindowEntry, rideableEntry],
+      dateStr,
+      prefs,
+      50,
+      2
+    );
+    assert.notEqual(horizon.tier, 'bust');
   });
 
   it('can assign quick-hit flair for strong short session', () => {

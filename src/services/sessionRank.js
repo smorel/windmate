@@ -14,6 +14,7 @@ const {
   isSessionPlanningHour,
 } = require('../utils/forecastTime');
 const { readMeteoForecastProbability } = require('../utils/forecastProbabilityHour');
+const { buildUnionDayTimelineHours } = require('../utils/dayTimeline');
 
 const DEFAULT_ORDER = [
   'rideability',
@@ -100,30 +101,7 @@ function weightsForDepartureWindow(userOrder) {
 }
 
 function getDayHours(entry, dateStr) {
-  const models = entry.models ?? {};
-  const modelOrder = [
-    entry.primaryModel,
-    'gfs',
-    'open-meteo',
-    'hrrr',
-    'lam',
-    'nam5',
-    'nam12',
-    'ecmwf9',
-    'icon',
-    ...Object.keys(models),
-  ].filter(Boolean);
-
-  const seen = new Set();
-  for (const modelId of modelOrder) {
-    if (seen.has(modelId) || models[modelId]?.error) continue;
-    seen.add(modelId);
-    const day = models[modelId]?.days?.find((d) => d.date === dateStr);
-    if (day?.hours?.length) return day.hours;
-  }
-
-  const day = (entry.days ?? []).find((d) => d.date === dateStr);
-  return day?.hours ?? [];
+  return buildUnionDayTimelineHours(entry, dateStr, getModelDayHours);
 }
 
 function getModelDayHours(entry, modelId, dateStr) {

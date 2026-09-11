@@ -105,12 +105,15 @@ const WindmateSessionRank = (() => {
     return weights;
   }
 
-  function getDayHours(entry, dateStr) {
-    const primary = entry.primaryModel;
-    if (entry.models?.[primary]?.days) {
-      const day = entry.models[primary].days.find((d) => d.date === dateStr);
-      if (day?.hours?.length) return day.hours;
-    }
+  function getDayHours(entry, dateStr, getModelDayHours) {
+    const resolve =
+      getModelDayHours ??
+      ((ent, modelId, date) => {
+        const day = ent.models?.[modelId]?.days?.find((d) => d.date === date);
+        return day?.hours ?? [];
+      });
+    const hours = WindmateRideableWindow.resolveDayTimeline(entry, dateStr, resolve);
+    if (hours.length) return hours;
     const day = (entry.days ?? []).find((d) => d.date === dateStr);
     return day?.hours ?? [];
   }

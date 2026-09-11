@@ -36,9 +36,13 @@ const WindmateDeparture = (() => {
     return `${plan.driveMinutes} min drive${traffic}`;
   }
 
-  function renderLine(data, sessionVerdict) {
+  function renderLine(data, sessionVerdict, minRideableWindowHours) {
     const plan = data?.plan;
     if (!plan || data.status === 'no_window') return '';
+
+    const minWindow = WindmateRideableWindow.parseMinHours(minRideableWindowHours);
+    const consensusWindowHours = sessionVerdict?.windowHours ?? 0;
+    if (consensusWindowHours < minWindow) return '';
 
     const drive = formatDriveLabel(plan);
     const windowRange = `${plan.onWaterStartLabel}–${plan.onWaterEndLabel}`;
@@ -470,7 +474,16 @@ const WindmateDeparture = (() => {
     sessionDayRefreshTimer = setInterval(reloadFn, SESSION_DAY_REFRESH_MS);
   }
 
-  async function loadForMatrix(container, spotIds, dateStr, lat, lng, sport, sessionVerdictBySpot) {
+  async function loadForMatrix(
+    container,
+    spotIds,
+    dateStr,
+    lat,
+    lng,
+    sport,
+    sessionVerdictBySpot,
+    minRideableWindowHours
+  ) {
     if (!container || !spotIds.length || !dateStr) return;
 
     const loadGeneration = ++matrixDepartureGeneration;
@@ -499,7 +512,7 @@ const WindmateDeparture = (() => {
         const grid = card?.querySelector(`[data-matrix-grid="${data.spotId}"]`);
         const plan = data.plan;
         syncDepartureWindowOnGrid(grid, plan);
-        slot.innerHTML = renderLine({ ...data, plan }, verdict);
+        slot.innerHTML = renderLine({ ...data, plan }, verdict, minRideableWindowHours);
         if (plan) {
           trackDepartureStroke(container, card, data.spotId, plan, 'matrix');
           scheduleDepartureStroke(card, data.spotId, plan, 'matrix');

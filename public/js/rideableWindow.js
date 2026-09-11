@@ -174,15 +174,67 @@ const WindmateRideableWindow = (() => {
     return hours;
   }
 
+  /** Union timeline for the day — primary may only have overnight stubs on horizon day 7. */
+  function resolveDayTimeline(entry, dateStr, getModelDayHours) {
+    const models = entry.models ?? {};
+    const modelIds = Object.keys(models).filter((id) => !models[id]?.error);
+    if (!modelIds.length) return [];
+
+    const defaultPriority = [
+      'gfs',
+      'open-meteo',
+      'hrrr',
+      'lam',
+      'nam5',
+      'nam12',
+      'ecmwf9',
+      'icon',
+    ];
+    const byModel = new Map();
+    const timeKeys = new Set();
+
+    for (const modelId of modelIds) {
+      const hours = getModelDayHours(entry, modelId, dateStr) ?? [];
+      if (!hours.length) continue;
+      const map = new Map();
+      for (const hour of hours) {
+        const key = hourTimeKey(hour.time);
+        if (!key.startsWith(dateStr)) continue;
+        map.set(key, hour);
+        timeKeys.add(key);
+      }
+      if (map.size) byModel.set(modelId, map);
+    }
+
+    if (!timeKeys.size) return [];
+
+    const preference = [
+      ...new Set(
+        [entry.primaryModel, ...defaultPriority, ...modelIds].filter((id) => byModel.has(id))
+      ),
+    ];
+    const pickOrder = preference.length ? preference : [...byModel.keys()];
+    const sorted = [...timeKeys].sort();
+
+    return sorted.map((key) => {
+      for (const modelId of pickOrder) {
+        const hour = byModel.get(modelId)?.get(key);
+        if (hour) return hour;
+      }
+      for (const map of byModel.values()) {
+        const hour = map.get(key);
+        if (hour) return hour;
+      }
+      return { time: key };
+    });
+  }
+
   function buildConsensusHours(entry, dateStr, getModelDayHours) {
     const modelIds = Object.entries(entry.models ?? {})
       .filter(([, model]) => !model.error)
       .map(([modelId]) => modelId);
 
-    const timeline =
-      getModelDayHours(entry, entry.primaryModel, dateStr) ||
-      modelIds.map((modelId) => getModelDayHours(entry, modelId, dateStr)).find((hours) => hours?.length) ||
-      [];
+    const timeline = resolveDayTimeline(entry, dateStr, getModelDayHours);
 
     if (!timeline.length || !modelIds.length) {
       return { timeline, consensusHours: [] };
@@ -431,5 +483,6 @@ const WindmateRideableWindow = (() => {
     nearestHourToleranceMs,
     isInWindow,
     allModelsRideableAt,
+    resolveDayTimeline,
   };
 })();

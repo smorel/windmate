@@ -278,7 +278,7 @@ function pickBestHorizonExcitement(spots, dateStr, prefs, radiusKm, rideableMax)
   let best = null;
   for (const entry of spots) {
     const result = computeExcitementFromEntry(entry, dateStr, prefs, radiusKm);
-    if (!result.tier) continue;
+    if (!result.tier || result.tier === 'bust') continue;
 
     const dist = entry.spot?.distance_km ?? Infinity;
     const windowLen = result.tooltip?.windowHours ?? 0;

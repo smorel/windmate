@@ -1125,12 +1125,11 @@ function renderModelLegend(data) {
 }
 
 function getSpotDayData(entry, dateStr) {
-  const primary = entry.primaryModel;
-  if (entry.models?.[primary]?.days) {
-    const day = entry.models[primary].days.find((d) => d.date === dateStr);
-    if (day) return day;
-  }
-  return (entry.days ?? []).find((d) => d.date === dateStr) ?? null;
+  const hours = WindmateRideableWindow.resolveDayTimeline(entry, dateStr, getModelDayHours);
+  if (!hours.length) return null;
+
+  const consensusDay = (entry.days ?? []).find((d) => d.date === dateStr);
+  return { ...(consensusDay ?? {}), date: dateStr, hours };
 }
 
 function refreshWatchlistDepartures() {
@@ -1844,7 +1843,7 @@ function matrixEmptyHourSegments(segmentCount) {
   );
 }
 
-function criterionHourBlockClass(timelineSlot, modelHoursAtSlot, dateStr) {
+function criterionHourBlockClass(timelineSlot, modelHoursAtSlot, dateStr, fullDayMode) {
   const classes = ['hour-block'];
   if (isMatrixNightSlot(timelineSlot, modelHoursAtSlot)) {
     classes.push('hour-block--night');
@@ -1852,6 +1851,15 @@ function criterionHourBlockClass(timelineSlot, modelHoursAtSlot, dateStr) {
   }
   const elapsed = dateStr && !isMatrixSessionPlanningHour(timelineSlot.time, dateStr);
   if (elapsed) classes.push('hour-block--elapsed');
+  if (
+    WindmatePlannerFullDay.matrixSlotShowsFullDayCuriosity(
+      modelHoursAtSlot,
+      elapsed,
+      fullDayMode
+    )
+  ) {
+    classes.push('hour-block--full-day-curiosity');
+  }
   const present = modelHoursAtSlot.filter((hour) => hour != null);
   const anyRideable = !elapsed && present.some((hour) => hour.rideable);
   if (anyRideable) classes.push('rideable');
@@ -1967,7 +1975,7 @@ function renderMatrixRainOverlay(hours) {
     .join('');
 }
 
-function renderDirectionRow(hours, dateStr) {
+function renderDirectionRow(hours, dateStr, fullDayMode) {
   if (!hours?.length) return '';
 
   const blocks = hours
@@ -1984,7 +1992,14 @@ function renderDirectionRow(hours, dateStr) {
         dateStr && !isMatrixSessionPlanningHour(hour.time, dateStr)
           ? ' matrix-direction--elapsed'
           : '';
-      return `<div class="matrix-direction matrix-direction--${exposure}${elapsed}"><span>${hour.direction}</span><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
+      const curiosity =
+        fullDayMode &&
+        !elapsed &&
+        !hour.rideable &&
+        WindmatePlannerFullDay.hourHasMatrixConditionData(hour)
+          ? ' matrix-direction--full-day-curiosity'
+          : '';
+      return `<div class="matrix-direction matrix-direction--${exposure}${elapsed}${curiosity}"><span>${hour.direction}</span><span class="hour-block-tip" role="tooltip">${tip}</span></div>`;
     })
     .join('');
 
@@ -2206,7 +2221,7 @@ function renderCriterionRow(
       const modelHoursAtSlot = alignedModels.map((model) => model.hours[index]);
       const night = isMatrixNightSlot(slot, modelHoursAtSlot);
       const elapsed = !night && dateStr && !isMatrixSessionPlanningHour(slot.time, dateStr);
-      const cls = criterionHourBlockClass(slot, modelHoursAtSlot, dateStr);
+      const cls = criterionHourBlockClass(slot, modelHoursAtSlot, dateStr, fullDayMode);
       const segments = renderCriterionSegments(
         modelHoursAtSlot,
         criterion,
@@ -2483,7 +2498,7 @@ function renderRideabilityMatrix(data, observations) {
       const rideableCount = getConsensusRideableHours(entry, selectedDayDate, data.preferences);
       const rankBanners = WindmateSessionRank.renderBanners(row.topReasons);
 
-      const directionRow = renderDirectionRow(dayHours, selectedDayDate);
+      const directionRow = renderDirectionRow(dayHours, selectedDayDate, fullDayMode);
       const modelEntries = Object.entries(models ?? {}).filter(([, model]) => !model.error);
       const windowMaps =
         modelEntries.length > 0
@@ -2640,7 +2655,8 @@ function renderRideabilityMatrix(data, observations) {
     userLocation.lat,
     userLocation.lng,
     data.preferences.sport,
-    sessionVerdictBySpot
+    sessionVerdictBySpot,
+    data.preferences.min_rideable_window_hours
   );
   WindmateSpotIntel.bindDrawers(els.rideabilityMatrix, data.preferences.sport);
 }

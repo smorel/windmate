@@ -256,6 +256,15 @@ body.refresh-countdown-active .horizon-planner-sticky {
   opacity: 0.38;
 }
 
+/* Full-day forecast at favorites: show wind/gust/wave but read as non-rideable. */
+.hour-block--full-day-curiosity .hour-block-segments {
+  opacity: 0.42;
+}
+
+.matrix-direction--full-day-curiosity {
+  opacity: 0.42;
+}
+
 .hour-block--night,
 .matrix-direction--night,
 .matrix-score-cell--inactive {
@@ -378,14 +387,16 @@ body.refresh-countdown-active .horizon-planner-sticky {
   border-color: rgba(248, 113, 113, 0.55);
 }
 
-.hour-block.rideable.rain-hour .hour-block-segments {
+/* Rain stripes above criterion swatches (full-day non-rideable hours show wind/gust/wave colors). */
+.hour-block.rain-hour .hour-block-segments {
   position: relative;
 }
 
-.hour-block.rideable.rain-hour .hour-block-segments::after {
+.hour-block.rain-hour .hour-block-segments::after {
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 1;
   border-radius: 2px;
   background: repeating-linear-gradient(
     -52deg,

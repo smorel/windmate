@@ -85,8 +85,7 @@ const WindmateSessionGoNoGo = (() => {
     }
 
     const reason = [...new Set(reasons.filter(Boolean))].join(' · ');
-    const summary =
-      windowHours >= minWindow && cached?.summary ? cached.summary : cached?.summary ?? '';
+    const summary = windowHours >= minWindow ? (cached?.summary ?? '') : '';
 
     return {
       ...(cached ?? {}),

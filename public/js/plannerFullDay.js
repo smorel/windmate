@@ -100,6 +100,14 @@ const WindmatePlannerFullDay = (() => {
     return Boolean(hour.rideable);
   }
 
+  function matrixSlotShowsFullDayCuriosity(modelHoursAtSlot, elapsed, fullDayMode) {
+    if (!fullDayMode || elapsed) return false;
+    const present = (modelHoursAtSlot ?? []).filter((hour) => hour != null);
+    if (!present.length) return false;
+    if (present.some((hour) => hour.rideable)) return false;
+    return present.some((hour) => showMatrixCriterionSegment(hour, false, true));
+  }
+
   function filterMatrixSpotsForDay(rankedRows, favoriteSpotIds, fullDayMode) {
     if (!fullDayMode) {
       return rankedRows.filter((row) => row.rideableCount > 0);
@@ -113,6 +121,7 @@ const WindmatePlannerFullDay = (() => {
   return {
     hourHasMatrixConditionData,
     showMatrixCriterionSegment,
+    matrixSlotShowsFullDayCuriosity,
     filterMatrixSpotsForDay,
     filterMatrixPlanningHours,
     buildPlanningHourConditionStats,

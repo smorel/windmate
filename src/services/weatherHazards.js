@@ -41,6 +41,10 @@ function isThunderstorm(code) {
   return STORM_CODES.has(code ?? 0);
 }
 
+function isStormWeatherCode(code) {
+  return STORM_CODES.has(code ?? 0);
+}
+
 function severityForStorm(code, precip) {
   if (isThunderstorm(code)) return 'high';
   if (precip > 1 || [64, 65, 66, 67, 81, 82].includes(code)) return 'medium';
@@ -133,6 +137,7 @@ module.exports = {
   hasForecastRain,
   hazardLabel,
   isThunderstorm,
+  isStormWeatherCode,
   computeSessionWarnings,
   buildSessionWarningMessage,
   PRECIP_BLOCK_MM,

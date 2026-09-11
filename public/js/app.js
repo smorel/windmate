@@ -1895,7 +1895,13 @@ function modelHourStatus(hour) {
   if (hour.windOk && hour.weatherOk && hour.tempOk && hour.windExposure === 'cross') {
     return WindmateCopy.rideable.tooltipCross;
   }
-  if (hour.windOk && !hour.weatherOk) return 'Rain or storm';
+  if (hour.windOk && !hour.weatherOk) {
+    const wc = hour.weatherConsensus;
+    if (wc && wc.rainy >= Math.floor(wc.reporting / 2) + 1) {
+      return `Rain or storm (${wc.rainy}/${wc.reporting} sources)`;
+    }
+    return 'Rain or storm';
+  }
   if (hour.windOk && !hour.tempOk) return 'Too cold';
   return 'Wind or gusts out of range';
 }

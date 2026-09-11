@@ -4,9 +4,11 @@ const { getModelLabel, getModelColor } = require('../utils/models');
 
 const { getPrimaryHourlyForecast } = require('./weather');
 
-const { isWeatherBlocked, computeSessionWarnings } = require('./weatherHazards');
+const { isWeatherBlocked, computeSessionWarnings, hasForecastRain } = require('./weatherHazards');
 
 const { isTempOk, buildTempSummary, buildContextByTime, enrichHourWithContext } = require('./temperature');
+
+const { buildWeatherConsensusByTime, lookupWeatherConsensus } = require('./weatherConsensus');
 
 const { buildDaylightByDate, isDaylightOk } = require('./daylight');
 
@@ -29,6 +31,8 @@ const { normalizeMeteoProbability } = require('../utils/forecastProbabilityHour'
 
  * @param {Map<string, { sunrise: string, sunset: string }>} [daylightByDate]
 
+ * @param {Map<string, object>|null} [weatherConsensusByTime]
+
  */
 
 function analyzeHourlyRideability(
@@ -36,7 +40,8 @@ function analyzeHourlyRideability(
   prefs,
   idealDirections,
   contextByTime = new Map(),
-  daylightByDate = new Map()
+  daylightByDate = new Map(),
+  weatherConsensusByTime = null
 ) {
 
   const hourly = forecast.hourly;
@@ -63,7 +68,23 @@ function analyzeHourlyRideability(
 
     const windOk = windSpeed >= prefs.min_wind_knots && gusts <= prefs.max_gust_knots;
 
-    const weatherOk = !isWeatherBlocked(context);
+    const consensus = lookupWeatherConsensus(weatherConsensusByTime, time);
+    let weatherOk;
+    let hasForecastRainFlag;
+    let precipitation = context.precipitation ?? 0;
+    let weatherCode = context.weatherCode ?? 0;
+    let weatherConsensus = null;
+
+    if (consensus) {
+      weatherOk = consensus.weatherOk;
+      hasForecastRainFlag = consensus.hasForecastRain;
+      precipitation = consensus.precipitation;
+      weatherCode = consensus.weatherCode ?? weatherCode;
+      weatherConsensus = consensus.weatherConsensus;
+    } else {
+      weatherOk = !isWeatherBlocked(context);
+      hasForecastRainFlag = hasForecastRain(context);
+    }
 
     const tempOk = isTempOk(prefs, context);
 
@@ -100,6 +121,10 @@ function analyzeHourlyRideability(
       waveHeightM: wave.waveHeightM,
       waveSource: wave.waveSource,
       ...context,
+      precipitation,
+      weatherCode,
+      hasForecastRain: hasForecastRainFlag,
+      weatherConsensus,
     };
     if (forecastProbability != null) {
       hour.forecastProbability = forecastProbability;
@@ -133,6 +158,8 @@ function analyzeMixedRideability(
   contextByTime = new Map(),
   daylightByDate = new Map()
 ) {
+
+  const weatherConsensusByTime = buildWeatherConsensusByTime(mixedForecast, contextByTime);
 
   const primaryModel = mixedForecast.primaryModel;
 
@@ -175,7 +202,8 @@ function analyzeMixedRideability(
       prefs,
       idealDirections,
       contextByTime,
-      daylightByDate
+      daylightByDate,
+      weatherConsensusByTime
     );
 
     const days = summarizeByDay(hourly);
@@ -522,6 +550,8 @@ function analyzeForecastRideability(forecast, prefs, idealDirections, contextDat
 
   const daylightByDate = contextData ? buildDaylightByDate(contextData) : new Map();
 
+  const weatherConsensusByTime = buildWeatherConsensusByTime(forecast, contextByTime);
+
   const primary = getPrimaryHourlyForecast(forecast);
 
   if (!primary) return [];
@@ -531,7 +561,8 @@ function analyzeForecastRideability(forecast, prefs, idealDirections, contextDat
     prefs,
     idealDirections,
     contextByTime,
-    daylightByDate
+    daylightByDate,
+    weatherConsensusByTime
   );
 
 }

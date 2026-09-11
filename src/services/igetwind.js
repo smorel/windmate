@@ -239,6 +239,26 @@ function dropOrFillMissingWindSamples(byTime, times) {
  * @param {{ winddata: { ty: string, t: string, v: number }[] }} modelBlock
  * @param {string} modelId
  */
+function buildApcpIncrementsByTime(winddata) {
+  const cumulative = new Map();
+  for (const row of winddata ?? []) {
+    if (row.ty !== 'APCP') continue;
+    cumulative.set(row.t.replace(' ', 'T'), row.v);
+  }
+  if (!cumulative.size) return null;
+
+  const sorted = [...cumulative.keys()].sort();
+  const increments = new Map();
+  let prev = null;
+  for (const iso of sorted) {
+    const value = cumulative.get(iso);
+    const increment = prev == null ? 0 : Math.max(0, value - prev);
+    increments.set(normalizeHourlyTimestamp(iso), increment);
+    prev = value;
+  }
+  return increments;
+}
+
 function normalizeWindData(modelBlock, modelId) {
   const byTime = new Map();
 
@@ -278,6 +298,16 @@ function normalizeWindData(modelBlock, modelId) {
   if (hasWindProbability) {
     hourly.wind_probability_10m = times.map((t) => byTime.get(t).windProb);
   }
+
+  const apcpIncrements = buildApcpIncrementsByTime(modelBlock.winddata);
+  if (apcpIncrements) {
+    hourly.precipitation = times.map((t) => {
+      const key = normalizeHourlyTimestamp(t);
+      if (!apcpIncrements.has(key)) return null;
+      return apcpIncrements.get(key);
+    });
+  }
+
   return {
     hourly,
     provider: 'igetwind',

@@ -1,6 +1,6 @@
 const CACHE_TTL_MS = 30 * 60 * 1000;
 /** Bump when hourly parsing changes so SQLite forecast_cache is refetched. */
-const FORECAST_CACHE_VERSION = 3;
+const FORECAST_CACHE_VERSION = 4;
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
 const { fetchModelForecast, normalizeWindData, repairIgetwindHourly, delay } = require('./igetwind');

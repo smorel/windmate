@@ -22,7 +22,7 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 | [session-lift-share](./2026-09-09-session-lift-share-design.md) | **0%** — spec only (watched-session lift matching + email intro) |
 | [session-watcher-count](./2026-09-09-session-watcher-count-design.md) | **0%** — spec only (banded social proof on matrix cards) |
 | [planner-full-day-forecast](./2026-09-11-planner-full-day-forecast-design.md) | **~95%** — global toggle + matrix; spec acceptance unchecked |
-| [weather-consensus](./2026-09-11-weather-consensus-design.md) | **0%** — spec draft; majority rain vote (Open-Meteo + iGetwind APCP) |
+| [weather-consensus](./2026-09-11-weather-consensus-design.md) | **~95%** — majority rain vote (Open-Meteo + iGetwind APCP); strict majority math |
 
 **Also shipped (not in original MVP):** settings modal, auto-save prefs, spot search, **per-sport favorites** (incl. out-of-radius), customizable radius, Beaufort matrix colors, 3-band wind/gust/wave blocks, session warning time fix, **sport-scoped watchlist** (spot + date + sport), watchlist card navigation, eye icon for watch vs ★ for favorite, per-sport horizon alert cron, **inline spot map picker** (Leaflet, manual spots, Nominatim), **departure leave-by line** on matrix + watchlist cards, **local calendar date** (no UTC “today” rollover), **favorite-aware matrix ranking** (in-radius favorites first, distant favorites last), **session go/no-go on rideability payload** (`sessionGoNoGoByDate`).
 

@@ -1,7 +1,7 @@
 # Weather Consensus (Multi-Source Rain) — Design Spec
 
 **Date:** 2026-09-11  
-**Status:** Draft (awaiting review)  
+**Status:** Implemented (v1)  
 **Parent:** [Windmate Design Spec](./2026-09-08-windwatch-design.md)  
 **Related:** [Realtime Wind — Weather hazards](./2026-09-08-realtime-wind-design.md#session-hazards), [Planner Full-Day Forecast](./2026-09-11-planner-full-day-forecast-design.md)
 
@@ -26,7 +26,7 @@ iGetwind `winddata` already includes **`APCP`** (accumulated precip); hourly amo
 | Thunderstorm | **Any** source reporting storm WMO codes → hour **not** `weatherOk` (hard block) |
 | Windy precip supplement | **Out of scope v1** (optional follow-up) |
 
-**Majority rule:** For `n` reporting sources at an hour, a condition holds when `votes >= Math.ceil(n / 2)`.
+**Majority rule:** For `n` reporting sources at an hour, a condition holds when `votes >= floor(n / 2) + 1` (strict majority; ties → no rain / not blocked).
 
 Examples: 3 sources → need 2; 4 → need 2; 1 → that source decides.
 

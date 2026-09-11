@@ -1840,7 +1840,10 @@ function renderHorizonWindBlock(spots, dateStr, prefs, sportColor, rideableMax) 
 /** Space to leave below the sticky horizon planner when scrolling matrix cards into view. */
 function getMatrixScrollOffset(extra = 16) {
   const sticky = document.querySelector('.horizon-planner-sticky');
-  return sticky ? sticky.offsetHeight + extra : extra;
+  if (!sticky || getComputedStyle(sticky).position !== 'sticky') {
+    return extra;
+  }
+  return sticky.offsetHeight + extra;
 }
 
 function scrollToSpot(spotId, { behavior = 'smooth' } = {}) {

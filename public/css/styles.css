@@ -52,6 +52,14 @@ body.refresh-countdown-active .horizon-planner-sticky {
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
 }
 
+/* Two-column day cards can exceed viewport height; sticky would hide the matrix. */
+@media (max-width: 640px) {
+  .horizon-planner-sticky {
+    position: static;
+    box-shadow: none;
+  }
+}
+
 .planner-full-day-toggle__input {
   appearance: none;
   width: 2.5rem;

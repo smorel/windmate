@@ -79,6 +79,9 @@ function createRideabilityRouter(db) {
         radius_km: effectiveRadius,
         center: { lat, lng },
         spots: [],
+        nearby_spot_count: 0,
+        forecast_failures: 0,
+        forecast_unavailable: false,
       });
     }
 
@@ -166,11 +169,15 @@ function createRideabilityRouter(db) {
         .filter((result) => result.status === 'fulfilled')
         .map((result) => result.value);
 
+      const forecastFailures = settled.filter((result) => result.status === 'rejected').length;
       for (const failure of settled) {
         if (failure.status === 'rejected') {
           console.warn('[rideability] spot forecast failed:', failure.reason?.message ?? failure.reason);
         }
       }
+
+      const nearbySpotCount = nearbySpots.length;
+      const forecastUnavailable = nearbySpotCount > 0 && results.length === 0;
 
       res.json({
         preferences: prefs,
@@ -180,6 +187,9 @@ function createRideabilityRouter(db) {
         radius_km: effectiveRadius,
         center: { lat, lng },
         spots: results,
+        nearby_spot_count: nearbySpotCount,
+        forecast_failures: forecastFailures,
+        forecast_unavailable: forecastUnavailable,
       });
     } catch (err) {
       res.status(502).json({ error: err.message });

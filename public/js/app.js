@@ -650,12 +650,26 @@ function loadSettingsFormForSport(sport) {
   renderRankCriteriaList(rankCriteriaOrder);
 }
 
-function dashboardNoSpotsCopy(prefs) {
+function rideabilityEmptyCopy(data) {
+  const prefs = data?.preferences;
   const favCount = prefs?.favorite_spot_ids?.length ?? favoriteSpotIds.length;
   if (prefs?.favorites_only && favCount > 0) {
     return WindmateCopy.empty.favoritesOnlyNoSpots;
   }
+  if (data?.forecast_unavailable || ((data?.nearby_spot_count ?? 0) > 0 && !(data?.spots?.length))) {
+    return WindmateCopy.empty.forecastUnavailable;
+  }
+  if ((data?.nearby_spot_count ?? 0) === 0) {
+    return WindmateCopy.empty.noSpotsNearby;
+  }
   return WindmateCopy.empty.noSpotsNearby;
+}
+
+function dashboardNoSpotsCopy(dataOrPrefs) {
+  if (dataOrPrefs?.preferences || dataOrPrefs?.nearby_spot_count != null) {
+    return rideabilityEmptyCopy(dataOrPrefs);
+  }
+  return rideabilityEmptyCopy({ preferences: dataOrPrefs });
 }
 
 function isPlannerFullDayActive() {
@@ -1266,8 +1280,17 @@ async function refreshDashboard({
       ? `&includeSpotIds=${encodeURIComponent(includeSpotIds.join(','))}`
       : '';
 
-    const [rideRes, obsRes, summaryRes] = await Promise.all([
-      api(`/api/rideability?${query}${includeSpotsQuery}${refreshQuery}`),
+    let rideRes = await api(`/api/rideability?${query}${includeSpotsQuery}${refreshQuery}`);
+    if (
+      generation === dashboardRefreshGeneration &&
+      rideRes?.forecast_unavailable &&
+      !bypassCache &&
+      !refreshQuery
+    ) {
+      rideRes = await api(`/api/rideability?${query}${includeSpotsQuery}&refresh=1`);
+    }
+
+    const [obsRes, summaryRes] = await Promise.all([
       api(`/api/observations?${query}${watchedQuery}${refreshQuery}`).catch(() => ({ spots: [] })),
       summaryRequest,
     ]);
@@ -1981,7 +2004,7 @@ function renderHorizonPlanner(data) {
   const spotEntries = rideabilitySpotEntries(data);
   if (!spotEntries.length) {
     els.horizonPlanner.innerHTML =
-      `<p class="col-span-full text-slate-400">${dashboardNoSpotsCopy(data.preferences)}</p>`;
+      `<p class="col-span-full text-slate-400">${dashboardNoSpotsCopy(data)}</p>`;
     return;
   }
 
@@ -2781,12 +2804,7 @@ function applyFullDayVerdictSummary(verdict, dayHours, dateStr, fullDayMode) {
 function renderRideabilityMatrix(data, observations) {
   const spotEntries = rideabilitySpotEntries(data);
   if (!spotEntries.length) {
-    const favCount = data.preferences?.favorite_spot_ids?.length ?? 0;
-    const emptyCopy =
-      data.preferences?.favorites_only && favCount > 0
-        ? WindmateCopy.empty.favoritesOnlyNoSpots
-        : WindmateCopy.empty.noSpotsInRange;
-    els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${emptyCopy}</p>`;
+    els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${rideabilityEmptyCopy(data)}</p>`;
     return;
   }
 

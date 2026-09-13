@@ -43,6 +43,8 @@ const WindmateCopy = {
       "Bit quiet round here mate — no spots in range. Hang tight for sync, or widen the radius.",
     noSpotsInRange:
       "No spots loaded yet — restart the server so I can sync from iGetwind, or run POST /api/igetwind/sync.",
+    forecastUnavailable:
+      "Spots are nearby but the forecast did not load — wait a moment and refresh, or check the server logs.",
     noModelData: (label) => `${label}: blank on this one for now`,
     noRideableHoursForDay:
       'Nothing rideable this day mate — tap another day in the planner above.',

@@ -73,7 +73,6 @@ const els = {
 };
 
 const MAX_FAVORITE_SPOTS = 50;
-
 let rankCriteriaOrder = [...WindmateSessionRank.DEFAULT_ORDER];
 let favoriteSpotIds = [];
 let rankDragKey = null;
@@ -927,11 +926,29 @@ function setDashboardPending(pending) {
   WindmateSportSelector.setBusy(pending);
 }
 
-function observationsQueryString({ bypassCache = false } = {}) {
+function rideabilityIncludeSpotIds() {
   const profile = getActiveProfile();
-  const radius = profile?.radius_km ?? getSearchRadiusKm();
+  if (profile?.favorites_only && favoriteSpotIds.length > 0) {
+    return [];
+  }
+  return WindmateWatchlist.getWatchedSpotIds();
+}
+
+/** Server should already filter; keep matrix/planner aligned with favorites-only sport mode. */
+function rideabilitySpotEntries(data) {
+  const entries = data?.spots ?? [];
+  const prefs = data?.preferences;
+  if (!prefs?.favorites_only) return entries;
+  const favIds = normalizeFavoriteSpotIds(prefs.favorite_spot_ids ?? favoriteSpotIds);
+  if (favIds.length === 0) return entries;
+  const fav = new Set(favIds);
+  return entries.filter((e) => fav.has(e.spot?.id));
+}
+
+function observationsQueryString({ bypassCache = false } = {}) {
+  const radius = getSearchRadiusKm();
   const sport = activeSport;
-  const query = `lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&limit=12&sport=${sport}`;
+  const query = `lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&sport=${sport}`;
   const watchedIds = WindmateWatchlist.getWatchedSpotIdsForToday();
   const watchedQuery = watchedIds.length ? `&watchedSpotIds=${watchedIds.join(',')}` : '';
   const refreshQuery = bypassCache ? '&refresh=1' : '';
@@ -1179,7 +1196,7 @@ async function refreshDashboard({
         ).catch(() => null)
       : Promise.resolve(horizonSummary);
 
-    const includeSpotIds = WindmateWatchlist.getWatchedSpotIds();
+    const includeSpotIds = rideabilityIncludeSpotIds();
     const includeSpotsQuery = includeSpotIds.length
       ? `&includeSpotIds=${encodeURIComponent(includeSpotIds.join(','))}`
       : '';
@@ -1388,14 +1405,13 @@ function renderFavoriteButton(spot) {
 }
 
 function favoriteToggleNeedsFullRefresh(spotId, wasFavorite) {
-  const entry = rideabilityData?.spots?.find((e) => e.spot.id === spotId);
-  const radius = getSearchRadiusKm();
-  const dist = entry?.spot.distance_km ?? Infinity;
-  const outsideRadius = dist > radius;
-
-  if (!wasFavorite) {
-    return !entry || outsideRadius;
+  if (wasFavorite) {
+    return true;
   }
+  const entry = rideabilityData?.spots?.find((e) => e.spot.id === spotId);
+  const radius = rideabilityData?.radius_km ?? getSearchRadiusKm();
+  const dist = entry?.spot.distance_km ?? Infinity;
+  const outsideRadius = entry?.spot?.outside_radius || dist > radius;
   return !entry || outsideRadius;
 }
 
@@ -1897,13 +1913,14 @@ async function goToWatchedSession({ spotId, sessionDate, sport }) {
 }
 
 function renderHorizonPlanner(data) {
-  if (!data.spots.length) {
+  const spotEntries = rideabilitySpotEntries(data);
+  if (!spotEntries.length) {
     els.horizonPlanner.innerHTML =
       `<p class="col-span-full text-slate-400">${dashboardNoSpotsCopy(data.preferences)}</p>`;
     return;
   }
 
-  const primary = data.spots[0];
+  const primary = spotEntries[0];
   const days = primary.days.slice(0, 7);
   const forecastToday = WindmateForecastTime.forecastTodayFromRideability(data);
   const sportColor = SPORT_COLORS[data.preferences.sport] ?? SPORT_COLORS.wingfoiling;
@@ -1922,12 +1939,12 @@ function renderHorizonPlanner(data) {
       const monthDay = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
       const radiusKm = getSearchRadiusKm();
       const farCuriosityOnly = isFarFavoritesOnlyHorizonDay(
-        data.spots,
+        spotEntries,
         day.date,
         data.preferences,
         radiusKm
       );
-      const plannedSpots = plannedHorizonSpots(data.spots, radiusKm);
+      const plannedSpots = plannedHorizonSpots(spotEntries, radiusKm);
       const rideableRange = getDayRideableWindowRange(plannedSpots, day.date, data.preferences);
       const rideableLabel = WindmateCopy.horizon.rideableHours(
         rideableRange.min,
@@ -1956,7 +1973,7 @@ function renderHorizonPlanner(data) {
         ? '<span class="text-[10px] text-emerald-400 font-medium">Today</span>'
         : '';
       const favoriteRideableDay = isPlannedFavoriteHorizonDay(
-        data.spots,
+        spotEntries,
         day.date,
         data.preferences,
         radiusKm,
@@ -2690,7 +2707,8 @@ function applyFullDayVerdictSummary(verdict, dayHours, dateStr, fullDayMode) {
 }
 
 function renderRideabilityMatrix(data, observations) {
-  if (!data.spots.length) {
+  const spotEntries = rideabilitySpotEntries(data);
+  if (!spotEntries.length) {
     const favCount = data.preferences?.favorite_spot_ids?.length ?? 0;
     const emptyCopy =
       data.preferences?.favorites_only && favCount > 0
@@ -2700,7 +2718,7 @@ function renderRideabilityMatrix(data, observations) {
     return;
   }
 
-  const horizonDays = data.spots[0]?.days?.slice(0, 7) ?? [];
+  const horizonDays = spotEntries[0]?.days?.slice(0, 7) ?? [];
   if (!selectedDayDate || !horizonDays.some((d) => d.date === selectedDayDate)) {
     selectedDayDate = WindmateForecastTime.defaultPlannerDayDate(horizonDays);
   }
@@ -2711,7 +2729,7 @@ function renderRideabilityMatrix(data, observations) {
   const fullDayMode = isPlannerFullDayActive();
   const rankedSpots = WindmatePlannerFullDay.filterMatrixSpotsForDay(
     sortSpotsForDay(
-      data.spots,
+      spotEntries,
       selectedDayDate,
       prefsForRanking(data.preferences),
       getSearchRadiusKm()
@@ -2869,9 +2887,9 @@ function renderRideabilityMatrix(data, observations) {
     .join('');
 
   const warningsBySpot = new Map(
-    data.spots.map((entry) => [entry.spot.id, entry.warnings ?? []])
+    spotEntries.map((entry) => [entry.spot.id, entry.warnings ?? []])
   );
-  const rideEntryBySpot = new Map(data.spots.map((entry) => [entry.spot.id, entry]));
+  const rideEntryBySpot = new Map(spotEntries.map((entry) => [entry.spot.id, entry]));
   WindmateObservations.bindToggles(
     els.rideabilityMatrix,
     obsBySpot,
@@ -2902,7 +2920,7 @@ function renderRideabilityMatrix(data, observations) {
       obsBySpot,
       prefs: matrixPrefs,
       warningsBySpot,
-      rideEntryBySpot: new Map(data.spots.map((entry) => [entry.spot.id, entry])),
+      rideEntryBySpot: new Map(spotEntries.map((entry) => [entry.spot.id, entry])),
     }
   );
   WindmateSpotIntel.bindDrawers(els.rideabilityMatrix, data.preferences.sport);

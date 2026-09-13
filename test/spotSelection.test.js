@@ -1,6 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  filterRideabilityIncludeSpotIds,
   selectDashboardSpots,
   selectFavoriteOnlySpots,
   selectSpotsForProfile,
@@ -15,7 +16,7 @@ const spots = [
 
 describe('selectDashboardSpots', () => {
   it('includes favorited spots outside the search radius', () => {
-    const result = selectDashboardSpots(spots, 45.5, -73.5, 10, 12, ['far-fav']);
+    const result = selectDashboardSpots(spots, 45.5, -73.5, 10, ['far-fav']);
     const ids = result.map((s) => s.id);
     assert.ok(ids.includes('near-1'));
     assert.ok(ids.includes('far-fav'));
@@ -23,14 +24,33 @@ describe('selectDashboardSpots', () => {
   });
 
   it('marks outside-radius favorites', () => {
-    const result = selectDashboardSpots(spots, 45.5, -73.5, 10, 12, ['far-fav']);
+    const result = selectDashboardSpots(spots, 45.5, -73.5, 10, ['far-fav']);
     const far = result.find((s) => s.id === 'far-fav');
     const near = result.find((s) => s.id === 'near-1');
     assert.equal(far.outside_radius, true);
     assert.equal(near.outside_radius, false);
   });
 
-  it('does not mark in-radius favorites beyond the spot limit as outside radius', () => {
+  it('includes every in-radius spot, not only the nearest by distance', () => {
+    const manyNear = Array.from({ length: 22 }, (_, i) => ({
+      id: `near-${i}`,
+      name: `Near ${i}`,
+      latitude: 45.5 + i * 0.001,
+      longitude: -73.5,
+    }));
+    const venise = {
+      id: 'venise',
+      name: 'Venise-en-Québec',
+      latitude: 45.084,
+      longitude: -73.283,
+    };
+    const all = [...manyNear, venise];
+    const result = selectDashboardSpots(all, 45.5017, -73.5673, 150, []);
+    assert.ok(result.some((s) => s.id === 'venise'));
+    assert.equal(result.filter((s) => !s.outside_radius).length, 23);
+  });
+
+  it('does not mark in-radius favorites as outside radius', () => {
     const manyNear = Array.from({ length: 14 }, (_, i) => ({
       id: `near-${i}`,
       name: `Near ${i}`,
@@ -44,10 +64,30 @@ describe('selectDashboardSpots', () => {
       longitude: -73.5,
     };
     const all = [...manyNear, inRadiusFav];
-    const result = selectDashboardSpots(all, 45.5, -73.5, 50, 12, ['in-radius-fav']);
+    const result = selectDashboardSpots(all, 45.5, -73.5, 50, ['in-radius-fav']);
     const fav = result.find((s) => s.id === 'in-radius-fav');
     assert.ok(fav);
     assert.equal(fav.outside_radius, false);
+  });
+});
+
+describe('filterRideabilityIncludeSpotIds', () => {
+  const prefs = {
+    favorites_only: 1,
+    favorite_spot_ids: ['fav-a', 'fav-b'],
+  };
+
+  it('drops watchlist ids when favorites_only is on', () => {
+    const result = filterRideabilityIncludeSpotIds(prefs, ['fav-a', 'other']);
+    assert.deepEqual(result, ['fav-a']);
+  });
+
+  it('passes through all ids when favorites_only is off', () => {
+    const result = filterRideabilityIncludeSpotIds(
+      { favorites_only: 0, favorite_spot_ids: ['fav-a'] },
+      ['fav-a', 'other']
+    );
+    assert.deepEqual(result, ['fav-a', 'other']);
   });
 });
 
@@ -77,20 +117,20 @@ describe('selectSpotsForProfile', () => {
   };
 
   it('uses radius mode when favorites_only is off', () => {
-    const result = selectSpotsForProfile(spots, 45.5, -73.5, profile, 12);
+    const result = selectSpotsForProfile(spots, 45.5, -73.5, profile);
     assert.ok(result.some((s) => s.id === 'near-1'));
     assert.ok(!result.some((s) => s.id === 'far-other'));
   });
 
   it('uses favorites only when favorites_only is on', () => {
     const onlyFav = { ...profile, favorites_only: 1, favorite_spot_ids: ['far-fav'] };
-    const result = selectSpotsForProfile(spots, 45.5, -73.5, onlyFav, 12);
+    const result = selectSpotsForProfile(spots, 45.5, -73.5, onlyFav);
     assert.deepEqual(result.map((s) => s.id), ['far-fav']);
   });
 
   it('falls back to radius when favorites_only is on but no stars yet', () => {
     const noStars = { ...profile, favorites_only: 1, favorite_spot_ids: [] };
-    const result = selectSpotsForProfile(spots, 45.5, -73.5, noStars, 12);
+    const result = selectSpotsForProfile(spots, 45.5, -73.5, noStars);
     assert.ok(result.some((s) => s.id === 'near-1'));
   });
 });

@@ -39,13 +39,7 @@ async function runHorizonAlertScan(db) {
           favorite_spot_ids: getFavoriteSpotIdsForLocation(db, locationId, profile.sport),
         }
       : profile;
-    const spots = selectSpotsForProfile(
-      getAllSpots(db),
-      lat,
-      lng,
-      profileForScan,
-      parseInt(process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10)
-    );
+    const spots = selectSpotsForProfile(getAllSpots(db), lat, lng, profileForScan);
 
     const rideabilityBySpotId = new Map();
     await Promise.all(

@@ -3,14 +3,12 @@ const { getAllSpots, getPreferences } = require('../db');
 const { fetchForecast } = require('../services/weather');
 const { fetchSpotObservations } = require('../services/observations');
 const { selectSpotsForProfile } = require('../utils/spotSelection');
-
 function createObservationsRouter(db) {
   const router = express.Router();
 
   router.get('/', async (req, res) => {
     const lat = parseFloat(req.query.lat);
     const lng = parseFloat(req.query.lng);
-    const limit = parseInt(req.query.limit ?? process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10);
 
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
       return res.status(400).json({ error: 'lat and lng required' });
@@ -37,7 +35,6 @@ function createObservationsRouter(db) {
       lat,
       lng,
       prefs,
-      limit,
       effectiveRadius
     );
 

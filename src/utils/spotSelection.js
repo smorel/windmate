@@ -27,29 +27,31 @@ function selectFavoriteOnlySpots(allSpots, lat, lng, radiusKm, favoriteSpotIds) 
  * @param {number} lat
  * @param {number} lng
  * @param {{ favorites_only?: number, radius_km: number, favorite_spot_ids: string[] }} profile
- * @param {number} limit
  * @param {number} [radiusKmOverride]
  */
-function selectSpotsForProfile(allSpots, lat, lng, profile, limit, radiusKmOverride) {
+/** Watchlist / includeSpotIds must not bypass favorites-only mode. */
+function filterRideabilityIncludeSpotIds(prefs, includeSpotIds) {
+  const ids = (includeSpotIds ?? []).map((id) => String(id).trim()).filter(Boolean);
+  if (!ids.length) return [];
+  if (!prefs.favorites_only) return ids;
+  const favSet = new Set(parseFavoriteSpotIds(prefs.favorite_spot_ids));
+  if (favSet.size === 0) return ids;
+  return ids.filter((id) => favSet.has(id));
+}
+
+function selectSpotsForProfile(allSpots, lat, lng, profile, radiusKmOverride) {
   const radiusKm = radiusKmOverride ?? profile.radius_km;
   const favoriteIds = parseFavoriteSpotIds(profile.favorite_spot_ids);
   if (profile.favorites_only && favoriteIds.length > 0) {
     return selectFavoriteOnlySpots(allSpots, lat, lng, radiusKm, favoriteIds);
   }
-  return selectDashboardSpots(
-    allSpots,
-    lat,
-    lng,
-    radiusKm,
-    limit,
-    favoriteIds
-  );
+  return selectDashboardSpots(allSpots, lat, lng, radiusKm, favoriteIds);
 }
 
 /**
- * Nearby spots (radius + limit) plus favorited spots outside the radius.
+ * Every in-radius spot (by distance) plus starred spots outside the radius.
  */
-function selectDashboardSpots(allSpots, lat, lng, radiusKm, limit, favoriteSpotIds) {
+function selectDashboardSpots(allSpots, lat, lng, radiusKm, favoriteSpotIds) {
   const favSet = new Set(parseFavoriteSpotIds(favoriteSpotIds));
   const withDistance = allSpots.map((spot) => ({
     ...spot,
@@ -59,7 +61,6 @@ function selectDashboardSpots(allSpots, lat, lng, radiusKm, limit, favoriteSpotI
   const nearby = withDistance
     .filter((s) => s.distance_km <= radiusKm)
     .sort((a, b) => a.distance_km - b.distance_km)
-    .slice(0, Math.max(1, limit))
     .map((s) => ({ ...s, outside_radius: false }));
 
   const included = new Set(nearby.map((s) => s.id));
@@ -110,6 +111,7 @@ function searchSpots(allSpots, query, lat, lng, limit, favoriteSpotIds) {
 }
 
 module.exports = {
+  filterRideabilityIncludeSpotIds,
   selectDashboardSpots,
   selectFavoriteOnlySpots,
   selectSpotsForProfile,

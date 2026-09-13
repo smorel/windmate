@@ -4,7 +4,6 @@ const { getAllSpots } = require('../db');
 const { selectSpotsForProfile } = require('../utils/spotSelection');
 const { SPORT_COLORS, SPORT_DISPLAY_NAMES } = require('../utils/sports');
 const { hasHorizonOpportunity, buildSpotRideabilityEntry } = require('../services/alertQualification');
-
 function createSportsRouter(db) {
   const router = express.Router();
 
@@ -24,13 +23,7 @@ function createSportsRouter(db) {
       const sports = [];
 
       for (const profile of profiles) {
-        const spots = selectSpotsForProfile(
-          getAllSpots(db),
-          lat,
-          lng,
-          profile,
-          parseInt(process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10)
-        );
+        const spots = selectSpotsForProfile(getAllSpots(db), lat, lng, profile);
 
         const rideabilityBySpotId = new Map();
         await Promise.all(

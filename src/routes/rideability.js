@@ -13,7 +13,7 @@ const {
 } = require('../services/rideability');
 const { SPORT_COLORS } = require('../utils/sports');
 const { MODEL_COLORS } = require('../utils/models');
-const { selectSpotsForProfile } = require('../utils/spotSelection');
+const { selectSpotsForProfile, filterRideabilityIncludeSpotIds } = require('../utils/spotSelection');
 const { attachSessionGoNoGoByDate } = require('../services/sessionGoNoGo');
 const { localDateString } = require('../utils/forecastTime');
 
@@ -27,8 +27,6 @@ function createRideabilityRouter(db) {
   router.get('/', async (req, res) => {
     const lat = parseFloat(req.query.lat);
     const lng = parseFloat(req.query.lng);
-    const limit = parseInt(req.query.limit ?? process.env.RIDEABILITY_SPOT_LIMIT ?? '12', 10);
-
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
       return res.status(400).json({ error: 'lat and lng query parameters are required' });
     }
@@ -49,14 +47,13 @@ function createRideabilityRouter(db) {
       lat,
       lng,
       prefs,
-      limit,
       effectiveRadius
     );
 
-    const includeSpotIds = String(req.query.includeSpotIds ?? '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
+    const includeSpotIds = filterRideabilityIncludeSpotIds(
+      prefs,
+      String(req.query.includeSpotIds ?? '').split(',')
+    );
     if (includeSpotIds.length) {
       const included = new Set(nearbySpots.map((s) => s.id));
       for (const spotId of includeSpotIds) {

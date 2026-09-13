@@ -105,9 +105,9 @@
     </div>
 
     <section class="dashboard-planner">
-      <div class="flex flex-col gap-3 mb-4">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
         <h2 class="text-lg font-semibold text-white">Horizon Planner</h2>
-        <div class="planner-toggles flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-end">
+        <div class="planner-toggles flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-end sm:max-w-xl">
           <label
             class="planner-full-day-toggle flex items-start gap-2.5 cursor-pointer select-none sm:max-w-xs sm:text-right"
             id="matrix-daylight-label"
@@ -140,7 +140,7 @@
         </div>
       </div>
       <div class="horizon-planner-sticky">
-        <div id="horizon-planner" class="horizon-planner-row"></div>
+        <div id="horizon-planner" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"></div>
       </div>
       <div class="flex justify-end mt-6 mb-4">
         <button

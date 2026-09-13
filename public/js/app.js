@@ -2947,11 +2947,9 @@ function renderRideabilityMatrix(data, observations) {
                   ${matrixRows}
                 </div>
               </div>
-              <div class="matrix-panel-side">
-                <div class="departure-line-slot" data-departure-for="${spot.id}"></div>
-                ${spotMap ? `<div class="matrix-panel-map">${spotMap}</div>` : ''}
-              </div>
+              ${spotMap ? `<div class="matrix-panel-map">${spotMap}</div>` : ''}
             </div>
+            <div class="departure-line-slot" data-departure-for="${spot.id}"></div>
             <svg class="departure-plan-stroke" data-departure-stroke-for="${spot.id}" aria-hidden="true">
               <path class="departure-plan-stroke__shape"></path>
             </svg>

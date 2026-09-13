@@ -64,6 +64,9 @@ const WindmateWatchlist = (() => {
       throw new Error(err.error ?? res.statusText);
     }
     await load();
+    if (typeof WindmateLocalUserState !== 'undefined') {
+      WindmateLocalUserState.noteMutation();
+    }
     if (onChange) onChange();
     return res.json();
   }
@@ -71,6 +74,9 @@ const WindmateWatchlist = (() => {
   async function remove(id) {
     await fetch(`/api/watchlist/${id}`, { method: 'DELETE' });
     await load();
+    if (typeof WindmateLocalUserState !== 'undefined') {
+      WindmateLocalUserState.noteMutation();
+    }
     if (onChange) onChange();
   }
 

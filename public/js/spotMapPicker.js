@@ -366,6 +366,9 @@ const WindmateSpotMapPicker = (() => {
       hideCreateModal();
       clearTempMarker();
       if (opts.onCreated) await opts.onCreated(created);
+      if (typeof WindmateLocalUserState !== 'undefined') {
+        WindmateLocalUserState.noteMutation();
+      }
       showToast(WindmateCopy.map.created(name));
       await refreshMarkers();
     } catch (err) {

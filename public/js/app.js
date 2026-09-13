@@ -89,6 +89,16 @@ let hourlyRefreshInFlight = false;
 let lastDashboardFetchAt = 0;
 let dashboardRefreshGeneration = 0;
 
+function apiMutatesUserState(path, method) {
+  const m = (method ?? 'GET').toUpperCase();
+  if (m === 'GET') return false;
+  return (
+    path.startsWith('/api/preferences') ||
+    path.startsWith('/api/watchlist') ||
+    (path.startsWith('/api/spots') && m === 'POST')
+  );
+}
+
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
@@ -98,7 +108,11 @@ async function api(path, options = {}) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error ?? res.statusText);
   }
-  return res.json();
+  const data = await res.json();
+  if (apiMutatesUserState(path, options.method)) {
+    WindmateLocalUserState.noteMutation();
+  }
+  return data;
 }
 
 function setPlanningOrigin(lat, lng) {
@@ -2964,14 +2978,23 @@ function showAppToast(message) {
   initFavoriteToggles();
   initPlannerFullDayToggle();
   WindmateSportSelector.init(els.sportSelector, { onSwitch: switchActiveSport });
-  WindmateWatchlist.setOnChange(() =>
-    refreshDashboard({ silent: true, pending: true, includeHorizonSummary: false })
-  );
+  WindmateWatchlist.setOnChange(() => {
+    WindmateLocalUserState.scheduleCapture();
+    refreshDashboard({ silent: true, pending: true, includeHorizonSummary: false });
+  });
   WindmateWatchlist.setOnNavigate(goToWatchedSession);
   WindmateObservations.setAutoRefreshCallback(() => refreshLiveObservations());
   setDashboardLoading(WindmateCopy.loading.dashboard);
   els.locationStatus.textContent = WindmateCopy.geo.locating;
-  await loadPreferences();
+  WindmateLocalUserState.init(api);
+  const userStateSync = await WindmateLocalUserState.syncOnBoot(api);
+  if (userStateSync.preferences) {
+    applyFullPreferences(userStateSync.preferences);
+  } else {
+    await loadPreferences();
+  }
+  await WindmateLocalUserState.captureFromServer();
+  await WindmateWatchlist.load();
   const origin = WindmatePlanningLocations.getActiveCoords();
   if (origin) {
     setPlanningOrigin(origin.lat, origin.lng);

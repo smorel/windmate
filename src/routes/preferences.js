@@ -93,6 +93,10 @@ function createPreferencesRouter(db) {
           req.body.planner_full_day_forecast !== undefined
             ? req.body.planner_full_day_forecast
             : current.planner_full_day_forecast,
+        matrix_hide_night_hours:
+          req.body.matrix_hide_night_hours !== undefined
+            ? req.body.matrix_hide_night_hours
+            : current.matrix_hide_night_hours,
       });
 
       res.json(getFullPreferences(db));

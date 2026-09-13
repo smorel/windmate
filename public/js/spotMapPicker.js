@@ -2,6 +2,10 @@
 const WindmateSpotMapPicker = (() => {
   const MONTREAL = { lat: 45.5017, lng: -73.5673 };
   const BBOX_DEBOUNCE_MS = 300;
+  const LONG_PRESS_MS = 550;
+  const LONG_PRESS_MOVE_TOLERANCE_PX = 14;
+  let longPressTimer = null;
+  let longPressStart = null;
   let map = null;
   let markersLayer = null;
   let homeLayer = null;
@@ -234,6 +238,10 @@ const WindmateSpotMapPicker = (() => {
     markersLayer = L.layerGroup().addTo(map);
     map.on('moveend', scheduleBboxFetch);
     map.on('dblclick', onMapDblClick);
+    map.on('touchstart', onMapTouchStart);
+    map.on('touchmove', onMapTouchMove);
+    map.on('touchend', onMapTouchEnd);
+    map.on('touchcancel', onMapTouchEnd);
 
     requestAnimationFrame(() => {
       map.invalidateSize();
@@ -244,6 +252,7 @@ const WindmateSpotMapPicker = (() => {
 
   function destroyMap() {
     cancelBboxFetch();
+    clearLongPress();
     clearTempMarker();
     if (map) {
       map.remove();
@@ -337,6 +346,46 @@ const WindmateSpotMapPicker = (() => {
     } catch {
       /* user can type a name */
     }
+  }
+
+  function clearLongPress() {
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressStart = null;
+  }
+
+  function onMapTouchStart(e) {
+    if (!open) return;
+    const touch = e.originalEvent?.touches?.[0];
+    if (!touch || !e.latlng) return;
+    clearLongPress();
+    longPressStart = {
+      x: touch.clientX,
+      y: touch.clientY,
+      lat: e.latlng.lat,
+      lng: e.latlng.lng,
+    };
+    longPressTimer = setTimeout(() => {
+      if (!longPressStart) return;
+      const { lat, lng } = longPressStart;
+      clearLongPress();
+      openCreateDialog(lat, lng);
+    }, LONG_PRESS_MS);
+  }
+
+  function onMapTouchMove(e) {
+    if (!longPressStart || !longPressTimer) return;
+    const touch = e.originalEvent?.touches?.[0];
+    if (!touch) return;
+    const dx = touch.clientX - longPressStart.x;
+    const dy = touch.clientY - longPressStart.y;
+    if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_TOLERANCE_PX) {
+      clearLongPress();
+    }
+  }
+
+  function onMapTouchEnd() {
+    clearLongPress();
   }
 
   function onMapDblClick(e) {

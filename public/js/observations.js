@@ -98,8 +98,7 @@ const WindmateObservations = (() => {
   }
 
   function fractionalHourNow() {
-    const now = new Date();
-    return now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    return WindmateForecastTime.fractionalHourPlanningNow();
   }
 
   function xFromDayHour(padL, innerW, hour) {
@@ -437,6 +436,20 @@ const WindmateObservations = (() => {
     return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
   }
 
+  function trimActualThroughPlanningNow(actualRaw, sessionDate, showNow) {
+    if (!showNow) return actualRaw ?? [];
+    const dateStr = sessionDate ?? WindmateForecastTime.planningToday();
+    const nowFrac = WindmateForecastTime.fractionalHourPlanningNow();
+    return (actualRaw ?? []).filter((point) => {
+      const day = String(point.time).slice(0, 10);
+      if (day !== dateStr) return false;
+      const frac = WindmateForecastTime.parseForecastParts(point.time)
+        ? WindmateForecastTime.fractionalHourFromForecastTime(point.time)
+        : fractionalHourFromTime(point.time);
+      return frac <= nowFrac + 1 / 3600;
+    });
+  }
+
   function actualSeriesThroughNow(actual, current, showNow) {
     if (!showNow || !current) return actual;
     const last = actual[actual.length - 1];
@@ -609,7 +622,8 @@ const WindmateObservations = (() => {
 
     const sessionDate = options.sessionDate ?? forecast[0]?.time?.slice(0, 10);
     const showNow = isTodayCurveDate(sessionDate, forecast);
-    const actual = actualSeriesThroughNow(actualRaw, obsEntry.current, showNow);
+    const actualTrimmed = trimActualThroughPlanningNow(actualRaw, sessionDate, showNow);
+    const actual = actualSeriesThroughNow(actualTrimmed, obsEntry.current, showNow);
 
     const allSpeeds = [
       ...actual.map((p) => p.windSpeed),

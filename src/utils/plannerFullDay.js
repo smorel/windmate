@@ -18,6 +18,12 @@ function formatTempRangeC(minC, maxC) {
   return lo === hi ? `${lo}°C` : `${lo}–${hi}°C`;
 }
 
+/** Matrix timeline: drop night blocks when daylight-only mode is on. */
+function filterMatrixDaylightHours(hours, hideNightHours) {
+  if (!hideNightHours) return hours ?? [];
+  return (hours ?? []).filter((hour) => hour?.daylightOk !== false);
+}
+
 /** Session planning hours shown in the matrix (excludes night / elapsed). */
 function filterMatrixPlanningHours(hours, sessionDate) {
   return (hours ?? []).filter((hour) => {
@@ -135,6 +141,7 @@ module.exports = {
     matrixSlotShowsProbability,
     matrixSlotShowsFullDayCuriosity,
   filterMatrixSpotsForDay,
+  filterMatrixDaylightHours,
   filterMatrixPlanningHours,
   buildPlanningHourConditionStats,
   formatPlanningHourConditionSummary,

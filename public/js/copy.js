@@ -55,6 +55,8 @@ const WindmateCopy = {
   planner: {
     fullDayToggle: 'Only rideable hours',
     fullDayToggleAria: 'Limit the planner to rideable spots and session hours',
+    matrixDaylightToggle: 'Daylight hours only',
+    matrixDaylightToggleAria: 'Hide night hours in the rideability matrix',
   },
 
   loading: {
@@ -104,8 +106,8 @@ const WindmateCopy = {
     label: 'Map',
     openAria: 'Open spot map',
     closeAria: 'Close spot map',
-    hint: 'Tap a spot to favorite · Double-click to add a custom spot',
-    hintNoSpots: 'No spots here yet — double-click to add one',
+    hint: 'Tap a spot to favorite · Double-click or long-press to add a custom spot',
+    hintNoSpots: 'No spots here yet — double-click or long-press to add one',
     hintError: 'Could not load spots — try panning the map',
     added: (name) => `Added ${name} to your list`,
     created: (name) => `Created and favorited ${name}`,

@@ -52,6 +52,23 @@ body.refresh-countdown-active .horizon-planner-sticky {
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
 }
 
+.horizon-planner-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.75rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  padding-bottom: 0.25rem;
+}
+
+.horizon-planner-row .horizon-day-card {
+  flex: 0 0 min(72vw, 10.5rem);
+  scroll-snap-align: start;
+}
+
 /* Two-column day cards can exceed viewport height; sticky would hide the matrix. */
 @media (max-width: 640px) {
   .horizon-planner-sticky {
@@ -360,7 +377,7 @@ body.refresh-countdown-active .horizon-planner-sticky {
 
 .matrix-hour-track {
   position: relative;
-  min-width: 0;
+  min-width: max-content;
   overflow: visible;
 }
 
@@ -393,7 +410,7 @@ body.refresh-countdown-active .horizon-planner-sticky {
   position: relative;
   z-index: 1;
   display: flex;
-  gap: 0.125rem;
+  gap: 1px;
   overflow: visible;
 }
 
@@ -435,8 +452,9 @@ body.refresh-countdown-active .horizon-planner-sticky {
 }
 
 .hour-block {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 var(--matrix-hour-width, 11px);
+  width: var(--matrix-hour-width, 11px);
+  min-width: var(--matrix-hour-width, 11px);
   height: 36px;
   border-radius: 3px;
   position: relative;
@@ -569,12 +587,13 @@ body.refresh-countdown-active .horizon-planner-sticky {
 
 .matrix-score-blocks {
   display: flex;
-  gap: 0.125rem;
+  gap: 1px;
 }
 
 .matrix-score-cell {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 var(--matrix-hour-width, 11px);
+  width: var(--matrix-hour-width, 11px);
+  min-width: var(--matrix-hour-width, 11px);
   height: 20px;
   border-radius: 3px;
   display: flex;
@@ -630,12 +649,13 @@ body.refresh-countdown-active .horizon-planner-sticky {
 
 .matrix-direction-blocks {
   display: flex;
-  gap: 0.125rem;
+  gap: 1px;
 }
 
 .matrix-direction {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 var(--matrix-hour-width, 11px);
+  width: var(--matrix-hour-width, 11px);
+  min-width: var(--matrix-hour-width, 11px);
   height: 22px;
   border-radius: 3px;
   display: flex;
@@ -1464,12 +1484,22 @@ body.modal-open {
   min-width: 0;
 }
 
-.matrix-panel-map {
+.matrix-panel-side {
   flex: 0 0 10rem;
   width: 10rem;
   min-width: 10rem;
   display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   align-self: stretch;
+}
+
+.matrix-panel-map {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 7rem;
+  display: flex;
 }
 
 .matrix-panel-map .spot-map {
@@ -1575,6 +1605,12 @@ body.modal-open {
   .matrix-panel {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .matrix-panel-side {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
   }
 
   .matrix-panel-map {
@@ -1842,6 +1878,8 @@ body.dashboard-pending .dashboard-planner {
 
 .matrix-grid-wrap {
   position: relative;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .matrix-time-axis {
@@ -1850,12 +1888,13 @@ body.dashboard-pending .dashboard-planner {
 
 .matrix-time-blocks {
   display: flex;
-  gap: 0.125rem;
+  gap: 1px;
 }
 
 .matrix-time-cell {
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 var(--matrix-hour-width, 11px);
+  width: var(--matrix-hour-width, 11px);
+  min-width: var(--matrix-hour-width, 11px);
   text-align: center;
   font-size: 10px;
   line-height: 1;

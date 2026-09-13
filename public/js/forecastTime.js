@@ -206,6 +206,24 @@ const WindmateForecastTime = (() => {
     return parts.h + parts.mi / 60;
   }
 
+  /** Wall-clock fraction of the day at the planning place (for live curves / now marker). */
+  function fractionalHourPlanningNow(date = new Date()) {
+    if (planningTimezoneId) {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: planningTimezoneId,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).formatToParts(date);
+      const h = Number(partValue(parts, 'hour'));
+      const mi = Number(partValue(parts, 'minute'));
+      const sec = Number(partValue(parts, 'second'));
+      return h + mi / 60 + sec / 3600;
+    }
+    return date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
+  }
+
   function fractionalHourSlotCenter(isoTime) {
     const parts = parseForecastParts(isoTime);
     if (!parts) return 0;
@@ -252,6 +270,7 @@ const WindmateForecastTime = (() => {
     formatWindowTimeRange,
     sessionWarningMessage,
     fractionalHourFromForecastTime,
+    fractionalHourPlanningNow,
     fractionalHourSlotCenter,
     localDateString,
     planningToday,

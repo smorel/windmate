@@ -13,6 +13,11 @@ const WindmatePlannerFullDay = (() => {
     return lo === hi ? `${lo}°C` : `${lo}–${hi}°C`;
   }
 
+  function filterMatrixDaylightHours(hours, hideNightHours) {
+    if (!hideNightHours) return hours ?? [];
+    return (hours ?? []).filter((hour) => hour?.daylightOk !== false);
+  }
+
   function filterMatrixPlanningHours(hours, sessionDate) {
     return (hours ?? []).filter((hour) => {
       if (hour?.daylightOk === false) return false;
@@ -129,6 +134,7 @@ const WindmatePlannerFullDay = (() => {
     matrixSlotShowsProbability,
     matrixSlotShowsFullDayCuriosity,
     filterMatrixSpotsForDay,
+    filterMatrixDaylightHours,
     filterMatrixPlanningHours,
     buildPlanningHourConditionStats,
     formatPlanningHourConditionSummary,

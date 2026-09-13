@@ -18,6 +18,7 @@ let settingsSportTab = 'wingfoiling';
 let locating = false;
 let selectedDayDate = null;
 let plannerFullDayForecast = false;
+let matrixHideNightHours = true;
 
 const GEO = { DENIED: 1, UNAVAILABLE: 2, TIMEOUT: 3 };
 
@@ -54,6 +55,8 @@ const els = {
   horizonPlanner: document.getElementById('horizon-planner'),
   plannerFullDayToggle: document.getElementById('planner-full-day-toggle'),
   plannerFullDayText: document.getElementById('planner-full-day-text'),
+  matrixDaylightToggle: document.getElementById('matrix-daylight-toggle'),
+  matrixDaylightText: document.getElementById('matrix-daylight-text'),
   refreshCountdown: document.getElementById('refresh-countdown'),
   rideabilityMatrix: document.getElementById('rideability-matrix'),
   modelLegend: document.getElementById('model-legend'),
@@ -661,6 +664,27 @@ function isPlannerFullDayActive() {
   );
 }
 
+function isMatrixHideNightHoursActive() {
+  if (matrixHideNightHours !== undefined && matrixHideNightHours !== null) {
+    return Boolean(matrixHideNightHours);
+  }
+  const pref = rideabilityData?.preferences?.matrix_hide_night_hours;
+  if (pref !== undefined && pref !== null) return Boolean(pref);
+  return true;
+}
+
+function syncMatrixDaylightToggleUi() {
+  const hideNight = isMatrixHideNightHoursActive();
+  if (els.matrixDaylightToggle) {
+    els.matrixDaylightToggle.checked = hideNight;
+    els.matrixDaylightToggle.setAttribute('aria-checked', hideNight ? 'true' : 'false');
+    els.matrixDaylightToggle.setAttribute('aria-label', WindmateCopy.planner.matrixDaylightToggleAria);
+  }
+  if (els.matrixDaylightText) {
+    els.matrixDaylightText.textContent = WindmateCopy.planner.matrixDaylightToggle;
+  }
+}
+
 function syncPlannerFullDayToggleUi() {
   const onlyRideableHours = !plannerFullDayForecast;
   if (els.plannerFullDayToggle) {
@@ -673,6 +697,23 @@ function syncPlannerFullDayToggleUi() {
   }
   if (els.plannerFullDayText) {
     els.plannerFullDayText.textContent = WindmateCopy.planner.fullDayToggle;
+  }
+}
+
+async function persistMatrixHideNightHours(hideNightHours) {
+  matrixHideNightHours = Boolean(hideNightHours);
+  syncMatrixDaylightToggleUi();
+  try {
+    const updated = await api('/api/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ matrix_hide_night_hours: matrixHideNightHours ? 1 : 0 }),
+    });
+    applyFullPreferences(updated);
+    if (rideabilityData) {
+      renderRideabilityMatrix(rideabilityData, observationsData);
+    }
+  } catch (err) {
+    console.error(err);
   }
 }
 
@@ -694,7 +735,11 @@ async function persistPlannerFullDayForecast(onlyRideableHours) {
 }
 
 function initPlannerFullDayToggle() {
+  syncMatrixDaylightToggleUi();
   syncPlannerFullDayToggleUi();
+  els.matrixDaylightToggle?.addEventListener('change', () => {
+    persistMatrixHideNightHours(els.matrixDaylightToggle.checked);
+  });
   els.plannerFullDayToggle?.addEventListener('change', () => {
     persistPlannerFullDayForecast(els.plannerFullDayToggle.checked);
   });
@@ -705,6 +750,11 @@ function applyFullPreferences(prefs) {
     prefs.planner_full_day_forecast !== undefined && prefs.planner_full_day_forecast !== null
       ? Boolean(prefs.planner_full_day_forecast)
       : false;
+  matrixHideNightHours =
+    prefs.matrix_hide_night_hours !== undefined && prefs.matrix_hide_night_hours !== null
+      ? Boolean(prefs.matrix_hide_night_hours)
+      : true;
+  syncMatrixDaylightToggleUi();
   syncPlannerFullDayToggleUi();
   sportProfiles = prefs.sport_profiles ?? sportProfiles;
   activeSport = prefs.active_sport ?? activeSport;
@@ -717,6 +767,7 @@ function applyFullPreferences(prefs) {
   );
   if (rideabilityData?.preferences) {
     rideabilityData.preferences.planner_full_day_forecast = plannerFullDayForecast ? 1 : 0;
+    rideabilityData.preferences.matrix_hide_night_hours = matrixHideNightHours ? 1 : 0;
   }
   syncPreferencesState(prefs);
   renderMySports();
@@ -2075,6 +2126,13 @@ function isMatrixNightHour(hour) {
   return hour != null && hour.daylightOk === false;
 }
 
+function matrixTimelineHours(dayHours) {
+  return WindmatePlannerFullDay.filterMatrixDaylightHours(
+    dayHours,
+    isMatrixHideNightHoursActive()
+  );
+}
+
 function isMatrixNightSlot(timelineSlot, modelHoursAtSlot) {
   if (isMatrixNightHour(timelineSlot)) return true;
   const present = (modelHoursAtSlot ?? []).filter((hour) => hour != null);
@@ -2767,10 +2825,11 @@ function renderRideabilityMatrix(data, observations) {
       const { spot, models, primaryModel } = entry;
       const dayData = getSpotDayData(entry, selectedDayDate);
       const dayHours = dayData?.hours ?? [];
+      const matrixHours = matrixTimelineHours(dayHours);
       const rideableCount = getConsensusRideableHours(entry, selectedDayDate, data.preferences);
       const rankBanners = WindmateSessionRank.renderBanners(row.topReasons);
 
-      const directionRow = renderDirectionRow(dayHours, selectedDayDate, fullDayMode);
+      const directionRow = renderDirectionRow(matrixHours, selectedDayDate, fullDayMode);
       const modelEntries = Object.entries(models ?? {}).filter(([, model]) => !model.error);
       const windowMaps =
         modelEntries.length > 0
@@ -2782,7 +2841,7 @@ function renderRideabilityMatrix(data, observations) {
             )
           : WindmateRideableWindow.buildSingleModelWindowMaps(dayHours, minWindowHours);
       const criterionRows = renderCriterionMatrixRows(
-        dayHours,
+        matrixHours,
         modelEntries,
         (modelId) => getModelDayHours(entry, modelId, selectedDayDate),
         windowMaps,
@@ -2792,7 +2851,7 @@ function renderRideabilityMatrix(data, observations) {
       );
 
       const matrixPrefs = prefsForRanking(data.preferences);
-      const scoreRow = renderWindowScoreRow(dayHours, entry, selectedDayDate, matrixPrefs);
+      const scoreRow = renderWindowScoreRow(matrixHours, entry, selectedDayDate, matrixPrefs);
       const matrixRows = `${directionRow}${criterionRows}${scoreRow}`;
       const dayLabel = viewingToday
         ? WindmateCopy.horizon.todayShort
@@ -2882,15 +2941,17 @@ function renderRideabilityMatrix(data, observations) {
                 <div
                   class="matrix-grid-wrap"
                   data-matrix-grid="${spot.id}"
-                  data-matrix-hour-times="${dayHours.map((h) => WindmateRideableWindow.hourTimeKey(h.time)).join('|')}"
+                  data-matrix-hour-times="${matrixHours.map((h) => WindmateRideableWindow.hourTimeKey(h.time)).join('|')}"
                 >
-                  ${renderMatrixTimeAxis(dayHours)}
+                  ${renderMatrixTimeAxis(matrixHours)}
                   ${matrixRows}
                 </div>
               </div>
-              ${spotMap ? `<div class="matrix-panel-map">${spotMap}</div>` : ''}
+              <div class="matrix-panel-side">
+                <div class="departure-line-slot" data-departure-for="${spot.id}"></div>
+                ${spotMap ? `<div class="matrix-panel-map">${spotMap}</div>` : ''}
+              </div>
             </div>
-            <div class="departure-line-slot" data-departure-for="${spot.id}"></div>
             <svg class="departure-plan-stroke" data-departure-stroke-for="${spot.id}" aria-hidden="true">
               <path class="departure-plan-stroke__shape"></path>
             </svg>

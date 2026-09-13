@@ -5,6 +5,7 @@ const {
   matrixSlotShowsProbability,
   matrixSlotShowsFullDayCuriosity,
   filterMatrixSpotsForDay,
+  filterMatrixDaylightHours,
   filterMatrixPlanningHours,
   buildPlanningHourConditionStats,
   formatPlanningHourConditionSummary,
@@ -78,6 +79,17 @@ describe('filterMatrixSpotsForDay', () => {
   it('includes favorites and rideable spots when mode is on', () => {
     const out = filterMatrixSpotsForDay(rows, ['fav'], true);
     assert.deepEqual(out.map((r) => r.entry.spot.id), ['ride', 'fav']);
+  });
+});
+
+describe('filterMatrixDaylightHours', () => {
+  it('drops night hours when enabled', () => {
+    const hours = [
+      { time: '2026-09-12T08:00', daylightOk: true },
+      { time: '2026-09-12T22:00', daylightOk: false },
+    ];
+    assert.equal(filterMatrixDaylightHours(hours, true).length, 1);
+    assert.equal(filterMatrixDaylightHours(hours, false).length, 2);
   });
 });
 

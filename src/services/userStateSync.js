@@ -168,6 +168,7 @@ function restoreUserState(db, bundle) {
       active_sport: global.active_sport,
       alerts_master_enabled: global.alerts_master_enabled,
       planner_full_day_forecast: global.planner_full_day_forecast,
+      matrix_hide_night_hours: global.matrix_hide_night_hours,
     });
 
     if (bundle.active_location_id !== undefined) {

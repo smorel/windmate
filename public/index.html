@@ -105,24 +105,42 @@
     </div>
 
     <section class="dashboard-planner">
-      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">
+      <div class="flex flex-col gap-3 mb-4">
         <h2 class="text-lg font-semibold text-white">Horizon Planner</h2>
-        <label
-          class="planner-full-day-toggle flex items-start gap-2.5 cursor-pointer select-none sm:max-w-xs sm:text-right"
-          id="planner-full-day-label"
-        >
-          <span class="text-sm font-medium text-slate-200 sm:text-right flex-1 min-w-0" id="planner-full-day-text"></span>
-          <input
-            id="planner-full-day-toggle"
-            type="checkbox"
-            role="switch"
-            class="planner-full-day-toggle__input shrink-0 mt-0.5"
-            aria-checked="false"
-          />
-        </label>
+        <div class="planner-toggles flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:justify-end">
+          <label
+            class="planner-full-day-toggle flex items-start gap-2.5 cursor-pointer select-none sm:max-w-xs sm:text-right"
+            id="matrix-daylight-label"
+          >
+            <span
+              class="text-sm font-medium text-slate-200 sm:text-right flex-1 min-w-0"
+              id="matrix-daylight-text"
+            ></span>
+            <input
+              id="matrix-daylight-toggle"
+              type="checkbox"
+              role="switch"
+              class="planner-full-day-toggle__input shrink-0 mt-0.5"
+              aria-checked="true"
+            />
+          </label>
+          <label
+            class="planner-full-day-toggle flex items-start gap-2.5 cursor-pointer select-none sm:max-w-xs sm:text-right"
+            id="planner-full-day-label"
+          >
+            <span class="text-sm font-medium text-slate-200 sm:text-right flex-1 min-w-0" id="planner-full-day-text"></span>
+            <input
+              id="planner-full-day-toggle"
+              type="checkbox"
+              role="switch"
+              class="planner-full-day-toggle__input shrink-0 mt-0.5"
+              aria-checked="false"
+            />
+          </label>
+        </div>
       </div>
       <div class="horizon-planner-sticky">
-        <div id="horizon-planner" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3"></div>
+        <div id="horizon-planner" class="horizon-planner-row"></div>
       </div>
       <div class="flex justify-end mt-6 mb-4">
         <button

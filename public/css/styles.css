@@ -1622,16 +1622,20 @@ body.modal-open {
     margin-top: 0.75rem;
   }
 
-  .matrix-grid-wrap .matrix-hour-track {
-    flex: 0 0 auto;
-    width: max-content;
-    min-width: max-content;
+  .matrix-grid-wrap {
+    width: 100%;
+    min-width: 0;
+    overflow-x: visible;
   }
 
-  .matrix-grid-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    max-width: 100%;
+  .matrix-grid-wrap .matrix-hour-track {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* Match row labels; slightly narrower than desktop w-24 so the grid gets more width */
+  .matrix-grid-wrap .w-24 {
+    width: 4.25rem;
   }
 
   .matrix-hour-blocks,
@@ -1639,16 +1643,15 @@ body.modal-open {
   .matrix-score-blocks,
   .matrix-time-blocks {
     gap: 1px;
-    width: max-content;
   }
 
-  .hour-block,
-  .matrix-score-cell,
-  .matrix-direction,
-  .matrix-time-cell {
-    flex: 0 0 var(--matrix-hour-width, 11px);
-    width: var(--matrix-hour-width, 11px);
-    min-width: var(--matrix-hour-width, 11px);
+  .matrix-grid-wrap .hour-block,
+  .matrix-grid-wrap .matrix-score-cell,
+  .matrix-grid-wrap .matrix-direction,
+  .matrix-grid-wrap .matrix-time-cell {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
   }
 
   .live-strip-header {

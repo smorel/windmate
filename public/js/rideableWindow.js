@@ -378,9 +378,24 @@ const WindmateRideableWindow = (() => {
 
   /** Every hour in any qualifying consensus block (matrix bands, live curve). */
   function getQualifyingConsensusWindowHours(entry, dateStr, minConsecutive, getModelDayHours, prefs) {
-    const { timeline, marked } = consensusWindowMarkedHours(entry, dateStr, getModelDayHours, prefs);
-    if (!timeline.length) return [];
-    return qualifyingWindowHourKeys(marked, timeline, minConsecutive);
+    const timeline = resolveDayTimeline(entry, dateStr, getModelDayHours);
+    if (timeline.length) {
+      const { windowByTime } = buildConsensusWindowMapsFromEntry(
+        entry,
+        dateStr,
+        minConsecutive,
+        getModelDayHours,
+        prefs
+      );
+      return timeline.filter((slot) => windowByTime.get(hourTimeKey(slot.time)));
+    }
+
+    const day = entry.days?.find((d) => d.date === dateStr);
+    const dayHours = day?.hours ?? [];
+    if (!dayHours.length) return [];
+
+    const { windowByTime } = buildSingleModelWindowMaps(dayHours, minConsecutive);
+    return dayHours.filter((hour) => windowByTime.get(hourTimeKey(hour.time)));
   }
 
   /** Hours where every model with data agrees the hour is rideable. */
@@ -431,8 +446,14 @@ const WindmateRideableWindow = (() => {
     return { windowByTime, allModelsByTime };
   }
 
-  function buildConsensusWindowMapsFromEntry(entry, dateStr, minConsecutive, getModelDayHours) {
-    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours);
+  function buildConsensusWindowMapsFromEntry(
+    entry,
+    dateStr,
+    minConsecutive,
+    getModelDayHours,
+    prefs
+  ) {
+    const { timeline, consensusHours } = buildConsensusHours(entry, dateStr, getModelDayHours, prefs);
 
     if (!consensusHours.length) {
       return buildSingleModelWindowMaps(timeline, minConsecutive);

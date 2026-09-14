@@ -376,11 +376,10 @@ const WindmateObservations = (() => {
     };
   }
 
-  function qualifyingWindowHours(forecast, rideEntry, prefs) {
-    if (!forecast.length) return [];
+  function qualifyingWindowHours(forecast, rideEntry, prefs, sessionDate) {
     const minWindow = WindmateRideableWindow.parseMinHours(prefs.min_rideable_window_hours);
-    const dateStr = forecast[0].time.slice(0, 10);
-    if (rideEntry?.models && Object.keys(rideEntry.models).length) {
+    const dateStr = sessionDate ?? forecast[0]?.time?.slice(0, 10);
+    if (rideEntry && dateStr) {
       return WindmateRideableWindow.getQualifyingConsensusWindowHours(
         rideEntry,
         dateStr,
@@ -389,6 +388,7 @@ const WindmateObservations = (() => {
         prefs
       );
     }
+    if (!forecast.length) return [];
     const hours = forecast.map((hour) => ({
       ...hour,
       rideable: WindmateRideableWindow.rideableForPrefs(hour, prefs),
@@ -672,7 +672,12 @@ const WindmateObservations = (() => {
     if (plannerRange === undefined) {
       plannerRange = resolvePlannerWindowRange(options.rideEntry, sessionDate, prefs);
     }
-    const rideableWindowHours = qualifyingWindowHours(forecast, options.rideEntry, prefs);
+    const rideableWindowHours = qualifyingWindowHours(
+      forecast,
+      options.rideEntry,
+      prefs,
+      sessionDate
+    );
     const rideableWindowBands = renderRideableWindowBands(
       rideableWindowHours,
       xSlotStart,

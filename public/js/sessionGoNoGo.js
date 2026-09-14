@@ -110,7 +110,8 @@ const WindmateSessionGoNoGo = (() => {
       entry,
       sessionDate,
       minWindow,
-      getModelDayHours
+      getModelDayHours,
+      prefs
     );
     const order = WindmateSessionRank.normalizeOrder(prefs?.rank_criteria_order).filter(
       (k) => k !== 'proximity'

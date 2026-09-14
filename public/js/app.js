@@ -1465,7 +1465,8 @@ function getConsensusRideableHours(entry, dateStr, prefs) {
     entry,
     dateStr,
     minWindowHours,
-    getModelDayHours
+    getModelDayHours,
+    prefs
   );
 }
 
@@ -2844,7 +2845,8 @@ function renderRideabilityMatrix(data, observations) {
       const dayData = getSpotDayData(entry, selectedDayDate);
       const dayHours = dayData?.hours ?? [];
       const matrixHours = matrixTimelineHours(dayHours);
-      const rideableCount = getConsensusRideableHours(entry, selectedDayDate, data.preferences);
+      const matrixPrefs = prefsForRanking(data.preferences);
+      const rideableCount = getConsensusRideableHours(entry, selectedDayDate, matrixPrefs);
       const rankBanners = WindmateSessionRank.renderBanners(row.topReasons);
 
       const directionRow = renderDirectionRow(matrixHours, selectedDayDate, fullDayMode);
@@ -2855,7 +2857,8 @@ function renderRideabilityMatrix(data, observations) {
               entry,
               selectedDayDate,
               minWindowHours,
-              getModelDayHours
+              getModelDayHours,
+              matrixPrefs
             )
           : WindmateRideableWindow.buildSingleModelWindowMaps(dayHours, minWindowHours);
       const criterionRows = renderCriterionMatrixRows(
@@ -2868,7 +2871,6 @@ function renderRideabilityMatrix(data, observations) {
         fullDayMode
       );
 
-      const matrixPrefs = prefsForRanking(data.preferences);
       const scoreRow = renderWindowScoreRow(matrixHours, entry, selectedDayDate, matrixPrefs);
       const matrixRows = `${directionRow}${criterionRows}${scoreRow}`;
       const dayLabel = viewingToday

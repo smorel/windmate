@@ -1605,8 +1605,17 @@ body.modal-open {
     display: contents;
   }
 
+  .departure-plan-group {
+    margin-bottom: 0;
+  }
+
+  .departure-plan-group > .departure-plan-stroke {
+    flex: none;
+  }
+
   .departure-plan-group .matrix-panel-rows {
     order: 1;
+    flex: 0 0 auto;
   }
 
   .departure-plan-group .departure-line-slot {
@@ -1616,10 +1625,24 @@ body.modal-open {
   .departure-plan-group .matrix-panel-map {
     order: 3;
     flex: 0 0 auto;
+    align-self: auto;
     width: 100%;
     min-width: 0;
-    min-height: 9rem;
+    min-height: 0;
     margin-top: 0.75rem;
+    margin-bottom: 0;
+  }
+
+  .departure-plan-group .matrix-panel-map .spot-map {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 176 / 132;
+  }
+
+  .spot-intel-drawer {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
   }
 
   .matrix-grid-wrap {
@@ -1661,7 +1684,7 @@ body.modal-open {
 
   .spot-map {
     width: 100%;
-    min-height: 9rem;
+    min-height: 0;
   }
 }
 

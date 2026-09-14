@@ -21,6 +21,12 @@ const {
   idealDirectionsForRideability,
   scheduleSpotDirectionInference,
 } = require('../utils/spotDirectionApi');
+const { mapWithConcurrency } = require('../utils/mapWithConcurrency');
+
+const RIDEABILITY_SPOT_CONCURRENCY = Math.max(
+  1,
+  parseInt(process.env.RIDEABILITY_SPOT_CONCURRENCY ?? '4', 10) || 4
+);
 
 function createRideabilityRouter(db) {
   const router = express.Router();
@@ -95,87 +101,99 @@ function createRideabilityRouter(db) {
         scheduleSpotDirectionInference(db, spot);
       }
 
-      const settled = await Promise.allSettled(
-        nearbySpots.map(async (spot) => {
-          const freshSpot = getSpotById(db, spot.id) ?? spot;
-          const idealDirections = idealDirectionsForRideability(freshSpot);
-          const directionFields = buildSpotDirectionFields(freshSpot);
+      const settled = await mapWithConcurrency(
+        nearbySpots,
+        RIDEABILITY_SPOT_CONCURRENCY,
+        async (spot) => {
+          try {
+            const freshSpot = getSpotById(db, spot.id) ?? spot;
+            const idealDirections = idealDirectionsForRideability(freshSpot);
+            const directionFields = buildSpotDirectionFields(freshSpot);
 
-          const forecast = await fetchForecast(db, spot.id, spot, { skipCache });
-          const contextData = await fetchOpenMeteoContext(db, spot.id, spot, { skipCache });
-          const contextByTime = buildContextByTime(contextData);
-          const daylightByDate = buildDaylightByDate(contextData);
+            const forecast = await fetchForecast(db, spot.id, spot, { skipCache });
+            const contextData = await fetchOpenMeteoContext(db, spot.id, spot, { skipCache });
+            const contextByTime = buildContextByTime(contextData);
+            const daylightByDate = buildDaylightByDate(contextData);
 
-          const spotInfo = {
-            id: freshSpot.id,
-            name: freshSpot.name,
-            latitude: freshSpot.latitude,
-            longitude: freshSpot.longitude,
-            distance_km: spot.distance_km,
-            outside_radius: Boolean(spot.outside_radius),
-            source_url: freshSpot.source_url,
-            ...directionFields,
-          };
+            const spotInfo = {
+              id: freshSpot.id,
+              name: freshSpot.name,
+              latitude: freshSpot.latitude,
+              longitude: freshSpot.longitude,
+              distance_km: spot.distance_km,
+              outside_radius: Boolean(spot.outside_radius),
+              source_url: freshSpot.source_url,
+              ...directionFields,
+            };
 
-          if (forecast.models) {
-            const mixed = analyzeMixedRideability(
-              forecast,
+            if (forecast.models) {
+              const mixed = analyzeMixedRideability(
+                forecast,
+                prefs,
+                idealDirections,
+                contextByTime,
+                daylightByDate
+              );
+              const days = mixed.consensusDays.length ? mixed.consensusDays : mixed.days;
+              const rideEntry = {
+                spot: spotInfo,
+                primaryModel: mixed.primaryModel,
+                models: mixed.models,
+                days,
+              };
+              return {
+                status: 'fulfilled',
+                value: {
+                  spot: spotInfo,
+                  primaryModel: mixed.primaryModel,
+                  models: mixed.models,
+                  today: mixed.today,
+                  days,
+                  rideableToday: mixed.rideableToday,
+                  warnings: mixed.warnings,
+                  tempSummary: mixed.tempSummary,
+                  sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs, planningContext()),
+                },
+              };
+            }
+
+            const primary = getPrimaryHourlyForecast(forecast) ?? forecast;
+            const hourly = analyzeHourlyRideability(
+              primary,
               prefs,
               idealDirections,
               contextByTime,
               daylightByDate
             );
-            const days = mixed.consensusDays.length ? mixed.consensusDays : mixed.days;
+            const days = summarizeByDay(hourly);
+            const today = localDateString();
+            const todayHours = hourly.filter((h) => h.time.startsWith(today));
+            const rideableTodayHours = todayHours.filter((h) => h.rideable);
+
             const rideEntry = {
               spot: spotInfo,
-              primaryModel: mixed.primaryModel,
-              models: mixed.models,
+              primaryModel: forecast.model ?? 'open-meteo',
+              models: {},
               days,
             };
             return {
-              spot: spotInfo,
-              primaryModel: mixed.primaryModel,
-              models: mixed.models,
-              today: mixed.today,
-              days,
-              rideableToday: mixed.rideableToday,
-              warnings: mixed.warnings,
-              tempSummary: mixed.tempSummary,
-              sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs, planningContext()),
+              status: 'fulfilled',
+              value: {
+                spot: spotInfo,
+                primaryModel: forecast.model ?? 'open-meteo',
+                models: {},
+                today: todayHours,
+                days,
+                rideableToday: rideableTodayHours.length,
+                warnings: computeSessionWarnings(todayHours, prefs),
+                tempSummary: buildTempSummary(rideableTodayHours),
+                sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs, planningContext()),
+              },
             };
+          } catch (err) {
+            return { status: 'rejected', reason: err };
           }
-
-          const primary = getPrimaryHourlyForecast(forecast) ?? forecast;
-          const hourly = analyzeHourlyRideability(
-            primary,
-            prefs,
-            idealDirections,
-            contextByTime,
-            daylightByDate
-          );
-          const days = summarizeByDay(hourly);
-          const today = localDateString();
-          const todayHours = hourly.filter((h) => h.time.startsWith(today));
-          const rideableTodayHours = todayHours.filter((h) => h.rideable);
-
-          const rideEntry = {
-            spot: spotInfo,
-            primaryModel: forecast.model ?? 'open-meteo',
-            models: {},
-            days,
-          };
-          return {
-            spot: spotInfo,
-            primaryModel: forecast.model ?? 'open-meteo',
-            models: {},
-            today: todayHours,
-            days,
-            rideableToday: rideableTodayHours.length,
-            warnings: computeSessionWarnings(todayHours, prefs),
-            tempSummary: buildTempSummary(rideableTodayHours),
-            sessionGoNoGoByDate: attachSessionGoNoGoByDate(rideEntry, prefs, planningContext()),
-          };
-        })
+        }
       );
 
       const results = settled

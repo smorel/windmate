@@ -1407,14 +1407,6 @@ async function refreshDashboard({
 
     let rideRes = await rideabilityPromise;
     if (generation !== dashboardRefreshGeneration) return;
-    if (
-      rideRes?.forecast_unavailable &&
-      !bypassCache &&
-      !refreshQuery
-    ) {
-      rideRes = await api(`/api/rideability?${query}${includeSpotsQuery}&refresh=1`);
-      if (generation !== dashboardRefreshGeneration) return;
-    }
 
     rideabilityData = rideRes;
     activeSport = rideabilityData.preferences?.sport ?? activeSport;

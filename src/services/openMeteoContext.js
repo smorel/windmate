@@ -100,7 +100,8 @@ async function fetchOpenMeteoContext(db, spotId, spot, options = {}) {
     if (cached) {
       return { ...JSON.parse(cached.data), stale: true };
     }
-    throw err;
+    console.warn('[open-meteo-context] fetch failed, using empty context:', err.message);
+    return { hourly: { time: [] }, daily: { time: [] } };
   }
 }
 

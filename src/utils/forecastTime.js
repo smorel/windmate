@@ -53,6 +53,55 @@ function localDateString(date = new Date()) {
   return `${y}-${mo}-${d}`;
 }
 
+/** Inverse of travelTime `localDepartureIsoToEpochMs` — wall clock in client planning TZ. */
+function planningInstantFromEpoch(epochMs, tzOffsetMinutes) {
+  if (tzOffsetMinutes == null || !Number.isFinite(tzOffsetMinutes)) {
+    return new Date(epochMs);
+  }
+  return new Date(epochMs - tzOffsetMinutes * 60 * 1000);
+}
+
+function planningDateString(now = new Date(), tzOffsetMinutes) {
+  if (tzOffsetMinutes == null || !Number.isFinite(tzOffsetMinutes)) {
+    return localDateString(now);
+  }
+  const d = planningInstantFromEpoch(now.getTime(), tzOffsetMinutes);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+function currentPlanningHourStartKey(now = new Date(), tzOffsetMinutes) {
+  if (tzOffsetMinutes == null || !Number.isFinite(tzOffsetMinutes)) {
+    return currentLocalHourStartKey(now);
+  }
+  const d = planningInstantFromEpoch(now.getTime(), tzOffsetMinutes);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const h = String(d.getUTCHours()).padStart(2, '0');
+  return `${y}-${mo}-${day}T${h}:00`;
+}
+
+function planningWallClockIso(now = new Date(), tzOffsetMinutes) {
+  if (tzOffsetMinutes == null || !Number.isFinite(tzOffsetMinutes)) {
+    const y = now.getFullYear();
+    const mo = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const h = String(now.getHours()).padStart(2, '0');
+    const mi = String(now.getMinutes()).padStart(2, '0');
+    return `${y}-${mo}-${d}T${h}:${mi}`;
+  }
+  const d = planningInstantFromEpoch(now.getTime(), tzOffsetMinutes);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const h = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${y}-${mo}-${day}T${h}:${mi}`;
+}
+
 function todayFromHourlyTimes(hourly) {
   const first = hourly?.time?.[0];
   if (first) return String(first).slice(0, 10);
@@ -69,16 +118,24 @@ function currentLocalHourStartKey(date = new Date()) {
 }
 
 /** True for timeline slots on `today` that started before the current local hour. */
-function isElapsedLocalDayHour(timeKey, today, date = new Date()) {
+function isElapsedLocalDayHour(timeKey, today, date = new Date(), tzOffsetMinutes) {
   const key = String(timeKey).replace(' ', 'T').slice(0, 16);
   if (!key.startsWith(today)) return false;
-  return key < currentLocalHourStartKey(date);
+  const hourStart =
+    tzOffsetMinutes != null && Number.isFinite(tzOffsetMinutes)
+      ? currentPlanningHourStartKey(date, tzOffsetMinutes)
+      : currentLocalHourStartKey(date);
+  return key < hourStart;
 }
 
 /** False for elapsed hours when `sessionDate` is the local calendar today (still rideable on future days). */
-function isSessionPlanningHour(timeKey, sessionDate, date = new Date()) {
-  if (sessionDate !== localDateString(date)) return true;
-  return !isElapsedLocalDayHour(timeKey, sessionDate, date);
+function isSessionPlanningHour(timeKey, sessionDate, date = new Date(), tzOffsetMinutes) {
+  const today =
+    tzOffsetMinutes != null && Number.isFinite(tzOffsetMinutes)
+      ? planningDateString(date, tzOffsetMinutes)
+      : localDateString(date);
+  if (sessionDate !== today) return true;
+  return !isElapsedLocalDayHour(timeKey, sessionDate, date, tzOffsetMinutes);
 }
 
 /** First session hour you can be on the water after drive, rig, and leave buffer (floor to hour). */
@@ -86,10 +143,20 @@ function earliestFeasibleOnWaterStartKey(
   now = new Date(),
   driveMinutes = 0,
   rigMinutes = 0,
-  bufferMinutes = 0
+  bufferMinutes = 0,
+  tzOffsetMinutes
 ) {
   const leadMs = (driveMinutes + rigMinutes + bufferMinutes) * 60 * 1000;
-  const ready = new Date(now.getTime() + leadMs);
+  const readyMs = now.getTime() + leadMs;
+  if (tzOffsetMinutes != null && Number.isFinite(tzOffsetMinutes)) {
+    const d = planningInstantFromEpoch(readyMs, tzOffsetMinutes);
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const h = d.getUTCHours();
+    return `${y}-${mo}-${day}T${String(h).padStart(2, '0')}:00`;
+  }
+  const ready = new Date(readyMs);
   const y = ready.getFullYear();
   const mo = String(ready.getMonth() + 1).padStart(2, '0');
   const d = String(ready.getDate()).padStart(2, '0');
@@ -98,16 +165,12 @@ function earliestFeasibleOnWaterStartKey(
 }
 
 /** Leave-time hint for traffic lookup before the departure window is chosen. */
-function bootstrapDepartureIso(dateStr, now = new Date()) {
-  if (dateStr !== localDateString(now)) {
+function bootstrapDepartureIso(dateStr, now = new Date(), tzOffsetMinutes) {
+  const today = planningDateString(now, tzOffsetMinutes);
+  if (dateStr !== today) {
     return `${dateStr}T08:00`;
   }
-  const y = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  const h = String(now.getHours()).padStart(2, '0');
-  const mi = String(now.getMinutes()).padStart(2, '0');
-  return `${y}-${mo}-${d}T${h}:${mi}`;
+  return planningWallClockIso(now, tzOffsetMinutes);
 }
 
 function partsInTimeZone(date, timeZone) {
@@ -220,6 +283,10 @@ module.exports = {
   subtractForecastMinutes,
   normalizeHourlyTimestamp,
   localDateString,
+  planningInstantFromEpoch,
+  planningDateString,
+  currentPlanningHourStartKey,
+  planningWallClockIso,
   todayFromHourlyTimes,
   currentLocalHourStartKey,
   isElapsedLocalDayHour,

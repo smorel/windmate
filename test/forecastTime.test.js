@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   localDateString,
+  planningDateString,
   isSessionPlanningHour,
   isElapsedLocalDayHour,
   calendarDateStringInTz,
@@ -23,6 +24,13 @@ describe('calendarDateStringInTz', () => {
   it('formats date in America/Los_Angeles', () => {
     const d = new Date('2026-09-11T04:30:00Z');
     assert.equal(calendarDateStringInTz(d, 'America/Los_Angeles'), '2026-09-10');
+  });
+});
+
+describe('planningDateString', () => {
+  it('uses client tzOffset wall calendar instead of the host clock', () => {
+    const serverUtc = new Date(Date.UTC(2026, 8, 15, 2, 0));
+    assert.equal(planningDateString(serverUtc, 240), '2026-09-14');
   });
 });
 

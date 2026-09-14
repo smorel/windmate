@@ -1,12 +1,12 @@
 const { pickBestQualifyingWindow, buildConsensusHours, getDayHours } = require('./sessionRank');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 const { computeSessionWarnings } = require('./weatherHazards');
-const { getDriveDuration, buildMapsUrl, googleMapsTrafficEnabled } = require('./travelTime');
+const { getDriveDuration, buildMapsUrl, googleMapsTrafficEnabled, localDepartureIsoToEpochMs } = require('./travelTime');
 const {
   formatForecastClock,
   subtractForecastMinutes,
   addForecastMinutes,
-  localDateString,
+  planningDateString,
   earliestFeasibleOnWaterStartKey,
   bootstrapDepartureIso,
 } = require('../utils/forecastTime');
@@ -47,16 +47,16 @@ function trimWindowEndForHazards(dayHours, run, prefs) {
   };
 }
 
-function resolveDepartureStatus(dateStr, leaveByIso, onWaterStart, onWaterEnd) {
-  const today = localDateString();
+function resolveDepartureStatus(dateStr, leaveByIso, onWaterStart, onWaterEnd, tzOffsetMinutes) {
+  const today = planningDateString(new Date(), tzOffsetMinutes);
   if (dateStr !== today) return 'planned';
 
   const nowMs = Date.now();
-  const leaveMs = Date.parse(`${leaveByIso}:00`);
-  const startMs = Date.parse(`${onWaterStart}:00`);
-  const endMs = Date.parse(`${onWaterEnd}:00`);
+  const leaveMs = localDepartureIsoToEpochMs(leaveByIso, tzOffsetMinutes);
+  const startMs = localDepartureIsoToEpochMs(onWaterStart, tzOffsetMinutes);
+  const endMs = localDepartureIsoToEpochMs(onWaterEnd, tzOffsetMinutes);
 
-  if (Number.isNaN(leaveMs) || Number.isNaN(startMs) || Number.isNaN(endMs)) {
+  if (leaveMs == null || startMs == null || endMs == null) {
     return 'planned';
   }
   if (nowMs >= endMs) return 'passed';
@@ -65,17 +65,17 @@ function resolveDepartureStatus(dateStr, leaveByIso, onWaterStart, onWaterEnd) {
   return 'planned';
 }
 
-function remainingWindowHours(onWaterEnd) {
-  const endMs = Date.parse(`${onWaterEnd}:00`);
-  if (Number.isNaN(endMs)) return 0;
+function remainingWindowHours(onWaterEnd, tzOffsetMinutes) {
+  const endMs = localDepartureIsoToEpochMs(onWaterEnd, tzOffsetMinutes);
+  if (endMs == null) return 0;
   const remainingMs = endMs - Date.now();
   return Math.max(0, Math.ceil(remainingMs / (60 * 60 * 1000)));
 }
 
-function hourStartMs(timeKey) {
+function hourStartMs(timeKey, tzOffsetMinutes) {
   const key = hourTimeKey(timeKey);
-  const ms = Date.parse(`${key}:00`);
-  return Number.isFinite(ms) ? ms : NaN;
+  const ms = localDepartureIsoToEpochMs(key, tzOffsetMinutes);
+  return ms == null ? NaN : ms;
 }
 
 function isDepartureWindowStillFeasible(
@@ -84,16 +84,23 @@ function isDepartureWindowStillFeasible(
   onWaterEnd,
   driveMinutes,
   rigMinutes,
-  bufferMinutes
+  bufferMinutes,
+  tzOffsetMinutes
 ) {
   const nowMs = now.getTime();
-  const startMs = hourStartMs(onWaterStart);
-  const endMs = hourStartMs(onWaterEnd);
+  const startMs = hourStartMs(onWaterStart, tzOffsetMinutes);
+  const endMs = hourStartMs(onWaterEnd, tzOffsetMinutes);
   if (Number.isNaN(startMs) || Number.isNaN(endMs)) return true;
   if (nowMs >= endMs) return false;
   if (nowMs >= startMs && nowMs < endMs) return true;
 
-  const earliest = earliestFeasibleOnWaterStartKey(now, driveMinutes, rigMinutes, bufferMinutes);
+  const earliest = earliestFeasibleOnWaterStartKey(
+    now,
+    driveMinutes,
+    rigMinutes,
+    bufferMinutes,
+    tzOffsetMinutes
+  );
   return hourTimeKey(earliest) <= hourTimeKey(onWaterStart);
 }
 
@@ -102,24 +109,32 @@ function pickDepartureQualifyingWindow(
   dateStr,
   prefs,
   timelineHours,
-  { driveMinutes, rigMinutes, bufferMinutes, now } = {}
+  { driveMinutes, rigMinutes, bufferMinutes, now, tzOffsetMinutes } = {}
 ) {
   const rig = rigMinutes ?? DEFAULT_RIG_MINUTES;
   const buffer = bufferMinutes ?? DEFAULT_DEPARTURE_BUFFER_MINUTES;
   const asOf = now ?? new Date();
+  const planningContext = { now: asOf, tzOffsetMinutes };
 
-  if (!Number.isFinite(driveMinutes) || dateStr !== localDateString(asOf)) {
-    return pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
+  if (!Number.isFinite(driveMinutes) || dateStr !== planningDateString(asOf, tzOffsetMinutes)) {
+    return pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, { planningContext });
   }
 
-  const notBefore = earliestFeasibleOnWaterStartKey(asOf, driveMinutes, rig, buffer);
+  const notBefore = earliestFeasibleOnWaterStartKey(
+    asOf,
+    driveMinutes,
+    rig,
+    buffer,
+    tzOffsetMinutes
+  );
   const pick = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
     notBeforeHourKey: notBefore,
     preferEarliestStart: true,
+    planningContext,
   });
   if (!pick) return null;
 
-  const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours);
+  const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours, planningContext);
   const { onWaterEnd } = trimWindowEndForHazards(dayHours, pick.run, prefs);
   if (
     !isDepartureWindowStillFeasible(
@@ -128,7 +143,8 @@ function pickDepartureQualifyingWindow(
       onWaterEnd,
       driveMinutes,
       rig,
-      buffer
+      buffer,
+      tzOffsetMinutes
     )
   ) {
     return null;
@@ -142,23 +158,27 @@ async function buildDeparturePlan(
   { origin, spot, dateStr, rideEntry, prefs, tzOffsetMinutes }
 ) {
   const timelineHours = getDayHours(rideEntry, dateStr);
-  const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours);
+  const asOf = new Date();
+  const planningContext = { now: asOf, tzOffsetMinutes };
+  const dayHours = buildConsensusHours(rideEntry, dateStr, timelineHours, planningContext);
   const dest = { lat: spot.latitude, lng: spot.longitude };
   const rigMinutes = DEFAULT_RIG_MINUTES;
   const bufferMinutes = DEFAULT_DEPARTURE_BUFFER_MINUTES;
   const minWindowHours = parseMinRideableWindowHours(prefs.min_rideable_window_hours);
-  const asOf = new Date();
   const trafficAware = googleMapsTrafficEnabled();
-  const nowForPick = trafficAware && dateStr === localDateString(asOf) ? asOf : undefined;
+  const sessionIsToday = dateStr === planningDateString(asOf, tzOffsetMinutes);
+  const nowForPick = trafficAware && sessionIsToday ? asOf : undefined;
   const pickOptions = {
     rigMinutes,
     bufferMinutes,
     now: nowForPick,
+    tzOffsetMinutes,
   };
 
   const pickWindow = (driveMinutes) => {
+    const withContext = { planningContext };
     if (!trafficAware) {
-      return pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
+      return pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, withContext);
     }
     return pickDepartureQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
       ...pickOptions,
@@ -170,7 +190,7 @@ async function buildDeparturePlan(
     db,
     origin,
     dest,
-    bootstrapDepartureIso(dateStr, asOf),
+    bootstrapDepartureIso(dateStr, asOf, tzOffsetMinutes),
     tzOffsetMinutes
   );
   let windowPick = pickWindow(drive.driveMinutes);
@@ -200,7 +220,9 @@ async function buildDeparturePlan(
   }
 
   if (!windowPick) {
-    const fallback = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours);
+    const fallback = pickBestQualifyingWindow(rideEntry, dateStr, prefs, timelineHours, {
+      planningContext,
+    });
     if (fallback) {
       const trimmed = trimWindowEndForHazards(dayHours, fallback.run, prefs);
       if (trimmed.rideableHours >= minWindowHours) {
@@ -235,10 +257,10 @@ async function buildDeparturePlan(
     bufferMinutes
   );
 
-  let status = resolveDepartureStatus(dateStr, leaveBy, onWaterStart, onWaterEnd);
+  let status = resolveDepartureStatus(dateStr, leaveBy, onWaterStart, onWaterEnd, tzOffsetMinutes);
 
   if (status === 'leave_now') {
-    const departNowIso = bootstrapDepartureIso(dateStr, asOf);
+    const departNowIso = bootstrapDepartureIso(dateStr, asOf, tzOffsetMinutes);
     arriveAtSpot = addForecastMinutes(departNowIso, drive.driveMinutes);
   }
 
@@ -267,7 +289,7 @@ async function buildDeparturePlan(
   };
 
   if (status === 'in_window') {
-    plan.hoursRemaining = remainingWindowHours(onWaterEnd);
+    plan.hoursRemaining = remainingWindowHours(onWaterEnd, tzOffsetMinutes);
   }
 
   return { plan, status };

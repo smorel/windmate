@@ -454,6 +454,28 @@ describe('resolveDepartureStatus', () => {
       'planned'
     );
   });
+
+  it('uses client tzOffset so server UTC clock does not trigger leave_now early', () => {
+    const dateStr = '2026-09-14';
+    const edtOffset = 240;
+    const realNow = Date.UTC(2026, 8, 14, 11, 46);
+    const originalNow = Date.now;
+    Date.now = () => realNow;
+    try {
+      assert.equal(
+        resolveDepartureStatus(
+          dateStr,
+          `${dateStr}T10:25`,
+          `${dateStr}T12:00`,
+          `${dateStr}T15:00`,
+          edtOffset
+        ),
+        'planned'
+      );
+    } finally {
+      Date.now = originalNow;
+    }
+  });
 });
 
 describe('pickDepartureQualifyingWindow', () => {
@@ -470,7 +492,7 @@ describe('pickDepartureQualifyingWindow', () => {
       max_gust_knots: 50,
       rank_criteria_order: ['wind'],
     };
-    const now = new Date(2026, 8, 12, 15, 30);
+    const now = new Date(2026, 8, 12, 7, 0);
     const dateStr = localDateString(now);
     const timeline = hours.map((h) => ({
       ...h,

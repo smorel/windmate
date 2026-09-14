@@ -9,7 +9,7 @@ const {
 const { parseRankCriteriaOrder } = require('../utils/rankCriteria');
 const { SPORT_WAVE_DEFAULTS } = require('../utils/sports');
 const {
-  localDateString,
+  planningDateString,
   isElapsedLocalDayHour,
   isSessionPlanningHour,
 } = require('../utils/forecastTime');
@@ -275,19 +275,30 @@ function longestRideableBlockLength(hours, minWindowHours) {
   return Math.max(...enumerateRunsFromHours(hours, minWindowHours).map((run) => run.length), 0);
 }
 
-function applyPlanningRideableToTimeline(timeline, dateStr) {
+function consensusOptionsForDate(dateStr, planningContext) {
+  const now = planningContext?.now ?? new Date();
+  const tzOffsetMinutes = planningContext?.tzOffsetMinutes;
+  const today = planningDateString(now, tzOffsetMinutes);
+  if (dateStr !== today) return undefined;
+  return { today: dateStr, now, tzOffsetMinutes };
+}
+
+function applyPlanningRideableToTimeline(timeline, dateStr, planningContext) {
+  const now = planningContext?.now ?? new Date();
+  const tzOffsetMinutes = planningContext?.tzOffsetMinutes;
   return (timeline ?? []).map((slot) => {
     const key = hourTimeKey(slot.time);
-    const rideable = slot.rideable === true && isSessionPlanningHour(key, dateStr);
+    const rideable =
+      slot.rideable === true && isSessionPlanningHour(key, dateStr, now, tzOffsetMinutes);
     return rideable === slot.rideable ? slot : { ...slot, rideable };
   });
 }
 
-function buildConsensusHours(entry, dateStr, timelineHours) {
+function buildConsensusHours(entry, dateStr, timelineHours, planningContext) {
   const timeline = timelineHours ?? getDayHours(entry, dateStr);
   const modelEntries = Object.entries(entry.models ?? {}).filter(([, model]) => !model.error);
   if (!modelEntries.length || !timeline.length) {
-    return applyPlanningRideableToTimeline(timeline, dateStr);
+    return applyPlanningRideableToTimeline(timeline, dateStr, planningContext);
   }
 
   const indexed = modelEntries.map(([, model]) => {
@@ -298,8 +309,7 @@ function buildConsensusHours(entry, dateStr, timelineHours) {
     return byKey;
   });
 
-  const consensusOptions =
-    dateStr === localDateString() ? { today: dateStr, now: new Date() } : undefined;
+  const consensusOptions = consensusOptionsForDate(dateStr, planningContext);
 
   return timeline.map((slot) => {
     const key = hourTimeKey(slot.time);
@@ -319,7 +329,12 @@ function resolveModelHourForProbability(modelHours, key, consensusOptions) {
   if (
     hour &&
     consensusOptions?.today &&
-    isElapsedLocalDayHour(key, consensusOptions.today, consensusOptions.now) &&
+    isElapsedLocalDayHour(
+      key,
+      consensusOptions.today,
+      consensusOptions.now,
+      consensusOptions.tzOffsetMinutes
+    ) &&
     hour.windOk === false
   ) {
     return null;
@@ -345,8 +360,7 @@ function buildHourlyConfidenceBundle(entry, dateStr) {
     hoursByModelId.set(modelId, getModelDayHours(entry, modelId, dateStr));
   }
 
-  const consensusOptions =
-    dateStr === localDateString() ? { today: dateStr, now: new Date() } : undefined;
+  const consensusOptions = consensusOptionsForDate(dateStr);
 
   for (const slot of timeline) {
     const key = hourTimeKey(slot.time);
@@ -412,8 +426,7 @@ function buildHourlyModelAgreementMap(entry, dateStr) {
     hoursByModelId.set(modelId, getModelDayHours(entry, modelId, dateStr));
   }
 
-  const consensusOptions =
-    dateStr === localDateString() ? { today: dateStr, now: new Date() } : undefined;
+  const consensusOptions = consensusOptionsForDate(dateStr);
 
   for (const slot of timeline) {
     const key = hourTimeKey(slot.time);
@@ -429,7 +442,12 @@ function buildHourlyModelAgreementMap(entry, dateStr) {
       if (
         hour &&
         consensusOptions?.today &&
-        isElapsedLocalDayHour(key, consensusOptions.today, consensusOptions.now) &&
+        isElapsedLocalDayHour(
+          key,
+          consensusOptions.today,
+          consensusOptions.now,
+          consensusOptions.tzOffsetMinutes
+        ) &&
         hour.windOk === false
       ) {
         continue;
@@ -632,7 +650,12 @@ function pickEarliestDepartureWindow(scored) {
 
 function pickBestQualifyingWindow(entry, dateStr, prefs, timelineHours, options = {}) {
   const minWindowHours = parseMinRideableWindowHours(prefs?.min_rideable_window_hours);
-  let consensusHours = buildConsensusHours(entry, dateStr, timelineHours);
+  let consensusHours = buildConsensusHours(
+    entry,
+    dateStr,
+    timelineHours,
+    options.planningContext
+  );
   if (options.notBeforeHourKey) {
     const notBefore = hourTimeKey(options.notBeforeHourKey);
     consensusHours = consensusHours.filter((hour) => hourTimeKey(hour.time) >= notBefore);

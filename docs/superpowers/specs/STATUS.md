@@ -16,6 +16,7 @@ Use this alongside the design specs. Legend: ✅ Done · 🟡 Partial · ❌ Not
 | [session-watchlist-design](./2026-09-08-session-watchlist-design.md) | **~92%** — v1 shipped; go/no-go banner fixes; email/auth + planner day-cell pending |
 | [spot-map-picker-design](./2026-09-09-spot-map-picker-design.md) | **~95%** — inline Leaflet map, bbox, manual spots, geocode; v2 unfavorite pending |
 | [spot-local-intel-design](./2026-09-09-spot-local-intel-design.md) | **~15%** — matrix intel drawer + spot media strip/lightbox + manual cache seed |
+| [spot-intel-gemini-provenance](./2026-09-14-spot-intel-gemini-provenance-design.md) | **0%** — draft: Gemini catalog/day brief, social→parser pipeline, per-field (i) sources |
 | [departure-planner-design](./2026-09-09-departure-planner-design.md) | **~70%** — leave-by v1 + haversine/Google drive; home/rig prefs UI pending |
 | [per-sport-preferences-alerts](./2026-09-09-per-sport-preferences-alerts-design.md) | **~90%** — profiles, tabs, horizon cron, per-sport favorites; no auth gate for email |
 | [sport-selector](./2026-09-09-sport-selector-design.md) | **~90%** — dropdown + horizon-summary API; v2 day label pending |

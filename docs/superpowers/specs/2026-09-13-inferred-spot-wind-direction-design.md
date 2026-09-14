@@ -3,7 +3,7 @@
 **Date:** 2026-09-13  
 **Status:** Draft (pending user review)  
 **Parent:** [Windmate Design Spec](./2026-09-08-windwatch-design.md)  
-**Related:** [Session Spot Ranking](./2026-09-08-session-ranking-design.md), [Spot Map Picker](./2026-09-09-spot-map-picker-design.md), `src/services/offshore.js`, `public/js/spotMap.js`
+**Related:** [Session Spot Ranking](./2026-09-08-session-ranking-design.md), [Spot Map Picker](./2026-09-09-spot-map-picker-design.md), [Gemini spot intel & wind_hints](./2026-09-14-spot-intel-gemini-provenance-design.md#wind-direction--complementing-igetwind), `src/services/offshore.js`, `public/js/spotMap.js`
 
 ## Goal
 

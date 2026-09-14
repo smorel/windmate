@@ -3,7 +3,7 @@
 **Date:** 2026-09-09  
 **Status:** Draft (requirements captured; implementation after session watchlist v1 + ranking v2)  
 **Parent:** [Windmate Design Spec](./2026-09-08-windwatch-design.md)  
-**Related:** [Session Watchlist](./2026-09-08-session-watchlist-design.md), [Session Spot Ranking](./2026-09-08-session-ranking-design.md)
+**Related:** [Session Watchlist](./2026-09-08-session-watchlist-design.md), [Session Spot Ranking](./2026-09-08-session-ranking-design.md), [Gemini, day brief & field provenance](./2026-09-14-spot-intel-gemini-provenance-design.md)
 
 ## Goal
 
@@ -127,6 +127,8 @@ One row per spot; refreshed by cron or on-demand. Holds **merged** intel from al
 `category`: `water` · `access` · `parking` · `social` · `general`  
 `level`: `ok` · `caution` · `closed`  
 `extracted_by`: `manual` · `parser` · `official_feed`
+
+**Field provenance (UI):** Every user-visible intel block (profile section, day headline, badge copy) must carry a `FieldProvenance` object so the Spot Details drawer can show a **(i)** control per section — **clickable** source link(s), fetch time, confidence, and when data is inferred, a **`derivation`** trail (“how we know this”). Ranking must not use fields with `confidence: low` or `source_kind: unknown`. Full schema and Gemini rules: [2026-09-14 spot intel provenance](./2026-09-14-spot-intel-gemini-provenance-design.md).
 
 **Merge rule:** worst level wins per category; `overall_level` = max severity across `access`, `parking`, `water` (ignore pure `social`/`general` for rank unless they imply access/water/parking).
 
@@ -413,15 +415,19 @@ Below wind summary:
 
 ### Intel drawer (expand on spot row)
 
+Each section header has a **(i)** button (top-right) opening a popover with `FieldProvenance` — source label, link(s), when fetched, confidence. See [provenance spec](./2026-09-14-spot-intel-gemini-provenance-design.md#ui--source-i-on-every-block).
+
 ```
 LOCAL INTEL · updated 12 min ago
 ─────────────────────────────────
-🚗 Parking — Paid, $12/day · closed until May 15 [city link]
-🛣️ Access — Road flooded (city + 3 posts) [photos]
-💧 Water — Algae watch [MELCC link]
-📷 Live cam [expand]
-📸 Latest posts [thumbnails → links]
-🖼️ Spot photos & videos · wingfoil [Images | Videos tabs → Google]
+{day headline}                                    (i)
+🌊 Launch & depth                                 (i)
+🚗 Parking — Paid, $12/day · closed until May 15  (i)
+🛣️ Access — Road flooded (city + 3 posts)        (i)
+💧 Water — Algae watch                            (i)
+📷 Live cam / wind graph                          (i)
+💬 Riders say — today · last month                (i)
+🖼️ Spot photos & videos · wingfoil [strip]
 ```
 
 ### Watched session day

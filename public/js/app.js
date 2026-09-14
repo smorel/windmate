@@ -126,9 +126,13 @@ async function api(path, options = {}) {
 }
 
 function setPlanningOrigin(lat, lng) {
+  const sameOrigin =
+    userLocation != null &&
+    Math.abs(userLocation.lat - lat) < 1e-7 &&
+    Math.abs(userLocation.lng - lng) < 1e-7;
   userLocation = { lat, lng };
   if (WindmateSpotMapPicker.isOpen()) {
-    WindmateSpotMapPicker.updateHomeOverlay({ refit: true });
+    WindmateSpotMapPicker.updateHomeOverlay({ refit: !sameOrigin });
   }
 }
 

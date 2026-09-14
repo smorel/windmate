@@ -4,8 +4,12 @@ const WindmateSpotMapPicker = (() => {
   const BBOX_DEBOUNCE_MS = 300;
   const LONG_PRESS_MS = 550;
   const LONG_PRESS_MOVE_TOLERANCE_PX = 14;
+  const DOUBLE_TAP_MS = 320;
+  const DOUBLE_TAP_DIST_PX = 28;
   let longPressTimer = null;
   let longPressStart = null;
+  let lastTap = null;
+  let mapContainer = null;
   let map = null;
   let markersLayer = null;
   let homeLayer = null;
@@ -154,14 +158,49 @@ const WindmateSpotMapPicker = (() => {
     }
   }
 
-  function buildMarkerIcon(isFavorite) {
+  function spotDotIcon(isFavorite) {
     if (typeof L === 'undefined') return null;
-    return L.divIcon({
-      className: isFavorite ? 'spot-map-marker spot-map-marker--favorite' : 'spot-map-marker',
-      html: isFavorite ? '★' : '',
-      iconSize: isFavorite ? [24, 24] : [20, 20],
-      iconAnchor: isFavorite ? [12, 12] : [10, 10],
+    const size = isFavorite ? 22 : 16;
+    const fill = isFavorite ? '#fbbf24' : '#10b981';
+    const label = isFavorite ? '★' : '';
+    const svg = isFavorite
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"><text x="12" y="17" text-anchor="middle" font-size="18" fill="${fill}">${label}</text></svg>`
+      : `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 2}" fill="${fill}" stroke="#ecfdf5" stroke-width="2"/></svg>`;
+    return L.icon({
+      iconUrl: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      className: 'spot-map-dot-icon',
     });
+  }
+
+  function bboxQueryFromMap() {
+    const bounds = map.getBounds();
+    const north = bounds.getNorth();
+    const south = bounds.getSouth();
+    const east = bounds.getEast();
+    const west = bounds.getWest();
+    const valid =
+      Number.isFinite(north) &&
+      Number.isFinite(south) &&
+      Number.isFinite(east) &&
+      Number.isFinite(west) &&
+      north > south &&
+      east >= west;
+    if (valid) {
+      return { north, south, east, west };
+    }
+    const center = resolveHomeCenter();
+    if (center) {
+      const fallback = boundsForHomeRadius(center.lat, center.lng, getRadiusMeters());
+      return {
+        north: fallback.getNorth(),
+        south: fallback.getSouth(),
+        east: fallback.getEast(),
+        west: fallback.getWest(),
+      };
+    }
+    return { north: 90, south: -90, east: 180, west: -180 };
   }
 
   function renderMarkers(spots) {
@@ -170,9 +209,13 @@ const WindmateSpotMapPicker = (() => {
     const favSet = new Set(opts.getFavoriteIds?.() ?? []);
 
     for (const spot of spots) {
+      const lat = Number(spot.latitude);
+      const lng = Number(spot.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
       const isFavorite = spot.is_favorite || favSet.has(spot.id);
-      const marker = L.marker([spot.latitude, spot.longitude], {
-        icon: buildMarkerIcon(isFavorite),
+      const marker = L.marker([lat, lng], {
+        icon: spotDotIcon(isFavorite),
         interactive: !isFavorite,
       });
       marker.bindTooltip(spot.name, {
@@ -187,16 +230,17 @@ const WindmateSpotMapPicker = (() => {
       }
       markersLayer.addLayer(marker);
     }
+    markersLayer.bringToFront();
   }
 
   async function refreshMarkers() {
     if (!map || !open) return;
-    const bounds = map.getBounds();
+    const { north, south, east, west } = bboxQueryFromMap();
     const requestId = ++bboxRequestId;
     try {
       const sport = opts.getActiveSport?.() ?? '';
       const data = await api(
-        `/api/spots/bbox?north=${bounds.getNorth()}&south=${bounds.getSouth()}&east=${bounds.getEast()}&west=${bounds.getWest()}&sport=${encodeURIComponent(sport)}`
+        `/api/spots/bbox?north=${north}&south=${south}&east=${east}&west=${west}&sport=${encodeURIComponent(sport)}`
       );
       if (requestId !== bboxRequestId || !open) return;
       renderMarkers(data.spots ?? []);
@@ -220,7 +264,8 @@ const WindmateSpotMapPicker = (() => {
   }
 
   function initMap() {
-    if (map || typeof L === 'undefined' || !els.container) return false;
+    if (typeof L === 'undefined' || !els.container) return false;
+    if (map) return true;
 
     map = L.map(els.container, {
       doubleClickZoom: false,
@@ -237,11 +282,15 @@ const WindmateSpotMapPicker = (() => {
     homeLayer = L.layerGroup().addTo(map);
     markersLayer = L.layerGroup().addTo(map);
     map.on('moveend', scheduleBboxFetch);
+    map.on('zoomend', scheduleBboxFetch);
     map.on('dblclick', onMapDblClick);
     map.on('touchstart', onMapTouchStart);
     map.on('touchmove', onMapTouchMove);
     map.on('touchend', onMapTouchEnd);
     map.on('touchcancel', onMapTouchEnd);
+
+    mapContainer = map.getContainer();
+    mapContainer.addEventListener('contextmenu', onMapContextMenu);
 
     requestAnimationFrame(() => {
       map.invalidateSize();
@@ -253,7 +302,12 @@ const WindmateSpotMapPicker = (() => {
   function destroyMap() {
     cancelBboxFetch();
     clearLongPress();
+    lastTap = null;
     clearTempMarker();
+    if (mapContainer) {
+      mapContainer.removeEventListener('contextmenu', onMapContextMenu);
+      mapContainer = null;
+    }
     if (map) {
       map.remove();
       map = null;
@@ -264,9 +318,18 @@ const WindmateSpotMapPicker = (() => {
     }
   }
 
-  async function setInitialView() {
+  function setInitialView() {
     if (!map) return;
-    updateHomeOverlay({ refit: true });
+    const center = resolveHomeCenter();
+    if (center) {
+      map.once('moveend', () => refreshMarkers());
+      updateHomeOverlay({ refit: true });
+      requestAnimationFrame(() => {
+        if (map && open) refreshMarkers();
+      });
+      return;
+    }
+    refreshMarkers();
   }
 
   function clearTempMarker() {
@@ -317,12 +380,7 @@ const WindmateSpotMapPicker = (() => {
 
     if (markersLayer && typeof L !== 'undefined') {
       tempMarker = L.marker([lat, lng], {
-        icon: L.divIcon({
-          className: 'spot-map-marker',
-          html: '',
-          iconSize: [20, 20],
-          iconAnchor: [10, 10],
-        }),
+        icon: spotDotIcon(false),
       });
       markersLayer.addLayer(tempMarker);
     }
@@ -354,10 +412,15 @@ const WindmateSpotMapPicker = (() => {
     longPressStart = null;
   }
 
+  function onMapContextMenu(e) {
+    e.preventDefault();
+  }
+
   function onMapTouchStart(e) {
-    if (!open) return;
+    if (!open || els.createModal && !els.createModal.classList.contains('hidden')) return;
     const touch = e.originalEvent?.touches?.[0];
     if (!touch || !e.latlng) return;
+    if (e.originalEvent?.target?.closest?.('.spot-map-dot-icon')) return;
     clearLongPress();
     longPressStart = {
       x: touch.clientX,
@@ -384,8 +447,34 @@ const WindmateSpotMapPicker = (() => {
     }
   }
 
-  function onMapTouchEnd() {
+  function onMapTouchEnd(e) {
+    if (!open) {
+      clearLongPress();
+      return;
+    }
+    if (!longPressTimer) {
+      clearLongPress();
+      return;
+    }
+
+    const touch = e.originalEvent?.changedTouches?.[0];
+    const start = longPressStart;
     clearLongPress();
+    if (!touch || !start) return;
+
+    const now = Date.now();
+    if (
+      lastTap &&
+      now - lastTap.time < DOUBLE_TAP_MS &&
+      Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) < DOUBLE_TAP_DIST_PX &&
+      Math.hypot(start.x - lastTap.x, start.y - lastTap.y) < DOUBLE_TAP_DIST_PX
+    ) {
+      lastTap = null;
+      openCreateDialog(start.lat, start.lng);
+      e.originalEvent?.preventDefault?.();
+      return;
+    }
+    lastTap = { time: now, x: start.x, y: start.y };
   }
 
   function onMapDblClick(e) {
@@ -440,12 +529,11 @@ const WindmateSpotMapPicker = (() => {
     updateToggleUi();
     setHint(WindmateCopy.map.hint);
 
-    if (!initMap()) return;
+    if (!initMap() || !map) return;
 
     requestAnimationFrame(() => {
-      map?.invalidateSize();
+      map.invalidateSize();
       setInitialView();
-      refreshMarkers();
     });
   }
 

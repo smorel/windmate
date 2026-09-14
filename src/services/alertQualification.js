@@ -7,6 +7,11 @@ const { getPrimaryHourlyForecast } = require('./weather');
 const { computeSessionScore, longestConsensusWindowLength } = require('./sessionRank');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 const { localDateString } = require('../utils/forecastTime');
+const {
+  hydrateSpotDirectionInference,
+  idealDirectionsForRideability,
+  buildSpotDirectionFields,
+} = require('../utils/spotDirectionApi');
 
 function todayIsoDate() {
   return localDateString();
@@ -69,26 +74,28 @@ function hasHorizonOpportunity(
  * @param {import('better-sqlite3').Database} db
  */
 async function buildSpotRideabilityEntry(db, spot, prefs, options = {}) {
+  const freshSpot = await hydrateSpotDirectionInference(db, spot);
+  const idealDirections = idealDirectionsForRideability(freshSpot);
   const forecast = await fetchForecast(db, spot.id, spot, options);
   const contextData = await fetchOpenMeteoContext(db, spot.id, spot, options);
   const contextByTime = buildContextByTime(contextData);
   const daylightByDate = buildDaylightByDate(contextData);
 
   const spotInfo = {
-    id: spot.id,
-    name: spot.name,
-    latitude: spot.latitude,
-    longitude: spot.longitude,
+    id: freshSpot.id,
+    name: freshSpot.name,
+    latitude: freshSpot.latitude,
+    longitude: freshSpot.longitude,
     distance_km: spot.distance_km,
-    ideal_directions: spot.ideal_directions,
-    source_url: spot.source_url,
+    source_url: freshSpot.source_url,
+    ...buildSpotDirectionFields(freshSpot),
   };
 
   if (forecast.models) {
     const mixed = analyzeMixedRideability(
       forecast,
       prefs,
-      spot.ideal_directions,
+      idealDirections,
       contextByTime,
       daylightByDate
     );
@@ -105,7 +112,7 @@ async function buildSpotRideabilityEntry(db, spot, prefs, options = {}) {
   const hourly = analyzeHourlyRideability(
     primary,
     prefs,
-    spot.ideal_directions,
+    idealDirections,
     contextByTime,
     daylightByDate
   );

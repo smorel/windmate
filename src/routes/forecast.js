@@ -3,6 +3,7 @@ const { getSpotById } = require('../db');
 const { fetchForecast } = require('../services/weather');
 const { analyzeMixedRideability, analyzeHourlyRideability, summarizeByDay } = require('../services/rideability');
 const { getPrimaryHourlyForecast } = require('../services/weather');
+const { hydrateSpotDirectionInference, idealDirectionsForRideability } = require('../utils/spotDirectionApi');
 
 function createForecastRouter(db) {
   const router = express.Router();
@@ -14,15 +15,17 @@ function createForecastRouter(db) {
     }
 
     try {
+      const freshSpot = await hydrateSpotDirectionInference(db, spot);
+      const idealDirections = idealDirectionsForRideability(freshSpot);
       const forecast = await fetchForecast(db, spot.id, spot);
       const prefs = db.prepare(
         'SELECT min_wind_knots, max_gust_knots FROM user_preferences WHERE id = 1'
       ).get();
 
       if (forecast.models) {
-        const mixed = analyzeMixedRideability(forecast, prefs, spot.ideal_directions);
+        const mixed = analyzeMixedRideability(forecast, prefs, idealDirections);
         return res.json({
-          spot,
+          spot: freshSpot,
           forecast: {
             cached: forecast.cached ?? false,
             stale: forecast.stale ?? false,
@@ -35,11 +38,11 @@ function createForecastRouter(db) {
       }
 
       const primary = getPrimaryHourlyForecast(forecast) ?? forecast;
-      const hourly = analyzeHourlyRideability(primary, prefs, spot.ideal_directions);
+      const hourly = analyzeHourlyRideability(primary, prefs, idealDirections);
       const days = summarizeByDay(hourly);
 
       res.json({
-        spot,
+        spot: freshSpot,
         forecast: {
           cached: forecast.cached ?? false,
           stale: forecast.stale ?? false,

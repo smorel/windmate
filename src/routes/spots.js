@@ -17,6 +17,7 @@ const {
   validateCreateSpotBody,
   formatSpotForMap,
 } = require('../utils/spotBbox');
+const { scheduleSpotDirectionInference } = require('../utils/spotDirectionApi');
 
 function createSpotsRouter(db) {
   const router = express.Router();
@@ -98,7 +99,7 @@ function createSpotsRouter(db) {
     }
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     try {
       const parsed = validateCreateSpotBody(req.body);
       if (!parsed.ok) {
@@ -121,6 +122,7 @@ function createSpotsRouter(db) {
 
       const id = uuidv4();
       const created = insertManualSpot(db, { id, name, latitude, longitude });
+      scheduleSpotDirectionInference(db, created);
       const sport = req.body.sport;
       const prefs = getPreferences(db, sport) ?? { favorite_spot_ids: [] };
       const favSet = new Set(parseFavoriteSpotIds(prefs.favorite_spot_ids));

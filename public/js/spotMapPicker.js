@@ -178,7 +178,7 @@ const WindmateSpotMapPicker = (() => {
       marker.bindTooltip(spot.name, {
         direction: 'top',
         offset: [0, -10],
-        opacity: 0.95,
+        opacity: 1,
       });
       if (!isFavorite) {
         marker.on('click', () => {

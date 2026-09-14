@@ -17,6 +17,7 @@ const { computeSessionGoNoGo } = require('./sessionGoNoGo');
 const { getPrimaryHourlyForecast } = require('./weather');
 const { hazardLabel } = require('./weatherHazards');
 const { todayFromHourlyTimes } = require('../utils/forecastTime');
+const { idealDirectionsForRideability } = require('../utils/spotDirectionApi');
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -39,7 +40,7 @@ function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options =
     ? analyzeHourlyRideability(
         primary,
         prefs,
-        spot.ideal_directions ?? [],
+        idealDirectionsForRideability(spot),
         contextByTime,
         daylightByDate
       ).filter((h) => h.time.startsWith(today))
@@ -85,7 +86,7 @@ function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options =
     const mixed = analyzeMixedRideability(
       forecast,
       prefs,
-      spot.ideal_directions ?? [],
+      idealDirectionsForRideability(spot),
       contextByTime,
       daylightByDate
     );
@@ -95,7 +96,7 @@ function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options =
         spot: {
           id: spot.id,
           distance_km: spot.distance_km,
-          ideal_directions: spot.ideal_directions ?? [],
+          ideal_directions: idealDirectionsForRideability(spot),
         },
         primaryModel: mixed.primaryModel,
         models: mixed.models,
@@ -111,7 +112,7 @@ function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options =
         spot: {
           id: spot.id,
           distance_km: spot.distance_km,
-          ideal_directions: spot.ideal_directions ?? [],
+          ideal_directions: idealDirectionsForRideability(spot),
         },
         primaryModel: forecast.model ?? 'open-meteo',
         models: {},
@@ -232,7 +233,7 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
     ? analyzeHourlyRideability(
         primary,
         prefs,
-        spot.ideal_directions ?? [],
+        idealDirectionsForRideability(spot),
         contextByTime,
         daylightByDate
       ).filter((h) => h.time.startsWith(today))
@@ -290,7 +291,7 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
     const mixed = analyzeMixedRideability(
       forecast,
       prefs,
-      spot.ideal_directions ?? [],
+      idealDirectionsForRideability(spot),
       contextByTime,
       daylightByDate
     );
@@ -300,7 +301,7 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
         spot: {
           id: spot.id,
           distance_km: spot.distance_km,
-          ideal_directions: spot.ideal_directions ?? [],
+          ideal_directions: idealDirectionsForRideability(spot),
         },
         primaryModel: mixed.primaryModel,
         models: mixed.models,
@@ -316,7 +317,7 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
         spot: {
           id: spot.id,
           distance_km: spot.distance_km,
-          ideal_directions: spot.ideal_directions ?? [],
+          ideal_directions: idealDirectionsForRideability(spot),
         },
         primaryModel: forecast.model ?? 'open-meteo',
         models: {},

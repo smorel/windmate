@@ -16,6 +16,8 @@ const { MODEL_COLORS } = require('../utils/models');
 const { selectSpotsForProfile, filterRideabilityIncludeSpotIds } = require('../utils/spotSelection');
 const { attachSessionGoNoGoByDate } = require('../services/sessionGoNoGo');
 const { localDateString } = require('../utils/forecastTime');
+const { ensureSpotDirectionInference } = require('../services/directionInference');
+const { buildSpotDirectionFields, idealDirectionsForRideability } = require('../utils/spotDirectionApi');
 
 function createRideabilityRouter(db) {
   const router = express.Router();
@@ -86,29 +88,41 @@ function createRideabilityRouter(db) {
     }
 
     try {
+      await Promise.allSettled(
+        nearbySpots.map((spot) =>
+          ensureSpotDirectionInference(db, spot).catch((err) => {
+            console.warn('[direction-inference] spot failed:', spot.id, err?.message ?? err);
+          })
+        )
+      );
+
       const settled = await Promise.allSettled(
         nearbySpots.map(async (spot) => {
+          const freshSpot = getSpotById(db, spot.id) ?? spot;
+          const idealDirections = idealDirectionsForRideability(freshSpot);
+          const directionFields = buildSpotDirectionFields(freshSpot);
+
           const forecast = await fetchForecast(db, spot.id, spot, { skipCache });
           const contextData = await fetchOpenMeteoContext(db, spot.id, spot, { skipCache });
           const contextByTime = buildContextByTime(contextData);
           const daylightByDate = buildDaylightByDate(contextData);
 
           const spotInfo = {
-            id: spot.id,
-            name: spot.name,
-            latitude: spot.latitude,
-            longitude: spot.longitude,
+            id: freshSpot.id,
+            name: freshSpot.name,
+            latitude: freshSpot.latitude,
+            longitude: freshSpot.longitude,
             distance_km: spot.distance_km,
             outside_radius: Boolean(spot.outside_radius),
-            ideal_directions: spot.ideal_directions,
-            source_url: spot.source_url,
+            source_url: freshSpot.source_url,
+            ...directionFields,
           };
 
           if (forecast.models) {
             const mixed = analyzeMixedRideability(
               forecast,
               prefs,
-              spot.ideal_directions,
+              idealDirections,
               contextByTime,
               daylightByDate
             );
@@ -136,7 +150,7 @@ function createRideabilityRouter(db) {
           const hourly = analyzeHourlyRideability(
             primary,
             prefs,
-            spot.ideal_directions,
+            idealDirections,
             contextByTime,
             daylightByDate
           );

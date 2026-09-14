@@ -124,7 +124,19 @@ const WindmateCopy = {
     sessionPeak: (dayLabel, hour) => `${dayLabel} · ${hour}`,
     aria: (speed, direction, dayLabel, hour) =>
       `Forecast map for ${dayLabel}, peak ${Math.round(speed)} knots from ${direction} around ${hour}`,
+    ariaMismatch: (speed, direction, dayLabel, hour) =>
+      `Forecast map for ${dayLabel}, peak ${Math.round(speed)} knots from ${direction} around ${hour}. Stored and computed onshore wedges differ.`,
     ariaEmpty: (name, dayLabel) => `Forecast map for ${name}, ${dayLabel}`,
+    directionMismatch:
+      "Stored ideal direction doesn't match shoreline inference — compare arrows.",
+    legendDual: 'Green = sport ideal (stored) · Blue dashed = onshore from shoreline',
+    legendDualDetail: (stored, onshore) => `Ideal: ${stored} · Onshore: ${onshore}`,
+    legendStoredIdealOnly: 'Green = sport ideal (stored)',
+    legendOnshoreOnly: 'Blue dashed = onshore wind-from (shoreline inference)',
+    legendOnshoreLow: 'Blue = onshore (shoreline inference, low confidence)',
+    legendOnshorePending: 'Onshore not computed yet — loading or run backfill:direction-inference',
+    legendOnshoreFailed: 'Shoreline onshore unavailable',
+    legendNoDirections: 'No sport ideal or shoreline onshore on file',
   },
 
   horizon: {

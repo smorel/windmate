@@ -84,6 +84,9 @@ function migrateDb(db) {
   if (!spotColumns.includes('igetwind_id')) {
     db.exec('ALTER TABLE spots ADD COLUMN igetwind_id TEXT');
   }
+  if (!spotColumns.includes('direction_inference')) {
+    db.exec('ALTER TABLE spots ADD COLUMN direction_inference TEXT');
+  }
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_spots_igetwind_id
     ON spots(igetwind_id) WHERE igetwind_id IS NOT NULL
@@ -1075,10 +1078,20 @@ function getSpotsByIds(db, ids) {
     .map(parseSpot);
 }
 
+function parseDirectionInference(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 function parseSpot(row) {
   return {
     ...row,
     ideal_directions: JSON.parse(row.ideal_directions),
+    direction_inference: parseDirectionInference(row.direction_inference),
   };
 }
 

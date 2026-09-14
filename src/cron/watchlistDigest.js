@@ -16,6 +16,7 @@ const { getPrimaryHourlyForecast } = require('../services/weather');
 const { fetchSpotObservations } = require('../services/observations');
 const { evaluateWatchlistStatus } = require('../services/watchlistStatus');
 const { sendAlert, isConfigured } = require('../services/email');
+const { hydrateSpotDirectionInference, idealDirectionsForRideability } = require('../utils/spotDirectionApi');
 
 function startWatchlistJobs(db) {
   const digestHour = parseInt(process.env.WATCHLIST_DIGEST_EMAIL_HOUR ?? '8', 10);
@@ -39,6 +40,8 @@ function startWatchlistJobs(db) {
 }
 
 async function buildRideEntry(db, spot, prefs) {
+  const freshSpot = await hydrateSpotDirectionInference(db, spot);
+  const idealDirections = idealDirectionsForRideability(freshSpot);
   const forecast = await fetchForecast(db, spot.id, spot);
   const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
   const contextByTime = buildContextByTime(contextData);
@@ -48,12 +51,12 @@ async function buildRideEntry(db, spot, prefs) {
     const mixed = analyzeMixedRideability(
       forecast,
       prefs,
-      spot.ideal_directions,
+      idealDirections,
       contextByTime,
       daylightByDate
     );
     return {
-      spot,
+      spot: freshSpot,
       primaryModel: mixed.primaryModel,
       models: mixed.models,
       days: mixed.consensusDays.length ? mixed.consensusDays : mixed.days,
@@ -64,11 +67,16 @@ async function buildRideEntry(db, spot, prefs) {
   const hourly = analyzeHourlyRideability(
     primary,
     prefs,
-    spot.ideal_directions,
+    idealDirections,
     contextByTime,
     daylightByDate
   );
-  return { spot, primaryModel: forecast.model ?? 'open-meteo', models: {}, days: summarizeByDay(hourly) };
+  return {
+    spot: freshSpot,
+    primaryModel: forecast.model ?? 'open-meteo',
+    models: {},
+    days: summarizeByDay(hourly),
+  };
 }
 
 /** @param {import('better-sqlite3').Database} db */

@@ -59,7 +59,17 @@ async function syncIgetwindSpots(db) {
     return { inserted, updated, total: rows.length };
   });
 
-  return sync(validated);
+  const result = sync(validated);
+
+  const { scheduleSpotDirectionInference } = require('../utils/spotDirectionApi');
+  const missing = db
+    .prepare('SELECT id, latitude, longitude FROM spots WHERE direction_inference IS NULL')
+    .all();
+  for (const row of missing) {
+    scheduleSpotDirectionInference(db, row);
+  }
+
+  return result;
 }
 
 module.exports = { syncIgetwindSpots };

@@ -175,15 +175,17 @@ function restoreUserState(db, bundle) {
       setActiveLocationId(db, bundle.active_location_id);
     }
 
+    const { scheduleSpotDirectionInference } = require('../utils/spotDirectionApi');
     for (const spot of bundle.manual_spots ?? []) {
       const existing = db.prepare('SELECT id FROM spots WHERE id = ?').get(spot.id);
       if (!existing) {
-        insertManualSpot(db, {
+        const created = insertManualSpot(db, {
           id: spot.id,
           name: spot.name,
           latitude: spot.latitude,
           longitude: spot.longitude,
         });
+        scheduleSpotDirectionInference(db, created);
       }
     }
 

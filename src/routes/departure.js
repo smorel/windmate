@@ -8,11 +8,14 @@ const { analyzeMixedRideability, analyzeHourlyRideability, summarizeByDay } = re
 const { getPrimaryHourlyForecast } = require('../services/weather');
 const { buildDeparturePlan, DEFAULT_RIG_MINUTES } = require('../services/departurePlanner');
 const { haversineKm } = require('../utils/geo');
+const { hydrateSpotDirectionInference, idealDirectionsForRideability } = require('../utils/spotDirectionApi');
 
 function createDepartureRouter(db) {
   const router = express.Router();
 
   async function buildRideEntry(spot, prefs) {
+    const freshSpot = await hydrateSpotDirectionInference(db, spot);
+    const idealDirections = idealDirectionsForRideability(freshSpot);
     const forecast = await fetchForecast(db, spot.id, spot);
     const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
     const contextByTime = buildContextByTime(contextData);
@@ -22,12 +25,12 @@ function createDepartureRouter(db) {
       const mixed = analyzeMixedRideability(
         forecast,
         prefs,
-        spot.ideal_directions,
+        idealDirections,
         contextByTime,
         daylightByDate
       );
       return {
-        spot,
+        spot: freshSpot,
         primaryModel: mixed.primaryModel,
         models: mixed.models,
         days: mixed.consensusDays.length ? mixed.consensusDays : mixed.days,
@@ -38,11 +41,16 @@ function createDepartureRouter(db) {
     const hourly = analyzeHourlyRideability(
       primary,
       prefs,
-      spot.ideal_directions,
+      idealDirections,
       contextByTime,
       daylightByDate
     );
-    return { spot, primaryModel: forecast.model ?? 'open-meteo', models: {}, days: summarizeByDay(hourly) };
+    return {
+      spot: freshSpot,
+      primaryModel: forecast.model ?? 'open-meteo',
+      models: {},
+      days: summarizeByDay(hourly),
+    };
   }
 
   router.get('/', async (req, res) => {

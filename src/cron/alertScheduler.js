@@ -10,6 +10,7 @@ const {
 } = require('../services/rideability');
 const { sendAlert, formatAlert, isConfigured } = require('../services/email');
 const { localDateString } = require('../utils/forecastTime');
+const { idealDirectionsForRideability } = require('../utils/spotDirectionApi');
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -41,7 +42,12 @@ async function runAlertCheck(db) {
   for (const spot of spots) {
     const forecast = await fetchForecast(db, spot.id, spot);
     const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
-    const hourly = analyzeForecastRideability(forecast, prefs, spot.ideal_directions, contextData);
+    const hourly = analyzeForecastRideability(
+      forecast,
+      prefs,
+      idealDirectionsForRideability(spot),
+      contextData
+    );
     const todayHours = hourly.filter((h) => h.time.startsWith(today));
     const warnings = computeSessionWarnings(todayHours, prefs);
     const windows = groupRideableWindows(hourly, today, prefs.min_rideable_window_hours);

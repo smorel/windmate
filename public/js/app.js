@@ -2914,7 +2914,11 @@ function renderRideabilityMatrix(data, observations) {
       const dayLabel = viewingToday
         ? WindmateCopy.horizon.todayShort
         : formatDayLabel(selectedDayDate);
-      const spotMap = WindmateSpotMap.renderForDay(spot, dayHours, { dayLabel });
+      const spotMap = WindmateSpotMap.renderForDay(spot, dayHours, {
+        dayLabel,
+        fullDayMode,
+        dateStr: selectedDayDate,
+      });
 
       const link = spot.source_url
         ? `<a href="${spot.source_url}" target="_blank" rel="noopener" class="text-emerald-500 hover:underline text-xs">iGetwind</a>`

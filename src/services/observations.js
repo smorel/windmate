@@ -1,6 +1,6 @@
 const OBSERVATION_CACHE_TTL_MS = parseInt(process.env.OBSERVATION_CACHE_TTL_MS ?? '300000', 10);
 
-const { fetchNearestStation } = require('./igetwind');
+const { fetchNearestStation, fetchNearestStationLocation } = require('./igetwind');
 const { fetchOpenMeteoObservations } = require('./openMeteoObservations');
 const { fetchWindyObservations } = require('./windyObservations');
 const { compareToday, currentForecastDelta } = require('./observationCompare');
@@ -28,6 +28,58 @@ const { idealDirectionsForRideability } = require('../utils/spotDirectionApi');
 function observationCachePayload(obs) {
   const { sessionGoNoGo, ...rest } = obs;
   return rest;
+}
+
+function nearestStationMetaFromGeo(geo) {
+  if (!geo || geo.stationLatitude == null || geo.stationLongitude == null) return null;
+  return {
+    name: geo.stationName,
+    distance_km: geo.stationDistance_km,
+    latitude: geo.stationLatitude,
+    longitude: geo.stationLongitude,
+  };
+}
+
+function nearestStationMetaFromReading(reading) {
+  if (!reading) return null;
+  return nearestStationMetaFromGeo({
+    stationName: reading.stationName,
+    stationDistance_km: reading.stationDistance_km,
+    stationLatitude: reading.stationLatitude,
+    stationLongitude: reading.stationLongitude,
+  });
+}
+
+async function resolveNearestStationMeta(spot) {
+  const reading = await fetchNearestStation(spot.latitude, spot.longitude);
+  if (reading) return nearestStationMetaFromReading(reading);
+  const geo = await fetchNearestStationLocation(spot.latitude, spot.longitude);
+  return nearestStationMetaFromGeo(geo);
+}
+
+/** Cached rows before stationLatitude existed — refill from iGetwind when needed. */
+async function enrichCurrentStationCoords(spot, current) {
+  if (!current) return current;
+  const looksLikeStation =
+    current.source === 'station' ||
+    current.stationName ||
+    current.stationDistance_km != null;
+  if (!looksLikeStation) return current;
+  if (current.stationLatitude != null && current.stationLongitude != null) return current;
+
+  const station = await fetchNearestStation(spot.latitude, spot.longitude);
+  if (!station || station.stationLatitude == null || station.stationLongitude == null) {
+    return current;
+  }
+
+  return {
+    ...current,
+    source: current.source ?? 'station',
+    stationLatitude: station.stationLatitude,
+    stationLongitude: station.stationLongitude,
+    stationName: current.stationName ?? station.stationName,
+    stationDistance_km: current.stationDistance_km ?? station.stationDistance_km,
+  };
 }
 
 function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options = {}) {
@@ -72,6 +124,7 @@ function refreshObservationAnalysis(spot, prefs, forecast, cachedCore, options =
       name: spot.name,
       distance_km: spot.distance_km,
     },
+    nearestStation: cachedCore.nearestStation ?? null,
     current,
     today: {
       actual,
@@ -143,6 +196,12 @@ async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
     Date.now() - cached.fetched_at < ttlMs
   ) {
     const cachedCore = JSON.parse(cached.data);
+    if (cachedCore.current) {
+      cachedCore.current = await enrichCurrentStationCoords(spot, cachedCore.current);
+    }
+    if (!cachedCore.nearestStation) {
+      cachedCore.nearestStation = await resolveNearestStationMeta(spot);
+    }
     const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
     return {
       ...refreshObservationAnalysis(spot, prefs, forecast, { ...cachedCore, _contextData: contextData }, options),
@@ -162,11 +221,17 @@ async function fetchSpotObservations(db, spot, prefs, forecast, options = {}) {
     return { ...obs, cached: false, fetchedAt: observationFetchedAtIso(fetchedAtMs) };
   } catch (err) {
     if (cached) {
-      const cachedCore = JSON.parse(cached.data);
-      try {
-        const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
-        return {
-          ...refreshObservationAnalysis(
+        const cachedCore = JSON.parse(cached.data);
+        if (cachedCore.current) {
+          cachedCore.current = await enrichCurrentStationCoords(spot, cachedCore.current);
+        }
+        if (!cachedCore.nearestStation) {
+          cachedCore.nearestStation = await resolveNearestStationMeta(spot);
+        }
+        try {
+          const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
+          return {
+            ...refreshObservationAnalysis(
             spot,
             prefs,
             forecast,
@@ -194,11 +259,13 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
   let current = null;
   let actual = [];
   let source = null;
+  let nearestStation = null;
 
   const station = await fetchNearestStation(spot.latitude, spot.longitude);
   if (station) {
     current = station;
     source = 'station';
+    nearestStation = nearestStationMetaFromReading(station);
   }
 
   if (!current) {
@@ -222,6 +289,10 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
     } catch {
       /* station current only */
     }
+  }
+
+  if (!nearestStation) {
+    nearestStation = await resolveNearestStationMeta(spot);
   }
 
   const contextData = await fetchOpenMeteoContext(db, spot.id, spot);
@@ -277,6 +348,7 @@ async function buildSpotObservation(db, spot, prefs, forecast, options = {}) {
       name: spot.name,
       distance_km: spot.distance_km,
     },
+    nearestStation,
     current,
     today: {
       actual,

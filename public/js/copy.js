@@ -137,6 +137,7 @@ const WindmateCopy = {
     legendOnshorePending: 'Onshore not computed yet — loading or run backfill:direction-inference',
     legendOnshoreFailed: 'Shoreline onshore unavailable',
     legendNoDirections: 'No sport ideal or shoreline onshore on file',
+    legendLiveStation: 'Square = live meteo station',
   },
 
   horizon: {

@@ -7,7 +7,9 @@ const WindmateSpotMap = (() => {
 
   const WIDTH = 176;
   const HEIGHT = 132;
-  const ZOOM = 12;
+  const DEFAULT_ZOOM = 12;
+  const MIN_ZOOM = 8;
+  const MAP_PADDING = 14;
 
   function compassToDeg(direction) {
     const index = COMPASS.indexOf(direction);
@@ -22,28 +24,119 @@ const WindmateSpotMap = (() => {
     return { x, y };
   }
 
+  /** Screen position in map logical pixels (matches viewBox). */
+  function latLngToScreen(lat, lng, centerLat, centerLng, zoom) {
+    const world = latLngToWorldPx(lat, lng, zoom);
+    const center = latLngToWorldPx(centerLat, centerLng, zoom);
+    return {
+      x: world.x - center.x + WIDTH / 2,
+      y: world.y - center.y + HEIGHT / 2,
+    };
+  }
+
+  function pctAlong(px, span) {
+    return (px / span) * 100;
+  }
+
   function tileUrl(zoom, x, y) {
     return `https://basemaps.cartocdn.com/rastertiles/voyager_nolabels/${zoom}/${x}/${y}.png`;
   }
 
-  function renderTiles(lat, lng) {
-    const world = latLngToWorldPx(lat, lng, ZOOM);
-    const centerTileX = Math.floor(world.x / 256);
-    const centerTileY = Math.floor(world.y / 256);
+  function renderTiles(centerLat, centerLng, zoom, shiftX = 0, shiftY = 0, tileRing = 1) {
+    const centerWorld = latLngToWorldPx(centerLat, centerLng, zoom);
+    const anchorX = centerWorld.x + shiftX;
+    const anchorY = centerWorld.y + shiftY;
+    const centerTileX = Math.floor(anchorX / 256);
+    const centerTileY = Math.floor(anchorY / 256);
+    const tileWpct = pctAlong(256, WIDTH);
+    const tileHpct = pctAlong(256, HEIGHT);
 
     const tiles = [];
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -tileRing; dy <= tileRing; dy++) {
+      for (let dx = -tileRing; dx <= tileRing; dx++) {
         const x = centerTileX + dx;
         const y = centerTileY + dy;
-        const left = x * 256 - world.x + WIDTH / 2;
-        const top = y * 256 - world.y + HEIGHT / 2;
+        const left = x * 256 - anchorX + WIDTH / 2;
+        const top = y * 256 - anchorY + HEIGHT / 2;
         tiles.push(
-          `<img class="spot-map-tile" src="${tileUrl(ZOOM, x, y)}" alt="" loading="lazy" style="left:${left}px;top:${top}px" />`
+          `<img class="spot-map-tile" src="${tileUrl(zoom, x, y)}" alt="" loading="lazy" style="left:${pctAlong(
+            left,
+            WIDTH
+          )}%;top:${pctAlong(top, HEIGHT)}%;width:${tileWpct}%;height:${tileHpct}%" />`
         );
       }
     }
     return tiles.join('');
+  }
+
+  function computeViewport(spotLat, spotLng, liveStation) {
+    const stationLat = liveStation?.lat;
+    const stationLng = liveStation?.lng;
+    const wedgeRadius = Math.min(WIDTH, HEIGHT) * 0.42;
+    const pad = Math.max(MAP_PADDING, wedgeRadius * 0.35);
+
+    if (stationLat == null || stationLng == null) {
+      return {
+        centerLat: spotLat,
+        centerLng: spotLng,
+        zoom: DEFAULT_ZOOM,
+        shiftX: 0,
+        shiftY: 0,
+        spotPin: { x: WIDTH / 2, y: HEIGHT / 2 },
+        stationPin: null,
+      };
+    }
+
+    for (let zoom = DEFAULT_ZOOM; zoom >= MIN_ZOOM; zoom--) {
+      const centerLat = (spotLat + stationLat) / 2;
+      const centerLng = (spotLng + stationLng) / 2;
+      const spotPin = latLngToScreen(spotLat, spotLng, centerLat, centerLng, zoom);
+      const stationPin = latLngToScreen(stationLat, stationLng, centerLat, centerLng, zoom);
+      const minX = Math.min(spotPin.x, stationPin.x) - pad;
+      const maxX = Math.max(spotPin.x, stationPin.x) + pad;
+      const minY = Math.min(spotPin.y, stationPin.y) - pad;
+      const maxY = Math.max(spotPin.y, stationPin.y) + pad;
+      if (maxX - minX <= WIDTH && maxY - minY <= HEIGHT) {
+        const shiftX = (minX + maxX) / 2 - WIDTH / 2;
+        const shiftY = (minY + maxY) / 2 - HEIGHT / 2;
+        return {
+          centerLat,
+          centerLng,
+          zoom,
+          shiftX,
+          shiftY,
+          spotPin: {
+            x: spotPin.x - shiftX,
+            y: spotPin.y - shiftY,
+          },
+          stationPin: {
+            x: stationPin.x - shiftX,
+            y: stationPin.y - shiftY,
+          },
+        };
+      }
+    }
+
+    const centerLat = (spotLat + stationLat) / 2;
+    const centerLng = (spotLng + stationLng) / 2;
+    const zoom = MIN_ZOOM;
+    const spotPin = latLngToScreen(spotLat, spotLng, centerLat, centerLng, zoom);
+    const stationPin = latLngToScreen(stationLat, stationLng, centerLat, centerLng, zoom);
+    const minX = Math.min(spotPin.x, stationPin.x) - pad;
+    const maxX = Math.max(spotPin.x, stationPin.x) + pad;
+    const minY = Math.min(spotPin.y, stationPin.y) - pad;
+    const maxY = Math.max(spotPin.y, stationPin.y) + pad;
+    const shiftX = (minX + maxX) / 2 - WIDTH / 2;
+    const shiftY = (minY + maxY) / 2 - HEIGHT / 2;
+    return {
+      centerLat,
+      centerLng,
+      zoom,
+      shiftX,
+      shiftY,
+      spotPin: { x: spotPin.x - shiftX, y: spotPin.y - shiftY },
+      stationPin: { x: stationPin.x - shiftX, y: stationPin.y - shiftY },
+    };
   }
 
   function polarToXY(cx, cy, radius, bearingDeg) {
@@ -177,11 +270,6 @@ const WindmateSpotMap = (() => {
     return 'spot-map-wind--unknown';
   }
 
-  /** Map center = exact spot lat/lng (tiles are anchored there). */
-  function spotGeoCenter() {
-    return { x: WIDTH / 2, y: HEIGHT / 2 };
-  }
-
   function renderGeoPin(cx, cy) {
     return `
       <g class="spot-map-geo-pin" aria-hidden="true">
@@ -189,6 +277,15 @@ const WindmateSpotMap = (() => {
         <line x1="${cx - 11}" y1="${cy}" x2="${cx + 11}" y2="${cy}" class="spot-map-geo-pin__cross" />
         <line x1="${cx}" y1="${cy - 11}" x2="${cx}" y2="${cy + 11}" class="spot-map-geo-pin__cross" />
         <circle cx="${cx}" cy="${cy}" r="3.5" class="spot-map-geo-pin__dot" />
+      </g>`;
+  }
+
+  function renderStationPin(cx, cy) {
+    const r = 5.5;
+    return `
+      <g class="spot-map-station-pin" aria-hidden="true">
+        <circle cx="${cx}" cy="${cy}" r="${r + 4}" class="spot-map-station-pin__halo" />
+        <rect x="${cx - r}" y="${cy - r}" width="${r * 2}" height="${r * 2}" rx="1.5" class="spot-map-station-pin__body" />
       </g>`;
   }
 
@@ -266,7 +363,7 @@ const WindmateSpotMap = (() => {
     return `<p class="spot-map-direction-mismatch" role="note">${WindmateCopy.map.directionMismatch}</p>`;
   }
 
-  function buildAriaLabel(hour, spot, options, hourLabel) {
+  function buildAriaLabel(hour, spot, options, hourLabel, liveStation) {
     const storedList = getStoredIdealDirections(spot);
     const onshore = getOnshoreDirections(spot);
     const mismatch = spot?.direction_validation?.status === 'mismatch';
@@ -278,6 +375,13 @@ const WindmateSpotMap = (() => {
     }
     const idealText = idealParts.length ? `. ${idealParts.join('; ')}` : '';
 
+    const stationText =
+      liveStation?.name
+        ? `. Live meteo station ${liveStation.name} shown on map`
+        : liveStation
+          ? '. Live meteo station shown on map'
+          : '';
+
     if (hour) {
       const forecast = `Peak forecast ${Math.round(hour.windSpeed ?? 0)} knots from ${hour.direction ?? ''} around ${hourLabel}`;
       if (mismatch) {
@@ -286,17 +390,17 @@ const WindmateSpotMap = (() => {
           hour.direction,
           options.dayLabel,
           hourLabel
-        )}${idealText}`;
+        )}${idealText}${stationText}`;
       }
-      return `${forecast} for ${options.dayLabel ?? 'session'}${idealText}`;
+      return `${forecast} for ${options.dayLabel ?? 'session'}${idealText}${stationText}`;
     }
-    return `${WindmateCopy.map.ariaEmpty(spot?.name, options.dayLabel)}${idealText}`;
+    return `${WindmateCopy.map.ariaEmpty(spot?.name, options.dayLabel)}${idealText}${stationText}`;
   }
 
   /**
    * @param {object} spot
    * @param {object[]} dayHours — primary model hours for selectedDayDate
-   * @param {{ dayLabel?: string, fullDayMode?: boolean, dateStr?: string }} [options]
+   * @param {{ dayLabel?: string, fullDayMode?: boolean, dateStr?: string, liveStation?: { lat: number, lng: number, name?: string } | null }} [options]
    */
   function renderForDay(spot, dayHours, options = {}) {
     const lat = spot?.latitude;
@@ -311,29 +415,55 @@ const WindmateSpotMap = (() => {
       ? WindmateCopy.map.sessionPeak(options.dayLabel ?? 'Session', hourLabel)
       : (options.dayLabel ?? '');
 
-    const { x: pinX, y: pinY } = spotGeoCenter();
+    const liveStation = options.liveStation ?? null;
+    const view = computeViewport(lat, lng, liveStation);
+    const pinX = view.spotPin.x;
+    const pinY = view.spotPin.y;
     const exposure = resolveMapExposure(hour);
     const { svg: directionLayers, legend, legendDetail } = renderDirectionLayers(spot, pinX, pinY);
     const forecastPill = renderForecastPill(hour, exposure, pinX);
     const sessionCaption = renderSessionCaption(caption, pinX);
     const geoPin = renderGeoPin(pinX, pinY);
+    const stationPin =
+      view.stationPin ? renderStationPin(view.stationPin.x, view.stationPin.y) : '';
     const mismatchCallout = renderMismatchCallout(spot.direction_validation);
-    const ariaLabel = buildAriaLabel(hour, spot, options, hourLabel);
+    const ariaLabel = buildAriaLabel(hour, spot, options, hourLabel, liveStation);
+    const mapLegend =
+      liveStation && legend
+        ? `${legend} · ${WindmateCopy.map.legendLiveStation}`
+        : liveStation
+          ? WindmateCopy.map.legendLiveStation
+          : legend;
 
     return `
       ${mismatchCallout}
       <div class="spot-map spot-map--forecast" role="img" aria-label="${ariaLabel}">
-        <div class="spot-map-tiles">${renderTiles(lat, lng)}</div>
-        <svg class="spot-map-overlay" viewBox="0 0 ${WIDTH} ${HEIGHT}" aria-hidden="true">
+        <div class="spot-map-tiles">${renderTiles(
+          view.centerLat,
+          view.centerLng,
+          view.zoom,
+          view.shiftX ?? 0,
+          view.shiftY ?? 0,
+          liveStation ? 2 : 1
+        )}</div>
+        <svg class="spot-map-overlay" viewBox="0 0 ${WIDTH} ${HEIGHT}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
           ${directionLayers}
           ${geoPin}
+          ${stationPin}
           ${forecastPill}
           ${sessionCaption}
         </svg>
-        ${legend ? `<p class="spot-map-direction-legend">${legend}</p>` : ''}
+        ${mapLegend ? `<p class="spot-map-direction-legend">${mapLegend}</p>` : ''}
         ${legendDetail ? `<p class="spot-map-direction-legend spot-map-direction-legend--detail">${legendDetail}</p>` : ''}
       </div>`;
   }
 
-  return { renderForDay, pickMapHour };
+  function replaceInCard(card, spot, dayHours, options = {}) {
+    const wrap = card?.querySelector?.('.matrix-panel-map');
+    if (!wrap || !spot) return;
+    const html = renderForDay(spot, dayHours, options);
+    wrap.innerHTML = html ? html.trim() : '';
+  }
+
+  return { renderForDay, pickMapHour, replaceInCard, WIDTH, HEIGHT };
 })();

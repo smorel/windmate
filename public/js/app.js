@@ -1279,7 +1279,9 @@ function rebindObservationToggles(obsBySpot, matrixPrefs) {
     obsBySpot,
     matrixPrefs,
     warningsBySpot,
-    rideEntryBySpot
+    rideEntryBySpot,
+    null,
+    handleMatrixMiniMapCurveChange
   );
 }
 
@@ -1311,6 +1313,7 @@ function applyObservationsToUi(obsRes, { observationsOnly = false } = {}) {
       );
     }
     rebindObservationToggles(obsBySpot, matrixPrefs);
+    refreshMatrixMiniMapsForExpandedCurves(obsBySpot);
     return;
   }
 
@@ -3142,6 +3145,58 @@ function applyFullDayVerdictSummary(verdict, dayHours, dateStr, fullDayMode) {
   return summary ? { ...verdict, summary } : verdict;
 }
 
+function liveStationForMiniMap(obsEntry, showOnMap) {
+  if (!showOnMap || !obsEntry) return null;
+  const nearest = obsEntry.nearestStation;
+  if (nearest?.latitude != null && nearest?.longitude != null) {
+    return { lat: nearest.latitude, lng: nearest.longitude, name: nearest.name };
+  }
+  const current = obsEntry.current;
+  if (current?.stationLatitude != null && current?.stationLongitude != null) {
+    return {
+      lat: current.stationLatitude,
+      lng: current.stationLongitude,
+      name: current.stationName,
+    };
+  }
+  return null;
+}
+
+function rideEntryForSpotId(rideEntryBySpot, spotId) {
+  if (!rideEntryBySpot || spotId == null) return null;
+  return rideEntryBySpot.get(spotId) ?? rideEntryBySpot.get(String(spotId)) ?? null;
+}
+
+function handleMatrixMiniMapCurveChange(spotId, curveKey, isExpanded, observationsBySpot) {
+  if (!curveKey?.startsWith('matrix:') || !rideabilityData) return;
+  const card = els.rideabilityMatrix?.querySelector(`[data-spot-id="${spotId}"]`);
+  const rideEntryBySpot = new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry]));
+  const entry = rideEntryForSpotId(rideEntryBySpot, spotId);
+  if (!card || !entry) return;
+  const viewingToday = isForecastToday(selectedDayDate, rideabilityData);
+  const dayHours = getSpotDayData(entry, selectedDayDate)?.hours ?? [];
+  const obs = observationsBySpot?.get(spotId) ?? observationsBySpot?.get(String(spotId));
+  const mapDayLabel = viewingToday
+    ? WindmateCopy.horizon.todayShort
+    : formatDayLabel(selectedDayDate);
+  WindmateSpotMap.replaceInCard(card, entry.spot, dayHours, {
+    dayLabel: mapDayLabel,
+    fullDayMode: isPlannerFullDayActive(),
+    dateStr: selectedDayDate,
+    liveStation: viewingToday ? liveStationForMiniMap(obs, isExpanded) : null,
+  });
+}
+
+function refreshMatrixMiniMapsForExpandedCurves(obsBySpot) {
+  if (!obsBySpot || !rideabilityData || !isForecastToday(selectedDayDate, rideabilityData)) return;
+  for (const card of els.rideabilityMatrix?.querySelectorAll('[data-spot-id]') ?? []) {
+    const spotId = card.dataset.spotId;
+    const curveKey = `matrix:${spotId}`;
+    if (!WindmateObservations.isCurveExpanded(curveKey)) continue;
+    handleMatrixMiniMapCurveChange(spotId, curveKey, true, obsBySpot);
+  }
+}
+
 function renderRideabilityMatrix(data, observations) {
   const spotEntries = rideabilitySpotEntries(data);
   if (!spotEntries.length) {
@@ -3216,10 +3271,18 @@ function renderRideabilityMatrix(data, observations) {
       const dayLabel = viewingToday
         ? WindmateCopy.horizon.todayShort
         : formatDayLabel(selectedDayDate);
+      const obsEntry = obsBySpot.get(spot.id);
+      const matrixCurveKey = `matrix:${spot.id}`;
       const spotMap = WindmateSpotMap.renderForDay(spot, dayHours, {
         dayLabel,
         fullDayMode,
         dateStr: selectedDayDate,
+        liveStation: viewingToday
+          ? liveStationForMiniMap(
+              obsEntry,
+              WindmateObservations.isCurveExpanded(matrixCurveKey)
+            )
+          : null,
       });
 
       const link = spot.source_url
@@ -3231,7 +3294,6 @@ function renderRideabilityMatrix(data, observations) {
         selectedDayDate,
         data.preferences.sport
       );
-      const obsEntry = obsBySpot.get(spot.id);
       let sessionVerdict = resolveSessionVerdictForDay(
         entry,
         selectedDayDate,
@@ -3331,8 +3393,11 @@ function renderRideabilityMatrix(data, observations) {
     obsBySpot,
     data.preferences,
     warningsBySpot,
-    rideEntryBySpot
+    rideEntryBySpot,
+    null,
+    handleMatrixMiniMapCurveChange
   );
+  refreshMatrixMiniMapsForExpandedCurves(obsBySpot);
   const spotIds = rankedSpots.map((row) => row.entry.spot.id);
   const matrixPrefs = prefsForRanking(data.preferences);
   const sessionVerdictBySpot = new Map(

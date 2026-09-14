@@ -328,7 +328,21 @@ function delay(ms) {
  * @param {number} lat
  * @param {number} lng
  */
-async function fetchNearestStation(lat, lng) {
+function parseStationGeo(data, spotLat, spotLng) {
+  const lat = data.geo?.lat ?? data.latitude ?? data.lat;
+  const lng = data.geo?.long ?? data.geo?.lng ?? data.longitude ?? data.lng;
+  if (lat == null || lng == null) return null;
+
+  const distance_km = data.distance ?? haversineKm(spotLat, spotLng, lat, lng);
+  return {
+    stationName: data.name ?? data.stationName ?? 'Wx station',
+    stationLatitude: lat,
+    stationLongitude: lng,
+    stationDistance_km: typeof distance_km === 'number' ? distance_km : haversineKm(spotLat, spotLng, lat, lng),
+  };
+}
+
+async function fetchNearestStationJson(lat, lng) {
   const candidates = ['wxstationnear', 'stationsnear', 'wxnear'];
   for (const path of candidates) {
     try {
@@ -341,9 +355,9 @@ async function fetchNearestStation(lat, lng) {
       if (!text.startsWith('{')) continue;
 
       const data = JSON.parse(text);
-      const station = parseStationPayload(data, lat, lng);
-      if (station && station.distance_km <= STATION_MAX_DISTANCE_KM) {
-        return station;
+      const geo = parseStationGeo(data, lat, lng);
+      if (geo && geo.stationDistance_km <= STATION_MAX_DISTANCE_KM) {
+        return { data, geo };
       }
     } catch {
       /* try next candidate */
@@ -352,12 +366,28 @@ async function fetchNearestStation(lat, lng) {
   return null;
 }
 
-function parseStationPayload(data, spotLat, spotLng) {
-  const lat = data.geo?.lat ?? data.latitude ?? data.lat;
-  const lng = data.geo?.long ?? data.geo?.lng ?? data.longitude ?? data.lng;
-  if (lat == null || lng == null) return null;
+/**
+ * Nearest wx station coordinates (for map), even when live wind readings are unavailable.
+ */
+async function fetchNearestStationLocation(lat, lng) {
+  const hit = await fetchNearestStationJson(lat, lng);
+  return hit?.geo ?? null;
+}
 
-  const distance_km = data.distance ?? haversineKm(spotLat, spotLng, lat, lng);
+async function fetchNearestStation(lat, lng) {
+  const hit = await fetchNearestStationJson(lat, lng);
+  if (!hit) return null;
+  const station = parseStationPayload(hit.data, lat, lng, hit.geo);
+  if (station && station.stationDistance_km <= STATION_MAX_DISTANCE_KM) {
+    return station;
+  }
+  return null;
+}
+
+function parseStationPayload(data, spotLat, spotLng, geoFromHit = null) {
+  const geo = geoFromHit ?? parseStationGeo(data, spotLat, spotLng);
+  if (!geo) return null;
+
   const windMs = data.wind ?? data.windSpeed ?? data.speed ?? data.w ?? 0;
   const gustMs = data.gust ?? data.gustSpeed ?? data.g ?? windMs;
   const dirDeg = data.wdir ?? data.direction ?? data.windDirection ?? 0;
@@ -374,8 +404,10 @@ function parseStationPayload(data, spotLat, spotLng) {
     waterTempC: null,
     observedAt: typeof observedAt === 'string' ? observedAt : new Date(observedAt).toISOString(),
     source: 'station',
-    stationName: data.name ?? data.stationName ?? 'Wx station',
-    stationDistance_km: typeof distance_km === 'number' ? distance_km : haversineKm(spotLat, spotLng, lat, lng),
+    stationName: geo.stationName,
+    stationLatitude: geo.stationLatitude,
+    stationLongitude: geo.stationLongitude,
+    stationDistance_km: geo.stationDistance_km,
   };
 }
 
@@ -383,6 +415,7 @@ module.exports = {
   fetchAllSpots,
   fetchNearestSpot,
   fetchNearestStation,
+  fetchNearestStationLocation,
   fetchModelForecast,
   normalizeWindData,
   repairIgetwindHourly,

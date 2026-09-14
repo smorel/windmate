@@ -30,7 +30,8 @@ const WindmateObservations = (() => {
     if (!ctx) return;
 
     event.stopPropagation();
-    const { observationsBySpot, prefs, warningsBySpot, rideEntryBySpot, resolveCurvePrefs } = ctx;
+    const { observationsBySpot, prefs, warningsBySpot, rideEntryBySpot, resolveCurvePrefs, onCurveExpandedChange } =
+      ctx;
     const spotId = btn.dataset.spotId;
     const curveKey = btn.dataset.curveKey ?? spotId;
     const strip = btn.closest('.live-strip');
@@ -40,7 +41,9 @@ const WindmateObservations = (() => {
     syncAutoRefresh();
     const obs = observationsBySpot.get(spotId);
     syncCurveToggleUi(strip, curveKey);
-    if (panel && expanded.has(curveKey)) {
+    const isExpanded = expanded.has(curveKey);
+    onCurveExpandedChange?.(spotId, curveKey, isExpanded, observationsBySpot);
+    if (panel && isExpanded) {
       const curvePrefs = resolveCurvePrefs?.(panel) ?? prefs;
       renderCurve(
         panel,
@@ -206,6 +209,10 @@ const WindmateObservations = (() => {
 
   function hasExpandedCurves() {
     return expanded.size > 0;
+  }
+
+  function isCurveExpanded(curveKey) {
+    return expanded.has(curveKey);
   }
 
   function sourceBadge(source) {
@@ -970,7 +977,8 @@ const WindmateObservations = (() => {
     prefs,
     warningsBySpot = null,
     rideEntryBySpot = null,
-    resolveCurvePrefs = null
+    resolveCurvePrefs = null,
+    onCurveExpandedChange = null
   ) {
     if (!root) return;
     ensureToggleRoot(root);
@@ -980,6 +988,7 @@ const WindmateObservations = (() => {
       warningsBySpot,
       rideEntryBySpot,
       resolveCurvePrefs,
+      onCurveExpandedChange,
     });
     root.querySelectorAll('.live-strip').forEach((strip) => {
       const curveKey =
@@ -1027,6 +1036,7 @@ const WindmateObservations = (() => {
     renderVerdictBanner,
     setAutoRefreshCallback,
     hasExpandedCurves,
+    isCurveExpanded,
     collapseAll,
     EXPANDED_REFRESH_MS,
   };

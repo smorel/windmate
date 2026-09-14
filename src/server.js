@@ -20,6 +20,9 @@ const { startWatchlistJobs } = require('./cron/watchlistDigest');
 const { syncIgetwindSpots } = require('./services/igetwindSync');
 const { getProvider } = require('./services/weather');
 const { syncAssets } = require('../scripts/sync-assets');
+const { discoveryEnabled, catalogUseSearchGrounding } = require('./services/spotCatalogDiscovery');
+const { profileEnabled, intelUseSearchGrounding } = require('./services/spotIntelGemini');
+const { isGeminiConfigured } = require('./services/gemini/geminiClient');
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const SERVER_INSTANCE_ID = randomUUID();
@@ -46,6 +49,13 @@ app.get('/api/health', (_req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     weather_provider: getProvider(),
+    gemini: {
+      configured: isGeminiConfigured(),
+      catalog_enabled: discoveryEnabled(),
+      catalog_use_search: catalogUseSearchGrounding(),
+      intel_details_enabled: profileEnabled(),
+      intel_use_search: intelUseSearchGrounding(),
+    },
   });
 });
 

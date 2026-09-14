@@ -18,6 +18,8 @@ const WindmateSpotMapPicker = (() => {
   let tempMarker = null;
   let bboxTimer = null;
   let bboxRequestId = 0;
+  let discoveryPollTimer = null;
+  let geminiCatalogEnabled = false;
   let open = false;
   let pendingCreate = null;
   let opts = {};
@@ -233,22 +235,54 @@ const WindmateSpotMapPicker = (() => {
     markersLayer.bringToFront();
   }
 
+  function clearDiscoveryPoll() {
+    if (discoveryPollTimer) {
+      clearTimeout(discoveryPollTimer);
+      discoveryPollTimer = null;
+    }
+  }
+
+  function scheduleDiscoveryPoll() {
+    clearDiscoveryPoll();
+    discoveryPollTimer = setTimeout(() => refreshMarkers(), 4500);
+  }
+
+  async function refreshGeminiFlags() {
+    try {
+      const data = await api('/api/health');
+      geminiCatalogEnabled = Boolean(data.gemini?.catalog_enabled);
+    } catch {
+      geminiCatalogEnabled = false;
+    }
+  }
+
   async function refreshMarkers() {
     if (!map || !open) return;
     const { north, south, east, west } = bboxQueryFromMap();
     const requestId = ++bboxRequestId;
     try {
       const sport = opts.getActiveSport?.() ?? '';
+      const discoverParam = geminiCatalogEnabled ? '&discover=1' : '';
       const data = await api(
-        `/api/spots/bbox?north=${north}&south=${south}&east=${east}&west=${west}&sport=${encodeURIComponent(sport)}`
+        `/api/spots/bbox?north=${north}&south=${south}&east=${east}&west=${west}&sport=${encodeURIComponent(sport)}${discoverParam}`
       );
       if (requestId !== bboxRequestId || !open) return;
       renderMarkers(data.spots ?? []);
+      const discovery = data.discovery ?? {};
+      if (discovery.in_progress || discovery.status === 'started') {
+        scheduleDiscoveryPoll();
+      } else {
+        clearDiscoveryPoll();
+      }
+      if (discovery.inserted_count > 0 && !discovery.in_progress) {
+        showToast(WindmateCopy.map.discoveryAdded(discovery.inserted_count));
+      }
       if (els.hint?.classList.contains('spot-map-panel__hint--error')) {
         setHint(WindmateCopy.map.hint);
       }
     } catch {
       if (requestId !== bboxRequestId || !open) return;
+      clearDiscoveryPoll();
       setHint(WindmateCopy.map.hintError, 'error');
     }
   }
@@ -260,6 +294,7 @@ const WindmateSpotMapPicker = (() => {
 
   function cancelBboxFetch() {
     clearTimeout(bboxTimer);
+    clearDiscoveryPoll();
     bboxRequestId += 1;
   }
 
@@ -528,6 +563,7 @@ const WindmateSpotMapPicker = (() => {
     open = true;
     updateToggleUi();
     setHint(WindmateCopy.map.hint);
+    await refreshGeminiFlags();
 
     if (!initMap() || !map) return;
 

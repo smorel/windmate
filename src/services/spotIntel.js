@@ -1,4 +1,9 @@
-const { getSpotById, getSpotIntelCache, setSpotIntelCache } = require('../db');
+const {
+  getSpotById,
+  getSpotIntelCache,
+  getSpotIntelProfile,
+  getSpotIntelDayCache,
+} = require('../db');
 const { buildMediaGalleryFallback } = require('./googleMedia');
 const {
   fetchGoogleImageResults,
@@ -6,6 +11,8 @@ const {
   galleryHasPlaceholderMedia,
 } = require('./intelSources/googleMediaFetch');
 const { fetchCommonsImageResults } = require('./intelSources/wikimediaCommons');
+const { mergeIntelSignals } = require('./intelProvenance');
+const { ensureSpotDetails, parseProfileRow, parseDayRow, profileEnabled } = require('./spotIntelGemini');
 
 const MAX_STRIP_ITEMS = 10;
 const INTEL_CACHE_TTL_MS = parseInt(process.env.INTEL_CACHE_TTL_MS ?? '3600000', 10);
@@ -73,6 +80,7 @@ function parseMediaGallery(raw, sport, spot) {
 }
 
 async function persistMediaGallery(db, spot, sport, items, source) {
+  const { setSpotIntelCache } = require('../db');
   if (!items.length) return null;
   const fallback = buildMediaGalleryFallback(spot, sport);
   const payload = {
@@ -140,21 +148,102 @@ async function resolveMediaGallery(db, spot, sport) {
   return parseMediaGallery(null, sport, spot);
 }
 
-async function getSpotIntel(db, spotId, sport = 'wingfoiling') {
+function parseLegacyCacheSignals(cache) {
+  if (!cache?.signals) return [];
+  try {
+    const parsed = JSON.parse(cache.signals);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} spotId
+ * @param {{ sport?: string, sessionDate?: string | null, fetchDetails?: boolean }} [opts]
+ */
+async function getSpotIntel(db, spotId, sport = 'wingfoiling', opts = {}) {
+  const sessionDate = opts.sessionDate ?? null;
+  const fetchDetails = opts.fetchDetails === true;
   const spot = getSpotById(db, spotId);
   if (!spot) return null;
 
-  const mediaGallery = await resolveMediaGallery(db, spot, sport);
+  let detailsMeta = null;
+  if (fetchDetails) {
+    try {
+      detailsMeta = await ensureSpotDetails(db, spot, sessionDate, sport);
+    } catch (err) {
+      console.warn(`[spotIntel] Gemini details skipped for ${spot.name}:`, err.message);
+      detailsMeta = { fetched: false, error: err };
+    }
+  }
+
+  const mediaGallery = fetchDetails
+    ? await resolveMediaGallery(db, spot, sport)
+    : parseMediaGallery(getSpotIntelCache(db, spot.id)?.media_gallery, sport, spot);
+
   const strip = mergeStripItems(mediaGallery);
   const cache = getSpotIntelCache(db, spot.id);
 
+  const profileRow = getSpotIntelProfile(db, spot.id);
+  const profile = parseProfileRow(profileRow);
+
+  let dayPayload = null;
+  let signals = [];
+  let headline = cache?.headline ?? null;
+  let overall_level = cache?.overall_level ?? 'unknown';
+
+  if (sessionDate) {
+    const dayRow = getSpotIntelDayCache(db, spot.id, sessionDate);
+    if (dayRow) {
+      const parsed = parseDayRow(dayRow);
+      dayPayload = parsed.day;
+      signals = parsed.signals;
+      headline = parsed.headline ?? headline;
+      overall_level = parsed.overall_level ?? overall_level;
+    } else if (cache?.valid_for_date === sessionDate) {
+      signals = parseLegacyCacheSignals(cache);
+      overall_level = cache.overall_level ?? mergeIntelSignals(signals).overall_level;
+    }
+  } else {
+    signals = parseLegacyCacheSignals(cache);
+    if (signals.length) {
+      overall_level = mergeIntelSignals(signals).overall_level;
+    }
+  }
+
+  const dayRow = sessionDate ? getSpotIntelDayCache(db, spot.id, sessionDate) : null;
+  const fetchedAt = Math.max(
+    cache?.fetched_at ?? 0,
+    profileRow?.fetched_at ?? 0,
+    dayRow?.fetched_at ?? 0
+  );
+
+  const detailsErr = detailsMeta?.error;
+  const quotaBlocked =
+    detailsErr &&
+    (detailsErr.status === 429 ||
+      detailsErr.quotaExceeded ||
+      /quota|rate limit/i.test(String(detailsErr.message ?? '')));
+
   return {
     spot_id: spotId,
-    fetched_at: cache?.fetched_at ?? null,
+    session_date: sessionDate,
+    fetched_at: fetchedAt || null,
+    profile,
+    profile_fetched_at: profileRow?.fetched_at ?? null,
+    day: dayPayload,
+    signals,
+    overall_level,
+    headline,
     media_gallery: {
       ...mediaGallery,
       strip,
     },
+    enrichment_pending:
+      fetchDetails && !profile && !profileRow && profileEnabled() && !quotaBlocked,
+    enrichment_unavailable: Boolean(fetchDetails && quotaBlocked),
   };
 }
 

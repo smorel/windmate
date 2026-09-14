@@ -2291,6 +2291,157 @@ body.dashboard-pending .dashboard-planner {
   padding-top: 0.75rem;
 }
 
+.spot-intel-sections {
+  margin-bottom: 0.75rem;
+}
+
+.spot-intel-sections__loading,
+.spot-intel-sections__pending {
+  font-size: 0.8125rem;
+  color: #64748b;
+  margin: 0 0 0.5rem;
+}
+
+.spot-intel-section {
+  margin-bottom: 0.65rem;
+  padding: 0.5rem 0.6rem;
+  background: #0f172a;
+  border-radius: 6px;
+  border: 1px solid #1e293b;
+}
+
+.spot-intel-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.spot-intel-section__title {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.spot-intel-section__body {
+  font-size: 0.8125rem;
+  color: #e2e8f0;
+  line-height: 1.45;
+}
+
+.spot-intel-section__body p {
+  margin: 0;
+}
+
+.spot-intel-section__source {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-style: italic;
+  cursor: pointer;
+}
+
+.spot-intel-section__source:hover {
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.spot-intel-section__source--muted {
+  opacity: 0.55;
+}
+
+.spot-intel-level {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.spot-intel-level--caution {
+  background: #422006;
+  color: #fcd34d;
+}
+
+.spot-intel-level--closed {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+.spot-intel-source-popover {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+}
+
+.spot-intel-source-popover__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(2 6 23 / 0.72);
+}
+
+.spot-intel-source-popover__sheet {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(100%, 28rem);
+  max-height: 70vh;
+  overflow: auto;
+  padding: 1rem 1.1rem 1.25rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 12px 12px 0 0;
+  color: #e2e8f0;
+}
+
+.spot-intel-source-popover__close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  border: none;
+  background: none;
+  color: #94a3b8;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.spot-intel-source-popover__title {
+  margin: 0 1.5rem 0.5rem 0;
+  font-size: 0.9375rem;
+}
+
+.spot-intel-source-popover__warn {
+  color: #fcd34d;
+  font-size: 0.8125rem;
+}
+
+.spot-intel-source-popover__steps {
+  margin: 0.5rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+}
+
+.spot-intel-source-popover__meta {
+  margin-top: 0.75rem;
+  font-size: 0.6875rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .spot-intel-media__header {
   display: flex;
   align-items: baseline;

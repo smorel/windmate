@@ -3433,7 +3433,7 @@ function renderRideabilityMatrix(data, observations) {
     data.preferences.min_rideable_window_hours,
     departureContext
   );
-  WindmateSpotIntel.bindDrawers(els.rideabilityMatrix, data.preferences.sport);
+  WindmateSpotIntel.bindDrawers(els.rideabilityMatrix, data.preferences.sport, () => selectedDayDate);
 }
 
 if (els.locateBtn) {

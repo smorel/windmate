@@ -9,6 +9,11 @@ const {
   insertManualSpot,
 } = require('../db');
 const { getSpotIntel } = require('../services/spotIntel');
+const {
+  scheduleCatalogDiscovery,
+  getDiscoveryStatus,
+  discoveryEnabled,
+} = require('../services/spotCatalogDiscovery');
 const { searchSpots } = require('../utils/spotSelection');
 const { parseFavoriteSpotIds } = require('../utils/favoriteSpots');
 const {
@@ -67,6 +72,15 @@ function createSpotsRouter(db) {
       }
 
       const prefs = getPreferences(db, sport) ?? { favorite_spot_ids: [] };
+      const activeSport = sport ?? prefs.sport ?? getPreferences(db)?.sport ?? 'wingfoiling';
+      const discover =
+        (req.query.discover === '1' || String(req.query.discover).toLowerCase() === 'true') &&
+        discoveryEnabled();
+      let discovery = null;
+      if (discover) {
+        discovery = scheduleCatalogDiscovery(db, north, south, east, west, activeSport);
+      }
+
       const spots = selectSpotsInBbox(
         getAllSpots(db),
         north,
@@ -80,6 +94,9 @@ function createSpotsRouter(db) {
       res.json({
         spots,
         bounds: { north, south, east, west },
+        discovery: discovery
+          ? { ...discovery, ...getDiscoveryStatus(db, north, south, east, west), enabled: true }
+          : { enabled: discoveryEnabled(), scheduled: false },
       });
     } catch (err) {
       res.status(500).json({ error: err.message ?? 'Bbox spot query failed' });
@@ -140,7 +157,10 @@ function createSpotsRouter(db) {
         return res.status(404).json({ error: 'Spot not found' });
       }
       const sport = req.query.sport ?? getPreferences(db)?.sport ?? 'wingfoiling';
-      const intel = await getSpotIntel(db, spot.id, sport);
+      const sessionDate = req.query.date ? String(req.query.date) : null;
+      const fetchDetails =
+        req.query.details === '1' || String(req.query.details).toLowerCase() === 'true';
+      const intel = await getSpotIntel(db, spot.id, sport, { sessionDate, fetchDetails });
       res.json(intel);
     } catch (err) {
       res.status(500).json({ error: err.message ?? 'Spot intel failed' });

@@ -61,12 +61,19 @@ async function syncIgetwindSpots(db) {
 
   const result = sync(validated);
 
-  const { scheduleSpotDirectionInference } = require('../utils/spotDirectionApi');
-  const missing = db
-    .prepare('SELECT id, latitude, longitude FROM spots WHERE direction_inference IS NULL')
-    .all();
-  for (const row of missing) {
-    scheduleSpotDirectionInference(db, row);
+  const inferOnSync = process.env.DIRECTION_INFERENCE_BACKFILL_ON_SYNC;
+  if (inferOnSync === '1' || inferOnSync?.toLowerCase() === 'true') {
+    const { scheduleSpotDirectionInference } = require('../utils/spotDirectionApi');
+    const limit = parseInt(process.env.DIRECTION_INFERENCE_BACKFILL_LIMIT ?? '0', 10);
+    let missing = db
+      .prepare(
+        `SELECT id, latitude, longitude FROM spots WHERE direction_inference IS NULL ORDER BY name`
+      )
+      .all();
+    if (limit > 0) missing = missing.slice(0, limit);
+    for (const row of missing) {
+      scheduleSpotDirectionInference(db, row);
+    }
   }
 
   return result;

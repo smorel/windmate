@@ -218,6 +218,8 @@ function migrateDb(db) {
     )
   `);
 
+  migrateSpotIntelGemini(db);
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS travel_time_cache (
       origin_lat REAL NOT NULL,
@@ -1001,6 +1003,154 @@ function updateWatchedSessionStatus(db, id, patch) {
   );
 }
 
+/** @param {import('better-sqlite3').Database} db */
+function migrateSpotIntelGemini(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spot_intel_profile (
+      spot_id TEXT PRIMARY KEY REFERENCES spots(id),
+      profile TEXT NOT NULL,
+      fetched_at INTEGER NOT NULL,
+      profile_version INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS spot_intel_day_cache (
+      spot_id TEXT NOT NULL REFERENCES spots(id),
+      session_date TEXT NOT NULL,
+      headline TEXT,
+      overall_level TEXT,
+      day TEXT,
+      signals TEXT,
+      fetched_at INTEGER NOT NULL,
+      PRIMARY KEY (spot_id, session_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS spot_discovery_regions (
+      region_key TEXT PRIMARY KEY,
+      center_lat REAL NOT NULL,
+      center_lng REAL NOT NULL,
+      radius_km REAL NOT NULL,
+      fetched_at INTEGER NOT NULL,
+      candidate_count INTEGER NOT NULL DEFAULT 0,
+      inserted_count INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+}
+
+function getSpotIntelProfile(db, spotId) {
+  return db
+    .prepare(
+      `SELECT spot_id, profile, fetched_at, profile_version FROM spot_intel_profile WHERE spot_id = ?`
+    )
+    .get(spotId);
+}
+
+function setSpotIntelProfile(db, spotId, row) {
+  db.prepare(`
+    INSERT INTO spot_intel_profile (spot_id, profile, fetched_at, profile_version)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(spot_id) DO UPDATE SET
+      profile = excluded.profile,
+      fetched_at = excluded.fetched_at,
+      profile_version = excluded.profile_version
+  `).run(spotId, row.profile, row.fetched_at ?? Date.now(), row.profile_version ?? 1);
+}
+
+function getSpotIntelDayCache(db, spotId, sessionDate) {
+  return db
+    .prepare(
+      `SELECT spot_id, session_date, headline, overall_level, day, signals, fetched_at
+       FROM spot_intel_day_cache WHERE spot_id = ? AND session_date = ?`
+    )
+    .get(spotId, sessionDate);
+}
+
+function setSpotIntelDayCache(db, spotId, sessionDate, row) {
+  db.prepare(`
+    INSERT INTO spot_intel_day_cache (
+      spot_id, session_date, headline, overall_level, day, signals, fetched_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(spot_id, session_date) DO UPDATE SET
+      headline = excluded.headline,
+      overall_level = excluded.overall_level,
+      day = excluded.day,
+      signals = excluded.signals,
+      fetched_at = excluded.fetched_at
+  `).run(
+    spotId,
+    sessionDate,
+    row.headline ?? null,
+    row.overall_level ?? null,
+    row.day ?? null,
+    row.signals ?? null,
+    row.fetched_at ?? Date.now()
+  );
+}
+
+function getDiscoveryRegion(db, regionKey) {
+  return db.prepare(`SELECT * FROM spot_discovery_regions WHERE region_key = ?`).get(regionKey);
+}
+
+function upsertDiscoveryRegion(db, row) {
+  db.prepare(`
+    INSERT INTO spot_discovery_regions (
+      region_key, center_lat, center_lng, radius_km, fetched_at, candidate_count, inserted_count
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(region_key) DO UPDATE SET
+      center_lat = excluded.center_lat,
+      center_lng = excluded.center_lng,
+      radius_km = excluded.radius_km,
+      fetched_at = excluded.fetched_at,
+      candidate_count = excluded.candidate_count,
+      inserted_count = excluded.inserted_count
+  `).run(
+    row.region_key,
+    row.center_lat,
+    row.center_lng,
+    row.radius_km,
+    row.fetched_at,
+    row.candidate_count ?? 0,
+    row.inserted_count ?? 0
+  );
+}
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ id: string, name: string, latitude: number, longitude: number, source_url?: string | null }} spot
+ */
+function insertDiscoveredSpot(db, spot) {
+  const ideal = spot.ideal_directions ?? [];
+  db.prepare(
+    `INSERT INTO spots (id, name, latitude, longitude, ideal_directions, source_url, igetwind_id)
+     VALUES (@id, @name, @latitude, @longitude, @ideal_directions, @source_url, NULL)`
+  ).run({
+    id: spot.id,
+    name: spot.name,
+    latitude: spot.latitude,
+    longitude: spot.longitude,
+    ideal_directions: JSON.stringify(ideal),
+    source_url: spot.source_url ?? null,
+  });
+  return getSpotById(db, spot.id);
+}
+
+/** @param {import('better-sqlite3').Database} db @param {string} spotId @param {string[]} directions */
+function mergeSpotIdealDirectionsIfEmpty(db, spotId, directions) {
+  if (!directions?.length) return;
+  const row = db.prepare('SELECT ideal_directions FROM spots WHERE id = ?').get(spotId);
+  if (!row) return;
+  let current = [];
+  try {
+    current = JSON.parse(row.ideal_directions || '[]');
+  } catch {
+    current = [];
+  }
+  if (current.length > 0) return;
+  db.prepare('UPDATE spots SET ideal_directions = ? WHERE id = ?').run(
+    JSON.stringify(directions),
+    spotId
+  );
+}
+
 function getSpotIntelCache(db, spotId) {
   return db
     .prepare(
@@ -1011,6 +1161,26 @@ function getSpotIntelCache(db, spotId) {
 }
 
 function setSpotIntelCache(db, spotId, row) {
+  const existing = getSpotIntelCache(db, spotId);
+  const merged = {
+    fetched_at: row.fetched_at ?? Date.now(),
+    signals: Object.prototype.hasOwnProperty.call(row, 'signals')
+      ? row.signals
+      : (existing?.signals ?? null),
+    headline: Object.prototype.hasOwnProperty.call(row, 'headline')
+      ? row.headline
+      : (existing?.headline ?? null),
+    overall_level: Object.prototype.hasOwnProperty.call(row, 'overall_level')
+      ? row.overall_level
+      : (existing?.overall_level ?? null),
+    valid_for_date: Object.prototype.hasOwnProperty.call(row, 'valid_for_date')
+      ? row.valid_for_date
+      : (existing?.valid_for_date ?? null),
+    media_gallery: Object.prototype.hasOwnProperty.call(row, 'media_gallery')
+      ? row.media_gallery
+      : (existing?.media_gallery ?? null),
+  };
+
   db.prepare(`
     INSERT INTO spot_intel_cache (
       spot_id, fetched_at, signals, headline, overall_level, valid_for_date, media_gallery
@@ -1024,12 +1194,12 @@ function setSpotIntelCache(db, spotId, row) {
       media_gallery = excluded.media_gallery
   `).run(
     spotId,
-    row.fetched_at ?? Date.now(),
-    row.signals ?? null,
-    row.headline ?? null,
-    row.overall_level ?? null,
-    row.valid_for_date ?? null,
-    row.media_gallery ?? null
+    merged.fetched_at,
+    merged.signals,
+    merged.headline,
+    merged.overall_level,
+    merged.valid_for_date,
+    merged.media_gallery
   );
 }
 
@@ -1161,6 +1331,14 @@ module.exports = {
   insertManualSpot,
   getSpotIntelCache,
   setSpotIntelCache,
+  getSpotIntelProfile,
+  setSpotIntelProfile,
+  getSpotIntelDayCache,
+  setSpotIntelDayCache,
+  getDiscoveryRegion,
+  upsertDiscoveryRegion,
+  insertDiscoveredSpot,
+  mergeSpotIdealDirectionsIfEmpty,
   getObservationCache,
   setObservationCache,
   getWatchedSessions,

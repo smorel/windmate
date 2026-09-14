@@ -65,15 +65,22 @@ body.refresh-countdown-active .horizon-planner-sticky {
     align-items: stretch;
     gap: 0.75rem;
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: visible;
     -webkit-overflow-scrolling: touch;
     scroll-snap-type: x proximity;
+    padding-top: 0.65rem;
     padding-bottom: 0.25rem;
   }
 
   #horizon-planner .horizon-day-card {
     flex: 0 0 min(72vw, 10.5rem);
     scroll-snap-align: start;
+  }
+
+  /* Stickers sit half above the card; keep them inside the scroll area on small screens */
+  #horizon-planner .session-excitement-stack {
+    top: 0.35rem;
+    transform: none;
   }
 }
 
@@ -1612,15 +1619,19 @@ body.modal-open {
     width: 100%;
     min-width: 0;
     min-height: 9rem;
+    margin-top: 0.75rem;
   }
 
-  .matrix-hour-track {
+  .matrix-grid-wrap .matrix-hour-track {
+    flex: 0 0 auto;
+    width: max-content;
     min-width: max-content;
   }
 
   .matrix-grid-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    max-width: 100%;
   }
 
   .matrix-hour-blocks,
@@ -1628,6 +1639,7 @@ body.modal-open {
   .matrix-score-blocks,
   .matrix-time-blocks {
     gap: 1px;
+    width: max-content;
   }
 
   .hour-block,

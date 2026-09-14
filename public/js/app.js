@@ -81,6 +81,8 @@ let favoriteSpotIds = [];
 let rankDragKey = null;
 let savePrefsTimer = null;
 let persistPrefsPromise = null;
+let settingsDashboardRefreshPending = false;
+const SETTINGS_TYPING_DEBOUNCE_MS = 800;
 let spotSearchTimer = null;
 let spotSearchRequestId = 0;
 
@@ -332,7 +334,7 @@ function isFavoriteSpot(spotId) {
 function getSearchRadiusKm() {
   const fromInput = parseInt(els.searchRadius?.value, 10);
   if (!Number.isNaN(fromInput)) {
-    return Math.min(300, Math.max(5, fromInput));
+    return Math.max(5, fromInput);
   }
   const profile = sportProfiles.find((p) => p.sport === activeSport);
   return profile?.radius_km ?? rideabilityData?.preferences?.radius_km ?? 80;
@@ -456,9 +458,18 @@ function schedulePreferencesSave({ fullRefresh = true, delayMs = 450 } = {}) {
   }, delayMs);
 }
 
+function isSettingsModalOpen() {
+  return Boolean(els.settingsModal && !els.settingsModal.classList.contains('hidden'));
+}
+
 async function persistPreferences({ fullRefresh = true } = {}) {
   if (persistPrefsPromise) {
     await persistPrefsPromise;
+  }
+
+  const refreshDashboardNow = fullRefresh && !isSettingsModalOpen();
+  if (fullRefresh && isSettingsModalOpen()) {
+    settingsDashboardRefreshPending = true;
   }
 
   setSettingsSaveStatus(WindmateCopy.settings.saving);
@@ -470,14 +481,15 @@ async function persistPreferences({ fullRefresh = true } = {}) {
         body: JSON.stringify(buildSportProfilePayload()),
       });
       applyFullPreferences(updated);
-      if (fullRefresh) {
+      if (refreshDashboardNow) {
+        settingsDashboardRefreshPending = false;
         await refreshDashboard({
           silent: true,
           pending: true,
           loadingMessage: WindmateCopy.loading.saved,
           includeHorizonSummary: false,
         });
-      } else {
+      } else if (!fullRefresh) {
         applyRankOrderToMatrix();
       }
       setSettingsSaveStatus(WindmateCopy.settings.saved);
@@ -547,7 +559,7 @@ function bindPreferencesAutoSave() {
       if (input === els.searchRadius && WindmateSpotMapPicker.isOpen()) {
         WindmateSpotMapPicker.updateHomeOverlay();
       }
-      schedulePreferencesSave({ fullRefresh: true });
+      schedulePreferencesSave({ fullRefresh: true, delayMs: SETTINGS_TYPING_DEBOUNCE_MS });
     });
     input.addEventListener('change', () => schedulePreferencesSave({ fullRefresh: true, delayMs: 0 }));
   }
@@ -786,7 +798,9 @@ function applyFullPreferences(prefs) {
   syncPreferencesState(prefs);
   renderMySports();
   renderSportSettingsTabs();
-  loadSettingsFormForSport(settingsSportTab);
+  if (!isSettingsModalOpen()) {
+    loadSettingsFormForSport(settingsSportTab);
+  }
   WindmateSportSelector.setState({
     profiles: sportProfiles.map((p) => ({
       ...p,
@@ -829,6 +843,30 @@ function closeSettingsModal() {
   els.settingsModal.classList.add('hidden');
   syncModalOpenClass();
   els.settingsBtn?.setAttribute('aria-expanded', 'false');
+
+  const hadScheduledSave = savePrefsTimer != null;
+  clearTimeout(savePrefsTimer);
+  savePrefsTimer = null;
+  const pendingDashboardRefresh = settingsDashboardRefreshPending;
+  settingsDashboardRefreshPending = false;
+
+  void (async () => {
+    try {
+      if (hadScheduledSave) {
+        await persistPreferences({ fullRefresh: true });
+      } else if (pendingDashboardRefresh) {
+        await refreshDashboard({
+          silent: true,
+          pending: true,
+          loadingMessage: WindmateCopy.loading.saved,
+          includeHorizonSummary: false,
+        });
+      }
+      loadSettingsFormForSport(settingsSportTab);
+    } catch {
+      /* save status already shown */
+    }
+  })();
 }
 
 function openLegendModal() {

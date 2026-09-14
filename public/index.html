@@ -264,7 +264,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label class="block sm:col-span-2">
               <span class="text-xs uppercase tracking-wide text-slate-400">Search radius (km)</span>
-              <input id="search-radius" type="number" min="5" max="300" step="5" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+              <input id="search-radius" type="number" min="5" step="5" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
               <span class="text-[10px] text-slate-500">Nearby spots within this range; favorites can be farther</span>
             </label>
             <label class="flex items-start gap-2 sm:col-span-2">
@@ -276,11 +276,11 @@
             </label>
             <label class="block">
               <span class="text-xs uppercase tracking-wide text-slate-400">Min wind (kt)</span>
-              <input id="min-wind" type="number" min="0" max="60" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+              <input id="min-wind" type="number" min="0" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
             </label>
             <label class="block">
               <span class="text-xs uppercase tracking-wide text-slate-400">Max gust (kt)</span>
-              <input id="max-gust" type="number" min="0" max="80" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+              <input id="max-gust" type="number" min="0" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
             </label>
             <label class="block">
               <span class="text-xs uppercase tracking-wide text-slate-400">Min air (°C)</span>
@@ -301,7 +301,7 @@
             </label>
             <label class="block sm:col-span-2">
               <span class="text-xs uppercase tracking-wide text-slate-400">Min session window (hrs)</span>
-              <input id="min-rideable-window" type="number" min="1" max="24" step="1" value="2" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
+              <input id="min-rideable-window" type="number" min="1" step="1" value="2" class="mt-1 w-full bg-base border border-base-border rounded-lg px-3 py-2 text-white" />
               <span class="text-[10px] text-slate-500">Consecutive rideable hours needed to count as a session window</span>
             </label>
           </div>

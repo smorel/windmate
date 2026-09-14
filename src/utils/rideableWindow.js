@@ -1,5 +1,4 @@
 const DEFAULT_MIN_RIDEABLE_WINDOW_HOURS = 2;
-const MAX_MIN_RIDEABLE_WINDOW_HOURS = 24;
 
 const { isElapsedLocalDayHour } = require('./forecastTime');
 
@@ -96,7 +95,7 @@ function allReportingModelsRideable(indexedByKey, key, options) {
 function parseMinRideableWindowHours(value, fallback = DEFAULT_MIN_RIDEABLE_WINDOW_HOURS) {
   const n = parseInt(value, 10);
   if (Number.isNaN(n) || n < 1) return fallback;
-  return Math.min(n, MAX_MIN_RIDEABLE_WINDOW_HOURS);
+  return n;
 }
 
 /** Longest consecutive rideable run that meets minConsecutive (timeline gaps break runs). */
@@ -246,7 +245,6 @@ function buildConsensusWindowMaps(modelHourLists, minConsecutive = DEFAULT_MIN_R
 
 module.exports = {
   DEFAULT_MIN_RIDEABLE_WINDOW_HOURS,
-  MAX_MIN_RIDEABLE_WINDOW_HOURS,
   hourTimeKey,
   nearestHourToleranceMs,
   findNearestModelHour,

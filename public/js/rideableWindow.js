@@ -1,8 +1,6 @@
 /** Consecutive rideable-hour window helpers for matrix display and ranking */
 const WindmateRideableWindow = (() => {
   const DEFAULT_MIN_HOURS = 2;
-  const MAX_MIN_HOURS = 24;
-
   function hourTimeKey(time) {
     return String(time).replace(' ', 'T').slice(0, 16);
   }
@@ -145,7 +143,7 @@ const WindmateRideableWindow = (() => {
   function parseMinHours(value, fallback = DEFAULT_MIN_HOURS) {
     const n = parseInt(value, 10);
     if (Number.isNaN(n) || n < 1) return fallback;
-    return Math.min(n, MAX_MIN_HOURS);
+    return n;
   }
 
   function longestWindow(hours, minConsecutive = 1) {

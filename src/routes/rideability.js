@@ -16,8 +16,11 @@ const { MODEL_COLORS } = require('../utils/models');
 const { selectSpotsForProfile, filterRideabilityIncludeSpotIds } = require('../utils/spotSelection');
 const { attachSessionGoNoGoByDate } = require('../services/sessionGoNoGo');
 const { localDateString } = require('../utils/forecastTime');
-const { ensureSpotDirectionInference } = require('../services/directionInference');
-const { buildSpotDirectionFields, idealDirectionsForRideability } = require('../utils/spotDirectionApi');
+const {
+  buildSpotDirectionFields,
+  idealDirectionsForRideability,
+  scheduleSpotDirectionInference,
+} = require('../utils/spotDirectionApi');
 
 function createRideabilityRouter(db) {
   const router = express.Router();
@@ -88,13 +91,9 @@ function createRideabilityRouter(db) {
     }
 
     try {
-      await Promise.allSettled(
-        nearbySpots.map((spot) =>
-          ensureSpotDirectionInference(db, spot).catch((err) => {
-            console.warn('[direction-inference] spot failed:', spot.id, err?.message ?? err);
-          })
-        )
-      );
+      for (const spot of nearbySpots) {
+        scheduleSpotDirectionInference(db, spot);
+      }
 
       const settled = await Promise.allSettled(
         nearbySpots.map(async (spot) => {

@@ -8,15 +8,17 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="/css/styles.css?v=27" />
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            base: { DEFAULT: '#0b0f19', card: '#0f1422', border: '#1a2235' },
+    if (typeof tailwind !== 'undefined') {
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              base: { DEFAULT: '#0b0f19', card: '#0f1422', border: '#1a2235' },
+            },
           },
         },
-      },
-    };
+      };
+    }
   </script>
 </head>
 <body class="bg-base text-slate-200 min-h-screen">
@@ -385,12 +387,13 @@
   <script src="/js/spotMap.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/js/spotMapPicker.js"></script>
-  <script src="/js/observations.js?v=4"></script>
+  <script src="/js/curveTimeAxis.js?v=1"></script>
+  <script src="/js/observations.js?v=5"></script>
   <script src="/js/sportSelector.js"></script>
   <script src="/js/watchlist.js"></script>
   <script src="/js/plannerFullDay.js"></script>
-  <script src="/js/departure.js?v=15"></script>
+  <script src="/js/departure.js?v=18"></script>
   <script src="/js/spotIntel.js?v=3"></script>
-  <script src="/js/app.js?v=25"></script>
+  <script src="/js/app.js?v=27"></script>
 </body>
 </html>

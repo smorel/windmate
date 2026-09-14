@@ -73,19 +73,19 @@ async function bootstrap() {
     console.warn('[assets] Sync skipped:', err.message);
   }
 
-  if (process.env.IGETWIND_SYNC_SPOTS !== 'false') {
-    try {
-      const result = await syncIgetwindSpots(db);
-      console.log(
-        `[igetwind] Synced ${result.total} spots (${result.inserted} new, ${result.updated} updated)`
-      );
-    } catch (err) {
-      console.warn('[igetwind] Spot sync failed:', err.message);
-    }
-  }
-
   app.listen(PORT, () => {
     console.log(`Windmate running at http://localhost:${PORT}`);
+    if (process.env.IGETWIND_SYNC_SPOTS !== 'false') {
+      void syncIgetwindSpots(db)
+        .then((result) => {
+          console.log(
+            `[igetwind] Synced ${result.total} spots (${result.inserted} new, ${result.updated} updated)`
+          );
+        })
+        .catch((err) => {
+          console.warn('[igetwind] Spot sync failed:', err.message);
+        });
+    }
   });
 }
 

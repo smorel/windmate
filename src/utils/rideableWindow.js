@@ -77,18 +77,23 @@ function resolveModelHourAtTimeline(modelHours, timelineKey, options = {}) {
 function allReportingModelsRideable(indexedByKey, key, options) {
   const today = options?.today;
   const now = options?.now ?? new Date();
+  const tzOffsetMinutes = options?.tzOffsetMinutes;
   let reporting = 0;
   for (const byKey of indexedByKey) {
     const hour = byKey.get(key);
     if (!hour) continue;
-    if (today && isElapsedLocalDayHour(key, today, now) && hour.windOk === false) {
+    if (
+      today &&
+      isElapsedLocalDayHour(key, today, now, tzOffsetMinutes) &&
+      hour.windOk === false
+    ) {
       continue;
     }
     reporting += 1;
     if (!hour.rideable) return false;
   }
   if (reporting === 0) return false;
-  if (today && isElapsedLocalDayHour(key, today, now)) return false;
+  if (today && isElapsedLocalDayHour(key, today, now, tzOffsetMinutes)) return false;
   return true;
 }
 

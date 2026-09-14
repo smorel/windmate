@@ -104,10 +104,15 @@ function apiMutatesUserState(path, method) {
   );
 }
 
+const API_TIMEOUT_MS = 120_000;
+
 async function api(path, options = {}) {
+  const timeoutMs = options.timeoutMs ?? API_TIMEOUT_MS;
+  const { timeoutMs: _drop, ...fetchOptions } = options;
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
-    ...options,
+    ...fetchOptions,
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -685,9 +690,7 @@ function dashboardNoSpotsCopy(dataOrPrefs) {
 }
 
 function isPlannerFullDayActive() {
-  return Boolean(
-    plannerFullDayForecast || rideabilityData?.preferences?.planner_full_day_forecast
-  );
+  return Boolean(plannerFullDayForecast);
 }
 
 function isMatrixHideNightHoursActive() {
@@ -726,18 +729,55 @@ function syncPlannerFullDayToggleUi() {
   }
 }
 
+function syncPlannerPrefsOnRideabilityData() {
+  if (!rideabilityData?.preferences) return;
+  rideabilityData.preferences.matrix_hide_night_hours =
+    matrixHideNightHours !== undefined && matrixHideNightHours !== null
+      ? matrixHideNightHours
+        ? 1
+        : 0
+      : rideabilityData.preferences.matrix_hide_night_hours;
+  rideabilityData.preferences.planner_full_day_forecast = plannerFullDayForecast ? 1 : 0;
+}
+
+function refreshExpandedObservationCurves() {
+  if (!rideabilityData || !observationsData) return;
+  const spotEntries = rideabilitySpotEntries(rideabilityData);
+  const obsBySpot = WindmateObservations.mapBySpotId(observationsData);
+  const matrixPrefs = prefsForRanking(rideabilityData.preferences);
+  const warningsBySpot = new Map(spotEntries.map((entry) => [entry.spot.id, entry.warnings ?? []]));
+  const rideEntryBySpot = new Map(spotEntries.map((entry) => [entry.spot.id, entry]));
+  for (const root of [els.rideabilityMatrix, els.watchlistStrip]) {
+    WindmateObservations.refreshExpandedCurves(
+      root,
+      obsBySpot,
+      matrixPrefs,
+      warningsBySpot,
+      rideEntryBySpot
+    );
+  }
+}
+
+/** Re-render horizon cards, spot matrix, and open live curves after planner toggles change. */
+function refreshPlannerDisplay() {
+  if (!rideabilityData) return;
+  syncPlannerPrefsOnRideabilityData();
+  renderHorizonPlanner(rideabilityData);
+  renderRideabilityMatrix(rideabilityData, observationsData);
+  refreshExpandedObservationCurves();
+}
+
 async function persistMatrixHideNightHours(hideNightHours) {
   matrixHideNightHours = Boolean(hideNightHours);
   syncMatrixDaylightToggleUi();
+  refreshPlannerDisplay();
   try {
     const updated = await api('/api/preferences', {
       method: 'PUT',
       body: JSON.stringify({ matrix_hide_night_hours: matrixHideNightHours ? 1 : 0 }),
     });
     applyFullPreferences(updated);
-    if (rideabilityData) {
-      renderRideabilityMatrix(rideabilityData, observationsData);
-    }
+    refreshPlannerDisplay();
   } catch (err) {
     console.error(err);
   }
@@ -746,15 +786,14 @@ async function persistMatrixHideNightHours(hideNightHours) {
 async function persistPlannerFullDayForecast(onlyRideableHours) {
   plannerFullDayForecast = !Boolean(onlyRideableHours);
   syncPlannerFullDayToggleUi();
+  refreshPlannerDisplay();
   try {
     const updated = await api('/api/preferences', {
       method: 'PUT',
       body: JSON.stringify({ planner_full_day_forecast: plannerFullDayForecast ? 1 : 0 }),
     });
     applyFullPreferences(updated);
-    if (rideabilityData) {
-      renderRideabilityMatrix(rideabilityData, observationsData);
-    }
+    refreshPlannerDisplay();
   } catch (err) {
     console.error(err);
   }
@@ -1281,6 +1320,25 @@ async function refreshLiveObservations() {
   }
 }
 
+async function refreshHorizonSummaryInBackground() {
+  try {
+    const summaryRes = await api(
+      `/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}`
+    );
+    horizonSummary = summaryRes;
+    WindmateSportSelector.setState({
+      profiles: sportProfiles.map((p) => ({
+        ...p,
+        display_name: SPORT_DISPLAY_NAMES[p.sport],
+      })),
+      activeSport,
+      summary: horizonSummary,
+    });
+  } catch {
+    /* keep last sport opportunity dots */
+  }
+}
+
 async function refreshDashboard({
   silent = false,
   bypassCache = false,
@@ -1307,38 +1365,45 @@ async function refreshDashboard({
 
     const { query, watchedQuery, refreshQuery } = observationsQueryString({ bypassCache });
 
-    const summaryRequest = fetchHorizonSummary
-      ? api(
-          `/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}${refreshQuery}`
-        ).catch(() => null)
-      : Promise.resolve(horizonSummary);
-
     const includeSpotIds = rideabilityIncludeSpotIds();
     const includeSpotsQuery = includeSpotIds.length
       ? `&includeSpotIds=${encodeURIComponent(includeSpotIds.join(','))}`
       : '';
 
-    let rideRes = await api(`/api/rideability?${query}${includeSpotsQuery}${refreshQuery}`);
+    const rideabilityUrl = `/api/rideability?${query}${includeSpotsQuery}${refreshQuery}`;
+    const observationsUrl = `/api/observations?${query}${watchedQuery}${refreshQuery}`;
+    const summaryUrl = `/api/sports/horizon-summary?lat=${userLocation.lat}&lng=${userLocation.lng}${refreshQuery}`;
+
+    const rideabilityPromise = api(rideabilityUrl).catch((err) => {
+      throw err;
+    });
+    const observationsPromise = api(observationsUrl).catch(() => ({ spots: [] }));
+    const summaryPromise = fetchHorizonSummary
+      ? api(summaryUrl).catch(() => null)
+      : Promise.resolve(horizonSummary);
+
+    let rideRes = await rideabilityPromise;
+    if (generation !== dashboardRefreshGeneration) return;
     if (
-      generation === dashboardRefreshGeneration &&
       rideRes?.forecast_unavailable &&
       !bypassCache &&
       !refreshQuery
     ) {
       rideRes = await api(`/api/rideability?${query}${includeSpotsQuery}&refresh=1`);
+      if (generation !== dashboardRefreshGeneration) return;
     }
 
-    const [obsRes, summaryRes] = await Promise.all([
-      api(`/api/observations?${query}${watchedQuery}${refreshQuery}`).catch(() => ({ spots: [] })),
-      summaryRequest,
-    ]);
-    if (generation !== dashboardRefreshGeneration) return;
-
     rideabilityData = rideRes;
-    observationsData = obsRes;
-    if (summaryRes != null) horizonSummary = summaryRes;
     activeSport = rideabilityData.preferences?.sport ?? activeSport;
     rideabilityData.preferences = prefsForRanking(rideabilityData.preferences);
+    if (rideabilityData.preferences.planner_full_day_forecast !== undefined) {
+      plannerFullDayForecast = Boolean(rideabilityData.preferences.planner_full_day_forecast);
+    }
+    if (rideabilityData.preferences.matrix_hide_night_hours !== undefined) {
+      matrixHideNightHours = Boolean(rideabilityData.preferences.matrix_hide_night_hours);
+    }
+    syncMatrixDaylightToggleUi();
+    syncPlannerFullDayToggleUi();
     rankCriteriaOrder = rideabilityData.preferences.rank_criteria_order;
     favoriteSpotIds = normalizeFavoriteSpotIds(rideabilityData.preferences.favorite_spot_ids);
     WindmateSportSelector.setState({
@@ -1355,6 +1420,24 @@ async function refreshDashboard({
       selectedDayDate = WindmateForecastTime.planningToday();
     }
     renderHorizonPlanner(rideabilityData);
+    renderRideabilityMatrix(rideabilityData, observationsData);
+    if (generation === dashboardRefreshGeneration && showLoading) {
+      setDashboardPending(false);
+    }
+
+    const [obsRes, summaryRes] = await Promise.all([observationsPromise, summaryPromise]);
+    if (generation !== dashboardRefreshGeneration) return;
+
+    observationsData = obsRes;
+    if (summaryRes != null) horizonSummary = summaryRes;
+    WindmateSportSelector.setState({
+      profiles: sportProfiles.map((p) => ({
+        ...p,
+        display_name: SPORT_DISPLAY_NAMES[p.sport],
+      })),
+      activeSport,
+      summary: horizonSummary,
+    });
     applyObservationsToUi(observationsData);
     lastDashboardFetchAt = Date.now();
     restoreScrollAfterSilentRefresh(scrollY);
@@ -1364,7 +1447,7 @@ async function refreshDashboard({
     els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
     els.rideabilityMatrix.innerHTML = `<p class="text-red-400">${msg}</p>`;
   } finally {
-    if (generation === dashboardRefreshGeneration && showLoading) {
+    if (generation === dashboardRefreshGeneration) {
       setDashboardPending(false);
     }
   }
@@ -1906,6 +1989,24 @@ function getDayHorizonWindStats(spots, dateStr, prefs) {
   return aggregateRideableWindStats(statsList);
 }
 
+/** Wind/gust range across visible (daylight-filtered) hours when full-day mode is on. */
+function getDayHorizonPlanningWindStats(spots, dateStr) {
+  const statsList = [];
+  for (const entry of spots) {
+    const dayHours = getSpotDayData(entry, dateStr)?.hours ?? [];
+    const timeline = matrixTimelineHours(dayHours);
+    const stats = WindmatePlannerFullDay.buildPlanningHourConditionStats(timeline);
+    if (!stats) continue;
+    statsList.push({
+      minWind: stats.windMin,
+      maxWind: stats.windMax,
+      minGust: stats.gustMin,
+      maxGust: stats.gustMax,
+    });
+  }
+  return aggregateRideableWindStats(statsList);
+}
+
 function countSpotsWithSharedWindows(spots, dateStr, prefs) {
   return spots.filter((entry) => getConsensusRideableHours(entry, dateStr, prefs) > 0).length;
 }
@@ -1960,12 +2061,15 @@ function renderHorizonBustSticker() {
       </span>`;
 }
 
-function renderHorizonWindBlock(spots, dateStr, prefs, sportColor, rideableMax) {
-  if (rideableMax <= 0) {
+function renderHorizonWindBlock(spots, dateStr, prefs, sportColor, rideableMax, fullDayMode) {
+  if (rideableMax <= 0 && !fullDayMode) {
     return `<div class="mt-3 text-sm text-slate-500">${WindmateCopy.horizon.noRideableWind}</div>`;
   }
 
-  const stats = getDayHorizonWindStats(spots, dateStr, prefs);
+  const stats =
+    rideableMax > 0
+      ? getDayHorizonWindStats(spots, dateStr, prefs)
+      : getDayHorizonPlanningWindStats(spots, dateStr);
   if (!stats) {
     return `<div class="mt-3 text-sm text-slate-500">${WindmateCopy.horizon.noRideableWind}</div>`;
   }
@@ -2056,6 +2160,8 @@ function renderHorizonPlanner(data) {
     selectedDayDate = WindmateForecastTime.defaultPlannerDayDate(days);
   }
 
+  const fullDayMode = isPlannerFullDayActive();
+
   els.horizonPlanner.innerHTML = days
     .map((day, i) => {
       const dayIndex = i + 1;
@@ -2131,7 +2237,8 @@ function renderHorizonPlanner(data) {
           day.date,
           data.preferences,
           sportColor,
-          rideableRange.max
+          rideableRange.max,
+          fullDayMode
         );
         rideableFooter = `
           <div class="mt-2 text-xs text-slate-400" title="${escapeHtml(WindmateCopy.horizon.forecastProbabilityTitle)}">${rideableLabel} · ${pct}%</div>
@@ -3042,6 +3149,22 @@ function renderRideabilityMatrix(data, observations) {
       resolveSessionVerdictForDay(row.entry, selectedDayDate, matrixPrefs),
     ])
   );
+  const departureContext = {
+    obsBySpot,
+    prefs: matrixPrefs,
+    warningsBySpot,
+    rideEntryBySpot: new Map(spotEntries.map((entry) => [entry.spot.id, entry])),
+  };
+  WindmateDeparture.hydrateMatrixDeparturesSync(
+    els.rideabilityMatrix,
+    spotIds,
+    selectedDayDate,
+    userLocation.lat,
+    userLocation.lng,
+    sessionVerdictBySpot,
+    data.preferences.min_rideable_window_hours,
+    departureContext
+  );
   WindmateDeparture.loadForMatrix(
     els.rideabilityMatrix,
     spotIds,
@@ -3051,12 +3174,7 @@ function renderRideabilityMatrix(data, observations) {
     data.preferences.sport,
     sessionVerdictBySpot,
     data.preferences.min_rideable_window_hours,
-    {
-      obsBySpot,
-      prefs: matrixPrefs,
-      warningsBySpot,
-      rideEntryBySpot: new Map(spotEntries.map((entry) => [entry.spot.id, entry])),
-    }
+    departureContext
   );
   WindmateSpotIntel.bindDrawers(els.rideabilityMatrix, data.preferences.sport);
 }
@@ -3114,15 +3232,18 @@ function showAppToast(message) {
   } else {
     await loadPreferences();
   }
-  await WindmateLocalUserState.captureFromServer();
-  await WindmateWatchlist.load();
+  await Promise.all([
+    WindmateWatchlist.load(),
+    WindmateLocalUserState.captureFromServer().catch(() => {}),
+  ]);
   const origin = WindmatePlanningLocations.getActiveCoords();
   if (origin) {
     setPlanningOrigin(origin.lat, origin.lng);
   } else {
     els.locationStatus.textContent = WindmateCopy.geo.defaultMontreal;
   }
-  await refreshDashboard();
+  await refreshDashboard({ includeHorizonSummary: false });
+  void refreshHorizonSummaryInBackground();
   initHourlyDashboardRefresh();
   WindmatePlanningLocations.tryLaunchGpsSnap();
   initGeolocation();

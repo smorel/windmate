@@ -7,8 +7,9 @@ const { getPrimaryHourlyForecast } = require('./weather');
 const { computeSessionScore, longestConsensusWindowLength } = require('./sessionRank');
 const { parseMinRideableWindowHours } = require('../utils/rideableWindow');
 const { localDateString } = require('../utils/forecastTime');
+const { getSpotById } = require('../db');
 const {
-  hydrateSpotDirectionInference,
+  scheduleSpotDirectionInference,
   idealDirectionsForRideability,
   buildSpotDirectionFields,
 } = require('../utils/spotDirectionApi');
@@ -74,7 +75,8 @@ function hasHorizonOpportunity(
  * @param {import('better-sqlite3').Database} db
  */
 async function buildSpotRideabilityEntry(db, spot, prefs, options = {}) {
-  const freshSpot = await hydrateSpotDirectionInference(db, spot);
+  scheduleSpotDirectionInference(db, spot);
+  const freshSpot = getSpotById(db, spot.id) ?? spot;
   const idealDirections = idealDirectionsForRideability(freshSpot);
   const forecast = await fetchForecast(db, spot.id, spot, options);
   const contextData = await fetchOpenMeteoContext(db, spot.id, spot, options);

@@ -120,18 +120,35 @@ const WindmateObservations = (() => {
     return bf?.color ?? '#c64e36';
   }
 
-  function nowMarkerLayout(padL, innerW) {
+  function planningNowX(padL, innerW, mode, slotStarts) {
+    const nowFrac = fractionalHourNow();
+    if (mode !== 'daylight' || !slotStarts?.length) {
+      return xFromDayHour(padL, innerW, nowFrac);
+    }
+    const n = slotStarts.length;
+    for (let i = 0; i < n; i += 1) {
+      const start = slotStarts[i];
+      if (nowFrac >= start && nowFrac < start + 1) {
+        return padL + ((i + (nowFrac - start)) / n) * innerW;
+      }
+    }
+    if (nowFrac < slotStarts[0]) return padL;
+    return padL + innerW;
+  }
+
+  function nowMarkerLayout(padL, innerW, curveNowMeta) {
     const hour = fractionalHourNow();
+    const x = planningNowX(padL, innerW, curveNowMeta?.mode, curveNowMeta?.slotStarts);
     return {
-      x: xFromDayHour(padL, innerW, hour),
+      x,
       timeLabel: formatFractionalHour(hour),
     };
   }
 
-  function renderNowMarker(showNow, pad, innerH, innerW) {
+  function renderNowMarker(showNow, pad, innerH, curveNowMeta) {
     if (!showNow) return '';
     const color = nowMarkerBeaufortColor();
-    const { x, timeLabel } = nowMarkerLayout(pad.l, innerW);
+    const { x, timeLabel } = nowMarkerLayout(pad.l, curveNowMeta.innerW, curveNowMeta);
     const labelY = pad.t - 5;
     return `<g class="curve-now-marker-group" pointer-events="none">
       <text class="curve-now-marker__label" x="${x}" y="${labelY}" text-anchor="middle" fill="${color}">${timeLabel}</text>
@@ -139,14 +156,24 @@ const WindmateObservations = (() => {
     </g>`;
   }
 
+  function parseCurveNowMeta(chartRoot) {
+    const innerW = Number(chartRoot.dataset.curveInnerW);
+    const mode = chartRoot.dataset.curveNowMode ?? 'full-day';
+    const startsRaw = chartRoot.dataset.curveSlotStarts ?? '';
+    const slotStarts = startsRaw
+      ? startsRaw.split(',').map((v) => Number(v)).filter((v) => Number.isFinite(v))
+      : [];
+    return { innerW, mode, slotStarts };
+  }
+
   function updateAllNowMarkers() {
     document.querySelectorAll('.curve-chart[data-curve-show-now="1"]').forEach((chartRoot) => {
       const padL = Number(chartRoot.dataset.curvePadL);
-      const innerW = Number(chartRoot.dataset.curveInnerW);
       const padT = Number(chartRoot.dataset.curvePadT);
       const innerH = Number(chartRoot.dataset.curveInnerH);
-      if (!Number.isFinite(padL) || !Number.isFinite(innerW)) return;
-      const { x, timeLabel } = nowMarkerLayout(padL, innerW);
+      const curveNowMeta = parseCurveNowMeta(chartRoot);
+      if (!Number.isFinite(padL) || !Number.isFinite(curveNowMeta.innerW)) return;
+      const { x, timeLabel } = nowMarkerLayout(padL, curveNowMeta.innerW, curveNowMeta);
       const line = chartRoot.querySelector('.curve-now-marker');
       const label = chartRoot.querySelector('.curve-now-marker__label');
       if (!line || !label) return;
@@ -397,21 +424,23 @@ const WindmateObservations = (() => {
     return hours.filter((hour) => hour.inRideableWindow);
   }
 
-  function renderRideableWindowBands(windowHours, xSlotStart, pad, innerH, innerW) {
-    const barW = innerW / 24;
+  function renderRideableWindowBands(windowHours, xScale, pad, innerH) {
+    const barW = xScale.barWidth;
     return windowHours
       .map((hour) => {
-        const x = xSlotStart(hour.time);
+        const x = xScale.xForSlotStart(hour.time);
+        if (x == null) return '';
         return `<rect x="${x}" y="${pad.t}" width="${barW}" height="${innerH}" fill="rgba(16,185,129,0.18)" stroke="#10b981" stroke-width="0.75" stroke-opacity="0.35"/>`;
       })
       .join('');
   }
 
-  function renderPlannerWindowBand(plannerRange, xSlotStart, pad, innerH, innerW) {
+  function renderPlannerWindowBand(plannerRange, xScale, pad, innerH) {
     if (!plannerRange?.start || !plannerRange?.endExclusive) return '';
-    const barW = innerW / 24;
-    const x1 = xSlotStart(plannerRange.start);
-    const x2 = xSlotStart(plannerRange.endExclusive);
+    const barW = xScale.barWidth;
+    const x1 = xScale.xForSlotStart(plannerRange.start);
+    const x2 = xScale.xForSlotStart(plannerRange.endExclusive);
+    if (x1 == null || x2 == null) return '';
     const w = Math.max(x2 - x1, barW);
     const y1 = pad.t;
     const y2 = pad.t + innerH;
@@ -462,6 +491,22 @@ const WindmateObservations = (() => {
         gusts: current.gusts ?? current.windSpeed,
       },
     ];
+  }
+
+  function resolveCurveForecastHours(obsForecast, rideEntry, sessionDate) {
+    if (rideEntry && sessionDate) {
+      const fromEntry = WindmateSessionRank.getDayHours(rideEntry, sessionDate, getModelDayHours);
+      if (fromEntry.length) return fromEntry;
+    }
+    return obsForecast ?? [];
+  }
+
+  function filterActualForCurve(actual, hideNightHours, visibleKeys) {
+    if (!hideNightHours || !visibleKeys?.size) return actual;
+    return actual.filter((point) => {
+      if (point.time === LIVE_NOW_TIME_KEY) return true;
+      return visibleKeys.has(WindmateRideableWindow.hourTimeKey(point.time));
+    });
   }
 
   function fractionalHourSlotStart(time) {
@@ -523,7 +568,7 @@ const WindmateObservations = (() => {
     const tooltip = chartRoot.querySelector('.curve-chart-tooltip');
     if (!svg || !hit || !crosshair || !tooltip) return;
 
-    const { pad, innerW, innerH, height, actual, forecast } = layout;
+    const { pad, innerW, innerH, height, actual, forecast, xScale } = layout;
 
     const hide = () => {
       crosshair.setAttribute('opacity', '0');
@@ -533,8 +578,7 @@ const WindmateObservations = (() => {
     const hourFromClientX = (clientX) => {
       const rect = svg.getBoundingClientRect();
       const localX = ((clientX - rect.left) / rect.width) * layout.width;
-      const clamped = Math.max(pad.l, Math.min(pad.l + innerW, localX));
-      return ((clamped - pad.l) / innerW) * 24;
+      return xScale.hourFromClientX(localX);
     };
 
     hit.addEventListener('mousemove', (e) => {
@@ -590,15 +634,14 @@ const WindmateObservations = (() => {
     chartRoot.addEventListener('mouseleave', hide);
   }
 
-  function renderHazardBands(warnings, pad, innerH, innerW) {
-    const barW = Math.max(innerW / 24, 8);
+  function renderHazardBands(warnings, xScale, pad, innerH) {
+    const barW = Math.max(xScale.barWidth, 8);
     return warnings
       .filter((w) => w.eventTime)
       .map((w) => {
-        const center = WindmateForecastTime.parseForecastParts(w.eventTime)
-          ? WindmateForecastTime.fractionalHourSlotCenter(w.eventTime)
-          : fractionalHourFromTime(w.eventTime);
-        const x = xFromDayFraction(pad.l, innerW, center) - barW / 2;
+        const xCenter = xScale.xForTime(w.eventTime);
+        if (xCenter == null) return '';
+        const x = xCenter - barW / 2;
         const fill =
           w.type === 'storm_approaching' ? 'rgba(239,68,68,0.22)' : 'rgba(251,191,36,0.2)';
         const stroke = w.type === 'storm_approaching' ? '#f87171' : '#fbbf24';
@@ -612,7 +655,7 @@ const WindmateObservations = (() => {
     const container = panel;
 
     const actualRaw = obsEntry.today?.actual ?? [];
-    const forecast = obsEntry.today?.forecast ?? [];
+    const obsForecast = obsEntry.today?.forecast ?? [];
     const warnings = options.warnings ?? obsEntry.today?.warnings ?? [];
     const width = 640;
     const height = 156;
@@ -620,10 +663,37 @@ const WindmateObservations = (() => {
     const innerW = width - pad.l - pad.r;
     const innerH = height - pad.t - pad.b;
 
-    const sessionDate = options.sessionDate ?? forecast[0]?.time?.slice(0, 10);
+    const sessionDate =
+      options.sessionDate ?? obsForecast[0]?.time?.slice(0, 10) ?? actualRaw[0]?.time?.slice(0, 10);
+    const forecastBase = resolveCurveForecastHours(obsForecast, options.rideEntry, sessionDate);
+    const hideNightHours =
+      prefs?.matrix_hide_night_hours !== undefined && prefs?.matrix_hide_night_hours !== null
+        ? Boolean(prefs.matrix_hide_night_hours)
+        : true;
+    const timelineSlots = WindmateCurveTimeAxis.filterCurveDaylightHours(
+      forecastBase,
+      hideNightHours
+    );
+    const forecast = timelineSlots.length ? timelineSlots : forecastBase;
+    const visibleKeys = new Set(forecast.map((h) => WindmateRideableWindow.hourTimeKey(h.time)));
+    const xScale = WindmateCurveTimeAxis.createCurveXScale({
+      slots: forecast,
+      padL: pad.l,
+      innerW,
+      hideNightHours,
+    });
+    const slotStarts = forecast
+      .map((h) => fractionalHourSlotStart(h.time))
+      .filter((v) => v != null);
+
     const showNow = isTodayCurveDate(sessionDate, forecast);
     const actualTrimmed = trimActualThroughPlanningNow(actualRaw, sessionDate, showNow);
-    const actual = actualSeriesThroughNow(actualTrimmed, obsEntry.current, showNow);
+    const actualFiltered = filterActualForCurve(
+      actualSeriesThroughNow(actualTrimmed, obsEntry.current, showNow),
+      hideNightHours,
+      visibleKeys
+    );
+    const actual = actualFiltered;
 
     const allSpeeds = [
       ...actual.map((p) => p.windSpeed),
@@ -637,34 +707,32 @@ const WindmateObservations = (() => {
     const minY = 0;
     const { ticks: yTicks, top: maxY } = buildYAxisTicks(rawMaxY);
 
-    const xAtDayFraction = (dayFraction) => xFromDayFraction(pad.l, innerW, dayFraction);
-
-    const xSlotStart = (time) =>
-      xAtDayFraction(fractionalHourSlotStart(time));
-
-    const xForSeriesPoint = (time) =>
-      xAtDayFraction(fractionalHourFromTime(time));
+    const xForSeriesPoint = (time) => {
+      if (time === LIVE_NOW_TIME_KEY) {
+        return planningNowX(pad.l, innerW, xScale.mode, slotStarts);
+      }
+      const x = xScale.xForTime(time);
+      if (x != null) return x;
+      return xFromDayFraction(pad.l, innerW, fractionalHourFromTime(time));
+    };
     const yForSpeed = (speed) => pad.t + innerH - ((speed - minY) / (maxY - minY)) * innerH;
 
-    const actualPath = actual
-      .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
-      .join(' ');
+    const pathFromSeries = (points, gust = false) => {
+      const segments = [];
+      for (const p of points) {
+        const x = xForSeriesPoint(p.time);
+        if (x == null) continue;
+        const speed = gust ? (p.gusts ?? p.windSpeed) : p.windSpeed;
+        const y = yForSpeed(speed);
+        segments.push(`${segments.length === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`);
+      }
+      return segments.join(' ');
+    };
 
-    const actualGustPath = actual
-      .map((p, i) =>
-        `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.gusts ?? p.windSpeed).toFixed(1)}`
-      )
-      .join(' ');
-
-    const forecastPath = forecast
-      .map((p, i) => `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.windSpeed).toFixed(1)}`)
-      .join(' ');
-
-    const forecastGustPath = forecast
-      .map((p, i) =>
-        `${i === 0 ? 'M' : 'L'}${xForSeriesPoint(p.time).toFixed(1)},${yForSpeed(p.gusts ?? p.windSpeed).toFixed(1)}`
-      )
-      .join(' ');
+    const actualPath = pathFromSeries(actual, false);
+    const actualGustPath = pathFromSeries(actual, true);
+    const forecastPath = pathFromSeries(forecast, false);
+    const forecastGustPath = pathFromSeries(forecast, true);
 
     const bandTop = yForSpeed(prefs.max_gust_knots);
     const bandBottom = yForSpeed(prefs.min_wind_knots);
@@ -680,21 +748,29 @@ const WindmateObservations = (() => {
     );
     const rideableWindowBands = renderRideableWindowBands(
       rideableWindowHours,
-      xSlotStart,
+      xScale,
       pad,
-      innerH,
-      innerW
+      innerH
     );
-    const plannerWindowBand = renderPlannerWindowBand(plannerRange, xSlotStart, pad, innerH, innerW);
-    const hazardBands = renderHazardBands(warnings, pad, innerH, innerW);
+    const plannerWindowBand = renderPlannerWindowBand(plannerRange, xScale, pad, innerH);
+    const hazardBands = renderHazardBands(warnings, xScale, pad, innerH);
 
     const weatherBlocks = forecast
       .filter((h) => WindmateWeatherHazards.hasForecastRain(h))
       .map((h) => {
-        const x = xSlotStart(h.time);
-        const w = innerW / 24;
+        const x = xScale.xForSlotStart(h.time);
+        if (x == null) return '';
+        const w = xScale.barWidth;
         return `<rect x="${x}" y="${pad.t}" width="${w}" height="${innerH}" fill="rgba(127,29,29,0.2)"/>`;
       })
+      .join('');
+
+    const axisLabels = xScale.axisLabels();
+    const axisLabelMarkup = axisLabels
+      .map(
+        ({ x, label }) =>
+          `<text x="${x}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">${label}</text>`
+      )
       .join('');
 
     const yAxis = yTicks
@@ -727,12 +803,10 @@ const WindmateObservations = (() => {
           <path d="${forecastPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/>
           ${actualGustPath ? `<path d="${actualGustPath}" fill="none" stroke="#6ee7b7" stroke-width="1.75" stroke-dasharray="2 3" opacity="0.95"/>` : ''}
           ${actualPath ? `<path d="${actualPath}" fill="none" stroke="#10b981" stroke-width="2.5"/>` : ''}
-          ${renderNowMarker(showNow, pad, innerH, innerW)}
+          ${renderNowMarker(showNow, pad, innerH, { innerW, mode: xScale.mode, slotStarts })}
           <line class="curve-crosshair" x1="${pad.l}" y1="${pad.t}" x2="${pad.l}" y2="${pad.t + innerH}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>
           <rect class="curve-hit-area" x="${pad.l}" y="${pad.t}" width="${innerW}" height="${innerH}" fill="transparent"/>
-          <text x="${xAtDayFraction(0.5)}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">00:00</text>
-          <text x="${xAtDayFraction(12.5)}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">12:00</text>
-          <text x="${xAtDayFraction(23.5)}" y="${height - 4}" class="fill-slate-500" font-size="10" text-anchor="middle">23:00</text>
+          ${axisLabelMarkup}
         </svg>
         <div class="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500 mt-1">
           <span><span class="inline-block w-4 border-t-2 border-emerald-500 align-middle mr-1"></span>Actual wind</span>
@@ -756,10 +830,23 @@ const WindmateObservations = (() => {
         chartRoot.dataset.curveInnerW = String(innerW);
         chartRoot.dataset.curvePadT = String(pad.t);
         chartRoot.dataset.curveInnerH = String(innerH);
+        chartRoot.dataset.curveNowMode = xScale.mode;
+        chartRoot.dataset.curveSlotStarts = slotStarts.join(',');
       } else {
         chartRoot.removeAttribute('data-curve-show-now');
+        chartRoot.removeAttribute('data-curve-now-mode');
+        chartRoot.removeAttribute('data-curve-slot-starts');
       }
-      bindCurveHover(chartRoot, { width, height, pad, innerW, innerH, actual, forecast });
+      bindCurveHover(chartRoot, {
+        width,
+        height,
+        pad,
+        innerW,
+        innerH,
+        actual,
+        forecast,
+        xScale,
+      });
     }
   }
 
@@ -772,7 +859,7 @@ const WindmateObservations = (() => {
     return Boolean(card?.querySelector('[data-departure-group]'));
   }
 
-  /** Planner band must match /api/departure — no client-side guess on matrix cards. */
+  /** Prefer API/grid/cache; otherwise same client window pick as rideability (matches matrix fallback). */
   function resolvePlannerRangeForCurve(card, spotId, sessionDate, rideEntry, prefs) {
     const fromGrid = plannerRangeFromMatrixGrid(card);
     if (fromGrid) return fromGrid;
@@ -780,8 +867,9 @@ const WindmateObservations = (() => {
       const fromCache = WindmateDeparture.cachedPlannerRange(spotId, sessionDate);
       if (fromCache) return fromCache;
     }
-    if (cardExpectsDeparturePlan(card)) return null;
-    if (sessionDate && rideEntry && prefs) return resolvePlannerWindowRange(rideEntry, sessionDate, prefs);
+    if (sessionDate && rideEntry && prefs) {
+      return resolvePlannerWindowRange(rideEntry, sessionDate, prefs);
+    }
     return null;
   }
 

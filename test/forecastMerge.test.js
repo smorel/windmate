@@ -89,4 +89,31 @@ describe('allReportingModelsRideable', () => {
       false
     );
   });
+
+  it('uses client tzOffset for elapsed hours when host timezone differs', () => {
+    const key = '2026-09-14T10:00';
+    const edtOffset = 240;
+    const now = new Date(Date.UTC(2026, 8, 14, 15, 30, 0));
+    const good = new Map([[key, { rideable: true, windOk: true }]]);
+
+    assert.equal(
+      allReportingModelsRideable([good], key, {
+        today: '2026-09-14',
+        now,
+        tzOffsetMinutes: edtOffset,
+      }),
+      false
+    );
+
+    const futureKey = '2026-09-14T16:00';
+    const futureGood = new Map([[futureKey, { rideable: true, windOk: true }]]);
+    assert.equal(
+      allReportingModelsRideable([futureGood], futureKey, {
+        today: '2026-09-14',
+        now,
+        tzOffsetMinutes: edtOffset,
+      }),
+      true
+    );
+  });
 });

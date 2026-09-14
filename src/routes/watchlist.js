@@ -112,9 +112,12 @@ function createWatchlistRouter(db) {
     };
   }
 
-  router.get('/', async (_req, res) => {
+  router.get('/', async (req, res) => {
     try {
       const sessions = getWatchedSessions(db);
+      if (req.query.light === '1') {
+        return res.json({ sessions });
+      }
       const enriched = await Promise.all(sessions.map((s) => enrichSession(s)));
       res.json({ sessions: enriched });
     } catch (err) {

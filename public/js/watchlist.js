@@ -1,8 +1,128 @@
 /** Session watchlist — planner pins and session-day panel */
 const WindmateWatchlist = (() => {
   let sessions = [];
+  let sessionsSyncToken = 0;
+  /** @type {Map<string, boolean>} desired watched state while UI/server may differ */
+  const watchIntent = new Map();
+  /** Deletes started from strip × before server confirms */
+  const pendingServerDeletes = [];
+  let serverSyncTail = Promise.resolve();
+  let changeNotifyRaf = 0;
   let onChange = null;
   let onNavigate = null;
+  let onStripError = null;
+  let drainGeneration = 0;
+
+  function watchlistDebugEnabled() {
+    if (typeof window === 'undefined') return false;
+    if (window.WINDMATE_DEBUG_WATCHLIST === true) return true;
+    try {
+      return window.localStorage?.getItem('windmate.debugWatchlist') === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function wlLog(event, detail) {
+    if (!watchlistDebugEnabled()) return;
+    const stamp = performance.now().toFixed(1);
+    console.debug(`[watchlist ${stamp}ms] ${event}`, detail ?? '');
+  }
+
+  function wlSnapshot() {
+    return {
+      sessions: sessions.length,
+      syncToken: sessionsSyncToken,
+      intent: [...watchIntent.entries()].map(([k, v]) => ({ key: k, desired: v })),
+      pendingDeletes: pendingServerDeletes.map((j) => ({ id: j.id, key: j.key })),
+      rows: sessions.map((s) => ({
+        id: s.id,
+        spot: s.spot_id,
+        date: s.session_date,
+        sport: s.sport,
+      })),
+    };
+  }
+
+  function bumpSessionsSync() {
+    sessionsSyncToken += 1;
+    return sessionsSyncToken;
+  }
+
+  function getSessionsSyncToken() {
+    return sessionsSyncToken;
+  }
+
+  function sessionKey(spotId, sessionDate, sport) {
+    return `${spotId}|${sessionDate}|${sport}`;
+  }
+
+  function parseSessionKey(key) {
+    const parts = key.split('|');
+    return { spotId: parts[0], sessionDate: parts[1], sport: parts[2] };
+  }
+
+  function escapeHtmlAttr(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;');
+  }
+
+  function isPendingId(id) {
+    return typeof id === 'string' && id.startsWith('pending:');
+  }
+
+  function findSessionRow(spotId, sessionDate, sport) {
+    return sessions.find(
+      (s) => s.spot_id === spotId && s.session_date === sessionDate && s.sport === sport
+    );
+  }
+
+  function notifyChange() {
+    if (onChange) onChange();
+  }
+
+  function notifyChangeDebounced() {
+    if (changeNotifyRaf) return;
+    changeNotifyRaf = window.requestAnimationFrame(() => {
+      changeNotifyRaf = 0;
+      notifyChange();
+    });
+  }
+
+  function scheduleServerSync() {
+    wlLog('scheduleServerSync', wlSnapshot());
+    serverSyncTail = serverSyncTail
+      .then(() => drainServerSync())
+      .catch((err) => {
+        wlLog('drainServerSync rejected', { message: err?.message, stack: err?.stack });
+        console.error(err);
+      });
+    return serverSyncTail;
+  }
+
+  function upsertSessionRow(row) {
+    if (!row?.id) return;
+    sessions = sessions.filter(
+      (s) =>
+        !(
+          s.spot_id === row.spot_id &&
+          s.session_date === row.session_date &&
+          s.sport === row.sport
+        )
+    );
+    sessions.push(row);
+  }
+
+  async function reconcileSessions(syncToken) {
+    try {
+      await load({ light: true, syncToken });
+      if (syncToken === sessionsSyncToken) notifyChange();
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   const GO_NO_GO_CLASS = {
     go: 'go-no-go-pill--go',
@@ -35,25 +155,93 @@ const WindmateWatchlist = (() => {
     return { state, reason };
   }
 
-  async function load() {
-    const data = await fetch('/api/watchlist').then((r) => r.json());
+  async function load({ light = false, syncToken = sessionsSyncToken } = {}) {
+    const url = light ? '/api/watchlist?light=1' : '/api/watchlist';
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error ?? res.statusText);
+    }
+    const data = await res.json();
+    if (syncToken !== sessionsSyncToken) {
+      wlLog('load dropped (stale token)', { syncToken, current: sessionsSyncToken, light });
+      return sessions;
+    }
     sessions = data.sessions ?? [];
+    wlLog('load applied', { light, count: sessions.length, syncToken });
     return sessions;
   }
 
   function isWatched(spotId, sessionDate, sport) {
-    return sessions.some(
-      (s) => s.spot_id === spotId && s.session_date === sessionDate && s.sport === sport
-    );
+    const key = sessionKey(spotId, sessionDate, sport);
+    if (watchIntent.has(key)) return watchIntent.get(key);
+    return Boolean(findSessionRow(spotId, sessionDate, sport));
   }
 
   function watchId(spotId, sessionDate, sport) {
-    return sessions.find(
-      (s) => s.spot_id === spotId && s.session_date === sessionDate && s.sport === sport
-    )?.id;
+    return findSessionRow(spotId, sessionDate, sport)?.id;
   }
 
-  async function add(spotId, sessionDate, sport) {
+  function applyLocalWatched(spotId, sessionDate, sport, watched, spotName) {
+    const row = findSessionRow(spotId, sessionDate, sport);
+    if (watched) {
+      if (row) return;
+      const key = sessionKey(spotId, sessionDate, sport);
+      const label =
+        spotName?.trim() ||
+        spotNameById.get(String(spotId)) ||
+        row?.spot_name ||
+        '';
+      sessions.push({
+        id: `pending:${key}`,
+        spot_id: spotId,
+        session_date: sessionDate,
+        sport,
+        spot_name: label,
+      });
+      bumpSessionsSync();
+      return;
+    }
+    if (!row) return;
+    sessions = sessions.filter(
+      (s) =>
+        !(
+          s.spot_id === spotId &&
+          s.session_date === sessionDate &&
+          s.sport === sport
+        )
+    );
+    bumpSessionsSync();
+  }
+
+  function queueServerDeleteForRow(row, key) {
+    if (!row || isPendingId(row.id)) return;
+    if (pendingServerDeletes.some((j) => j.id === row.id)) return;
+    pendingServerDeletes.push({
+      id: row.id,
+      key,
+      spotId: row.spot_id,
+      sessionDate: row.session_date,
+      sport: row.sport,
+      rollbackSnapshot: [...sessions],
+    });
+  }
+
+  function setWatchDesired(spotId, sessionDate, sport, watched, spotName) {
+    const key = sessionKey(spotId, sessionDate, sport);
+    if (spotName) rememberSpotName(spotId, spotName);
+    if (!watched) {
+      queueServerDeleteForRow(findSessionRow(spotId, sessionDate, sport), key);
+    }
+    watchIntent.set(key, watched);
+    applyLocalWatched(spotId, sessionDate, sport, watched, spotName);
+    wlLog('setWatchDesired', { spotId, sessionDate, sport, watched, ...wlSnapshot() });
+    notifyChangeDebounced();
+    return scheduleServerSync();
+  }
+
+  async function serverAdd(spotId, sessionDate, sport, key) {
+    wlLog('serverAdd start', { spotId, sessionDate, sport, key, intent: watchIntent.get(key) });
     const res = await fetch('/api/watchlist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -61,29 +249,213 @@ const WindmateWatchlist = (() => {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        const syncToken = sessionsSyncToken;
+        await load({ light: true, syncToken });
+        if (watchIntent.get(key) === false) {
+          const id = watchId(spotId, sessionDate, sport);
+          if (id && !isPendingId(id)) {
+            await serverDelete(id, [...sessions], key);
+          }
+        } else {
+          watchIntent.delete(key);
+        }
+        notifyChangeDebounced();
+        return;
+      }
+      wlLog('serverAdd failed', { status: res.status, error: err.error ?? res.statusText });
       throw new Error(err.error ?? res.statusText);
     }
-    await load();
+    const created = await res.json();
+    wlLog('serverAdd ok', { id: created.id, key });
+    if (watchIntent.get(key) === false) {
+      await fetch(`/api/watchlist/${encodeURIComponent(created.id)}`, { method: 'DELETE' });
+      watchIntent.delete(key);
+      sessions = sessions.filter(
+        (s) =>
+          !(
+            s.spot_id === spotId &&
+            s.session_date === sessionDate &&
+            s.sport === sport
+          )
+      );
+      bumpSessionsSync();
+      notifyChangeDebounced();
+      return;
+    }
+    upsertSessionRow(created);
+    watchIntent.delete(key);
+    bumpSessionsSync();
     if (typeof WindmateLocalUserState !== 'undefined') {
       WindmateLocalUserState.noteMutation();
     }
-    if (onChange) onChange();
-    return res.json();
+    notifyChangeDebounced();
   }
 
+  async function serverDelete(id, rollbackSnapshot, key) {
+    wlLog('serverDelete start', { id, key, queueHead: pendingServerDeletes[0]?.id });
+    try {
+      const res = await fetch(`/api/watchlist/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        wlLog('serverDelete failed', { id, status: res.status, error: err.error ?? res.statusText });
+        throw new Error(err.error ?? res.statusText);
+      }
+      if (pendingServerDeletes[0]?.id === id) pendingServerDeletes.shift();
+      else {
+        const idx = pendingServerDeletes.findIndex((j) => j.id === id);
+        if (idx >= 0) pendingServerDeletes.splice(idx, 1);
+      }
+      wlLog('serverDelete ok', { id, key, ...wlSnapshot() });
+      if (watchIntent.get(key) !== true) watchIntent.delete(key);
+      if (typeof WindmateLocalUserState !== 'undefined') {
+        WindmateLocalUserState.noteMutation();
+      }
+      notifyChangeDebounced();
+    } catch (err) {
+      wlLog('serverDelete rollback', { id, key, message: err?.message });
+      sessions = rollbackSnapshot;
+      bumpSessionsSync();
+      watchIntent.set(key, true);
+      notifyChange();
+      throw err;
+    }
+  }
+
+  function nextServerSyncJob() {
+    if (pendingServerDeletes.length) {
+      const job = pendingServerDeletes[0];
+      if (watchIntent.get(job.key) === true) {
+        pendingServerDeletes.shift();
+        applyLocalWatched(job.spotId, job.sessionDate, job.sport, true);
+        notifyChangeDebounced();
+        return null;
+      }
+      return { kind: 'delete', ...job };
+    }
+
+    for (const [key, desired] of [...watchIntent.entries()]) {
+      const { spotId, sessionDate, sport } = parseSessionKey(key);
+      const row = findSessionRow(spotId, sessionDate, sport);
+
+      if (desired) {
+        if (!row) {
+          applyLocalWatched(spotId, sessionDate, sport, true);
+          return { kind: 'add', spotId, sessionDate, sport, key };
+        }
+        if (isPendingId(row.id)) {
+          if (watchIntent.get(key) === false) {
+            applyLocalWatched(spotId, sessionDate, sport, false);
+            watchIntent.delete(key);
+            notifyChangeDebounced();
+            continue;
+          }
+          return { kind: 'add', spotId, sessionDate, sport, key };
+        }
+        watchIntent.delete(key);
+        continue;
+      }
+
+      if (!row) {
+        const deleteQueued = pendingServerDeletes.some((j) => j.key === key);
+        if (!deleteQueued) watchIntent.delete(key);
+        continue;
+      }
+      if (isPendingId(row.id)) {
+        applyLocalWatched(spotId, sessionDate, sport, false);
+        watchIntent.delete(key);
+        notifyChangeDebounced();
+        continue;
+      }
+      queueServerDeleteForRow(row, key);
+      applyLocalWatched(spotId, sessionDate, sport, false);
+      notifyChangeDebounced();
+      continue;
+    }
+    return null;
+  }
+
+  async function drainServerSync() {
+    const gen = ++drainGeneration;
+    wlLog('drain start', { gen, ...wlSnapshot() });
+    let progressed = false;
+    let guard = 0;
+    for (;;) {
+      if (++guard > 64) {
+        wlLog('drain guard tripped — aborting loop', { gen, ...wlSnapshot() });
+        console.warn('[watchlist] drain loop guard tripped', wlSnapshot());
+        break;
+      }
+      const job = nextServerSyncJob();
+      if (!job) break;
+      progressed = true;
+      wlLog('drain job', { gen, job });
+      if (job.kind === 'add') {
+        if (watchIntent.get(job.key) !== true) {
+          wlLog('drain skip add (intent changed)', {
+            key: job.key,
+            intent: watchIntent.get(job.key),
+          });
+          applyLocalWatched(job.spotId, job.sessionDate, job.sport, false);
+          watchIntent.delete(job.key);
+          continue;
+        }
+        await serverAdd(job.spotId, job.sessionDate, job.sport, job.key);
+      } else if (job.kind === 'delete') {
+        await serverDelete(job.id, job.rollbackSnapshot, job.key);
+      }
+    }
+    wlLog('drain end', { gen, progressed, ...wlSnapshot() });
+    if (progressed && watchIntent.size === 0 && pendingServerDeletes.length === 0) {
+      const syncToken = sessionsSyncToken;
+      wlLog('reconcile scheduled', { syncToken });
+      void reconcileSessions(syncToken);
+    }
+  }
+
+  async function add(spotId, sessionDate, sport) {
+    return setWatchDesired(spotId, sessionDate, sport, true);
+  }
+
+  async function removeBySession(spotId, sessionDate, sport) {
+    wlLog('removeBySession', { spotId, sessionDate, sport });
+    const row = findSessionRow(spotId, sessionDate, sport);
+    if (row) return remove(row.id);
+    return setWatchDesired(spotId, sessionDate, sport, false);
+  }
+
+  /** Strip × — optimistic UI, server catches up in the sync drain. */
   async function remove(id) {
-    await fetch(`/api/watchlist/${id}`, { method: 'DELETE' });
-    await load();
-    if (typeof WindmateLocalUserState !== 'undefined') {
-      WindmateLocalUserState.noteMutation();
+    wlLog('remove', { id });
+    if (!id) return scheduleServerSync();
+    const row = sessions.find((s) => s.id === id);
+    if (!row) {
+      wlLog('remove — no row', { id });
+      return scheduleServerSync();
     }
-    if (onChange) onChange();
+    const key = sessionKey(row.spot_id, row.session_date, row.sport);
+    watchIntent.set(key, false);
+    if (isPendingId(id)) {
+      applyLocalWatched(row.spot_id, row.session_date, row.sport, false);
+      watchIntent.delete(key);
+      notifyChangeDebounced();
+      return scheduleServerSync();
+    }
+    queueServerDeleteForRow(row, key);
+    applyLocalWatched(row.spot_id, row.session_date, row.sport, false);
+    notifyChangeDebounced();
+    return scheduleServerSync();
   }
 
-  async function toggle(spotId, sessionDate, sport) {
-    const id = watchId(spotId, sessionDate, sport);
-    if (id) return remove(id);
-    return add(spotId, sessionDate, sport);
+  async function toggle(spotId, sessionDate, sport, { spotName } = {}) {
+    const was = isWatched(spotId, sessionDate, sport);
+    const next = !was;
+    wlLog('toggle', { spotId, sessionDate, sport, was, next, spotName });
+    return setWatchDesired(spotId, sessionDate, sport, next, spotName);
+  }
+
+  function whenMutationsIdle() {
+    return serverSyncTail;
   }
 
   function prefsForWatchSession(session, { prefs, sportProfiles }) {
@@ -135,6 +507,36 @@ const WindmateWatchlist = (() => {
     card.insertAdjacentHTML('afterbegin', html);
   }
 
+  const spotNameById = new Map();
+
+  function rememberSpotName(spotId, name) {
+    const trimmed = name?.trim();
+    if (!spotId || !trimmed) return;
+    spotNameById.set(String(spotId), trimmed);
+    sessions = sessions.map((s) =>
+      String(s.spot_id) === String(spotId) && (!s.spot_name || s.spot_name === '…')
+        ? { ...s, spot_name: trimmed }
+        : s
+    );
+  }
+
+  function resolveSpotName(session, rideEntryBySpot) {
+    if (session.spot_name && session.spot_name !== '…') return session.spot_name;
+    const fromMatrix = rideEntryBySpot?.get(session.spot_id)?.spot?.name;
+    if (fromMatrix) return fromMatrix;
+    const cached = spotNameById.get(String(session.spot_id));
+    if (cached) return cached;
+    if (session.spot?.name) return session.spot.name;
+    return 'Spot';
+  }
+
+  function spotForWatchSession(session, rideEntryBySpot) {
+    if (session.spot?.id) return session.spot;
+    const entry = rideEntryBySpot?.get(session.spot_id);
+    if (entry?.spot?.id) return entry.spot;
+    return { id: session.spot_id, name: resolveSpotName(session, rideEntryBySpot) };
+  }
+
   function sortedSessions() {
     const today = WindmateForecastTime.planningToday();
     return [...sessions].sort((a, b) => {
@@ -167,10 +569,11 @@ const WindmateWatchlist = (() => {
       const obs = observationsBySpot?.get(session.spot_id);
       const verdict = resolveVerdict(session);
       const sessionPrefs = prefsForWatchSession(session, { prefs, sportProfiles });
+      const spot = spotForWatchSession(session, rideEntryBySpot);
       const liveStrip =
-        isToday && obs
+        isToday && obs && spot?.id
           ? WindmateObservations.renderLiveStrip(
-              { id: session.spot_id },
+              spot,
               obs,
               rideEntryBySpot?.get(session.spot_id),
               sessionPrefs ?? prefs,
@@ -251,16 +654,30 @@ const WindmateWatchlist = (() => {
           .join('')}
       </div>`;
 
-    container.querySelectorAll('[data-watch-remove]').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
+    container.querySelectorAll('button[data-watch-remove]').forEach((removeBtn) => {
+      removeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        await remove(btn.dataset.watchRemove);
+        const spotId = removeBtn.dataset.watchSpot;
+        const sessionDate = removeBtn.dataset.watchDate;
+        const sport = removeBtn.dataset.watchSport;
+        wlLog('strip × click', { spotId, sessionDate, sport });
+        void removeBySession(spotId, sessionDate, sport).catch((err) => {
+          console.error(err);
+          if (onStripError) onStripError(err);
+        });
       });
     });
 
     container.querySelectorAll('[data-watch-nav]').forEach((card) => {
       card.addEventListener('click', (e) => {
-        if (e.target.closest('[data-watch-remove], .curve-toggle, .departure-line__maps, button')) return;
+        if (
+          e.target.closest(
+            '[data-watch-remove], .curve-toggle, .departure-line__maps, .watch-btn, button'
+          )
+        ) {
+          return;
+        }
         onNavigate?.({
           spotId: card.dataset.spotId,
           sessionDate: card.dataset.sessionDate,
@@ -291,9 +708,11 @@ const WindmateWatchlist = (() => {
       : WindmateCopy.watchlist.verdictForecast;
     const statusLabel = verdictLabels[verdict.state] ?? verdict.state;
     const obs = observationsBySpot?.get(session.spot_id);
+    const spot = spotForWatchSession(session, rideEntryBySpot);
+    const spotName = escapeHtmlAttr(resolveSpotName(session, rideEntryBySpot));
     const liveStrip =
-      isToday && obs
-        ? WindmateObservations.renderLiveStrip(session.spot, obs, rideEntryBySpot?.get(session.spot_id), sessionPrefs, {
+      isToday && obs && spot?.id
+        ? WindmateObservations.renderLiveStrip(spot, obs, rideEntryBySpot?.get(session.spot_id), sessionPrefs, {
             curveKey: `watch:${session.id}`,
             sessionDate: session.session_date,
             sessionGoNoGo: verdict,
@@ -323,23 +742,31 @@ const WindmateWatchlist = (() => {
       <div
         class="watchlist-card watchlist-card--clickable watchlist-card--stickers bg-base-card border border-base-border rounded-xl p-4 ${isToday ? 'watchlist-card--today' : ''}"
         data-watch-nav
-        data-watch-id="${session.id}"
-        data-spot-id="${session.spot_id}"
-        data-session-date="${session.session_date}"
-        data-sport="${session.sport}"
+        data-watch-id="${escapeHtmlAttr(session.id)}"
+        data-spot-id="${escapeHtmlAttr(session.spot_id)}"
+        data-session-date="${escapeHtmlAttr(session.session_date)}"
+        data-sport="${escapeHtmlAttr(session.sport)}"
         role="button"
         tabindex="0"
-        aria-label="Go to ${session.spot_name} on ${dayLabel}"
+        aria-label="Go to ${spotName} on ${dayLabel}"
       >
         ${watchStickers}
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <div class="text-sm font-semibold text-white">${dayLabel} · ${session.spot_name}</div>
+            <div class="text-sm font-semibold text-white">${dayLabel} · ${spotName}</div>
             <div class="text-xs text-slate-500 mt-0.5">${session.sport}</div>
           </div>
           <div class="flex items-center gap-2">
             <span class="go-no-go-pill ${statusClass}">${statusLabel}</span>
-            <button type="button" class="text-slate-500 hover:text-red-400 text-sm" data-watch-remove="${session.id}" aria-label="Remove watch">×</button>
+            <button
+              type="button"
+              class="watchlist-remove-btn text-slate-500 hover:text-red-400 text-sm"
+              data-watch-remove
+              data-watch-spot="${escapeHtmlAttr(session.spot_id)}"
+              data-watch-date="${escapeHtmlAttr(session.session_date)}"
+              data-watch-sport="${escapeHtmlAttr(session.sport)}"
+              aria-label="Remove watch"
+            >×</button>
           </div>
         </div>
         ${summaryBanner}
@@ -365,19 +792,13 @@ const WindmateWatchlist = (() => {
       aria-pressed="${watched}" title="${label}">${watchIcon(watched)}</button>`;
   }
 
-  function bindWatchButtons(root, sport) {
-    root.querySelectorAll('[data-watch-spot]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const spotId = btn.dataset.watchSpot;
-        const sessionDate = btn.dataset.watchDate;
-        const watchSport = btn.dataset.watchSport ?? sport;
-        try {
-          await toggle(spotId, sessionDate, watchSport);
-        } catch (err) {
-          console.error(err);
-        }
-      });
-    });
+  function patchWatchButtonEl(btn, watched) {
+    if (!btn) return;
+    const label = watched ? 'Remove from watchlist' : 'Watch this session';
+    btn.classList.toggle('watch-btn--on', watched);
+    btn.setAttribute('aria-pressed', watched ? 'true' : 'false');
+    btn.title = label;
+    btn.innerHTML = watchIcon(watched);
   }
 
   /** Unique spot ids for today's watches (all sports — live strip is per session sport). */
@@ -402,6 +823,34 @@ const WindmateWatchlist = (() => {
     onNavigate = fn;
   }
 
+  function setOnStripError(fn) {
+    onStripError = fn;
+  }
+
+  let stripRootBound = false;
+
+  function bindStripInteractions(root) {
+    if (!root || stripRootBound) return;
+    stripRootBound = true;
+    root.addEventListener(
+      'click',
+      (e) => {
+        const removeBtn = e.target.closest('button[data-watch-remove]');
+        if (!removeBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const { watchSpot: spotId, watchDate: sessionDate, watchSport: sport } = removeBtn.dataset;
+        if (!spotId || !sessionDate || !sport) return;
+        wlLog('strip × click (delegated)', { spotId, sessionDate, sport });
+        void removeBySession(spotId, sessionDate, sport).catch((err) => {
+          console.error(err);
+          if (onStripError) onStripError(err);
+        });
+      },
+      true
+    );
+  }
+
   return {
     load,
     isWatched,
@@ -411,11 +860,27 @@ const WindmateWatchlist = (() => {
     canPatchStrip,
     patchObservations,
     renderWatchButton,
-    bindWatchButtons,
+    patchWatchButtonEl,
     getWatchedSpotIdsForToday,
     getWatchedSpotIds,
     setOnChange,
     setOnNavigate,
+    setOnStripError,
+    bindStripInteractions,
+    getSessionsSyncToken,
+    whenMutationsIdle,
+    setDebugWatchlist(enabled) {
+      if (typeof window !== 'undefined') {
+        window.WINDMATE_DEBUG_WATCHLIST = Boolean(enabled);
+        try {
+          window.localStorage?.setItem('windmate.debugWatchlist', enabled ? '1' : '0');
+        } catch {
+          /* ignore */
+        }
+      }
+      wlLog('debug enabled', { enabled: Boolean(enabled) });
+    },
+    getDebugSnapshot: () => wlSnapshot(),
     getSessions: () => sessions,
     resolveVerdict,
     resolveSessionExcitement,

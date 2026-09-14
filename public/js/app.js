@@ -93,6 +93,9 @@ let nextHourlyRefreshAt = 0;
 let hourlyRefreshInFlight = false;
 let lastDashboardFetchAt = 0;
 let dashboardRefreshGeneration = 0;
+let enrichWatchlistGeneration = 0;
+let enrichWatchlistTimer = null;
+let watchedNavInFlight = null;
 
 function apiMutatesUserState(path, method) {
   const m = (method ?? 'GET').toUpperCase();
@@ -554,8 +557,7 @@ async function switchActiveSport(sport) {
     });
   await refreshDashboard({
     silent: true,
-    pending: true,
-    loadingMessage: WindmateCopy.loading.switchingSport,
+    pending: false,
     includeHorizonSummary: false,
   });
   await persistActiveSport;
@@ -1081,6 +1083,20 @@ function setDashboardLoading(message) {
   els.rideabilityMatrix.innerHTML = `<p class="text-slate-400">${message}</p>`;
 }
 
+function isDashboardLoadingPlaceholder() {
+  if (!els.horizonPlanner) return false;
+  return (
+    els.horizonPlanner.childElementCount === 1 &&
+    Boolean(els.horizonPlanner.querySelector('p.text-slate-400'))
+  );
+}
+
+function restoreDashboardFromCacheIfNeeded() {
+  if (!rideabilityData || !isDashboardLoadingPlaceholder()) return;
+  renderHorizonPlanner(rideabilityData);
+  renderRideabilityMatrix(rideabilityData, observationsData ?? { spots: [] });
+}
+
 function setDashboardPending(pending) {
   document.body.classList.toggle('dashboard-pending', pending);
   WindmateSportSelector.setBusy(pending);
@@ -1198,7 +1214,7 @@ async function runHourlyDashboardRefresh() {
   renderRefreshCountdownBanner();
   try {
     if (!document.hidden) {
-      await refreshDashboard({ silent: true, bypassCache: true, pending: true });
+      await refreshDashboard({ silent: true, bypassCache: true, pending: false });
     }
   } finally {
     hourlyRefreshInFlight = false;
@@ -1313,7 +1329,7 @@ function applyObservationsToUi(obsRes, { observationsOnly = false } = {}) {
 async function refreshLiveObservations() {
   if (!WindmateObservations.hasExpandedCurves() || !rideabilityData) return;
   try {
-    await WindmateWatchlist.load();
+    await WindmateWatchlist.load({ light: true });
     const { query, watchedQuery } = observationsQueryString();
     const obsRes = await api(`/api/observations?${query}${watchedQuery}&refresh=1`).catch(() => ({
       spots: [],
@@ -1354,7 +1370,7 @@ async function refreshDashboard({
   const viewingToday =
     selectedDayDate != null && selectedDayDate === WindmateForecastTime.planningToday();
   const scrollY = silent ? window.scrollY : null;
-  const showLoading = !silent || pending;
+  const showLoading = Boolean(pending);
   const fetchHorizonSummary =
     includeHorizonSummary ?? (bypassCache || !silent);
 
@@ -1364,7 +1380,7 @@ async function refreshDashboard({
     setDashboardPending(true);
   }
   try {
-    await WindmateWatchlist.load();
+    await WindmateWatchlist.load({ light: true });
     if (generation !== dashboardRefreshGeneration) return;
 
     const { query, watchedQuery, refreshQuery } = observationsQueryString({ bypassCache });
@@ -1445,6 +1461,7 @@ async function refreshDashboard({
     applyObservationsToUi(observationsData);
     lastDashboardFetchAt = Date.now();
     restoreScrollAfterSilentRefresh(scrollY);
+    scheduleEnrichWatchlistStrip();
   } catch (err) {
     if (generation !== dashboardRefreshGeneration) return;
     const msg = WindmateCopy.errors.loadFailed(err.message);
@@ -1453,6 +1470,7 @@ async function refreshDashboard({
   } finally {
     if (generation === dashboardRefreshGeneration) {
       setDashboardPending(false);
+      restoreDashboardFromCacheIfNeeded();
     }
   }
 }
@@ -1567,9 +1585,14 @@ function watchlistDepartureCurveContext(obsBySpot) {
 }
 
 function refreshWatchlistDepartures(obsBySpot = null) {
+  const sessions = WindmateWatchlist.getSessions();
+  if (!sessions.length) {
+    WindmateDeparture.cancelWatchDepartures();
+    return;
+  }
   if (!els.watchlistStrip || userLocation.lat == null || userLocation.lng == null) return;
   const obsMap = obsBySpot ?? (observationsData ? WindmateObservations.mapBySpotId(observationsData) : null);
-  WindmateDeparture.loadForWatchlist(
+  void WindmateDeparture.loadForWatchlist(
     els.watchlistStrip,
     WindmateWatchlist.getSessions(),
     userLocation.lat,
@@ -1618,6 +1641,34 @@ function renderFavoriteButton(spot) {
   return `<button type="button" class="spot-favorite-btn${on ? ' spot-favorite-btn--on' : ''}" data-spot-id="${spot.id}" aria-label="${label}" aria-pressed="${on}" title="${label}">${on ? '★' : '☆'}</button>`;
 }
 
+function syncSpotActionButtons(spotId) {
+  if (!els.rideabilityMatrix || !spotId) return;
+  const card = els.rideabilityMatrix.querySelector(`[data-spot-id="${spotId}"]`);
+  if (!card) return;
+  const entry = rideabilityData?.spots?.find((e) => e.spot.id === spotId);
+  const spotName = entry?.spot?.name ?? 'spot';
+
+  card.querySelectorAll('.spot-favorite-btn').forEach((btn) => {
+    const on = isFavoriteSpot(spotId);
+    const label = on
+      ? WindmateCopy.favorites.remove(spotName)
+      : WindmateCopy.favorites.add(spotName);
+    btn.classList.toggle('spot-favorite-btn--on', on);
+    btn.textContent = on ? '★' : '☆';
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = label;
+  });
+
+  const watchBtn = card.querySelector('.watch-btn[data-watch-spot]');
+  if (watchBtn && rideabilityData?.preferences) {
+    const sessionDate = watchBtn.dataset.watchDate ?? selectedDayDate;
+    const sport = watchBtn.dataset.watchSport ?? rideabilityData.preferences.sport;
+    const watched = WindmateWatchlist.isWatched(spotId, sessionDate, sport);
+    WindmateWatchlist.patchWatchButtonEl(watchBtn, watched);
+  }
+}
+
 function favoriteToggleNeedsFullRefresh(spotId, wasFavorite) {
   if (wasFavorite) {
     return true;
@@ -1629,21 +1680,31 @@ function favoriteToggleNeedsFullRefresh(spotId, wasFavorite) {
   return !entry || outsideRadius;
 }
 
-async function persistFavorites({ fullRefresh = true } = {}) {
-  const updated = await api(`/api/preferences/sports/${activeSport}`, {
-    method: 'PUT',
-    body: JSON.stringify({ favorite_spot_ids: favoriteSpotIds }),
-  });
-  applyFullPreferences(updated);
-  if (fullRefresh) {
-    await refreshDashboard({
-      silent: true,
-      pending: true,
-      loadingMessage: WindmateCopy.loading.saved,
-      includeHorizonSummary: false,
+async function persistFavorites({ fullRefresh = true, spotId = null } = {}) {
+  const snapshot = [...favoriteSpotIds];
+  try {
+    const updated = await api(`/api/preferences/sports/${activeSport}`, {
+      method: 'PUT',
+      body: JSON.stringify({ favorite_spot_ids: favoriteSpotIds }),
     });
-  } else {
-    applyRankOrderToMatrix();
+    applyFullPreferences(updated);
+    if (fullRefresh) {
+      await refreshDashboard({
+        silent: true,
+        pending: false,
+        includeHorizonSummary: false,
+      });
+    } else {
+      applyRankOrderToMatrix();
+    }
+  } catch (err) {
+    favoriteSpotIds = snapshot;
+    if (rideabilityData?.preferences) {
+      rideabilityData.preferences.favorite_spot_ids = favoriteSpotIds;
+    }
+    if (spotId) syncSpotActionButtons(spotId);
+    showAppToast(err.message ?? WindmateCopy.settings.saveFailed);
+    throw err;
   }
 }
 
@@ -1658,8 +1719,10 @@ function toggleFavorite(spotId, { allowAdd = true } = {}) {
     rideabilityData.preferences.favorite_spot_ids = favoriteSpotIds;
   }
 
+  syncSpotActionButtons(spotId);
+
   const fullRefresh = favoriteToggleNeedsFullRefresh(spotId, wasFavorite);
-  persistFavorites({ fullRefresh }).catch((err) => console.error(err));
+  persistFavorites({ fullRefresh, spotId }).catch((err) => console.error(err));
 
   if (els.spotSearchResults && !els.spotSearchResults.classList.contains('hidden')) {
     const q = els.spotSearchInput?.value.trim();
@@ -1853,6 +1916,126 @@ function initFavoriteToggles() {
     e.preventDefault();
     e.stopPropagation();
     toggleFavorite(btn.dataset.spotId);
+  });
+}
+
+function scheduleEnrichWatchlistStrip() {
+  if (!WindmateWatchlist.getSessions().length) return;
+  clearTimeout(enrichWatchlistTimer);
+  enrichWatchlistTimer = setTimeout(() => {
+    enrichWatchlistTimer = null;
+    void WindmateWatchlist.whenMutationsIdle().then(() => {
+      if (!WindmateWatchlist.getSessions().length) return;
+      void enrichWatchlistStripInBackground();
+    });
+  }, 500);
+}
+
+async function enrichWatchlistStripInBackground() {
+  if (!WindmateWatchlist.getSessions().length) return;
+  const generation = ++enrichWatchlistGeneration;
+  const syncToken = WindmateWatchlist.getSessionsSyncToken();
+  try {
+    await WindmateWatchlist.load({ light: false, syncToken });
+    if (generation !== enrichWatchlistGeneration) return;
+    if (syncToken !== WindmateWatchlist.getSessionsSyncToken()) return;
+    refreshAfterWatchlistChange();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function buildWatchStripOpts() {
+  if (!rideabilityData) return null;
+  const obsBySpot = observationsData
+    ? WindmateObservations.mapBySpotId(observationsData)
+    : new Map();
+  const matrixPrefs = prefsForRanking(rideabilityData.preferences);
+  const rideEntryBySpot = new Map(rideabilityData.spots.map((entry) => [entry.spot.id, entry]));
+  return {
+    observationsBySpot: obsBySpot,
+    prefs: matrixPrefs,
+    rideEntryBySpot,
+    sportProfiles,
+    radiusKm: rideabilityData.radius_km ?? getSearchRadiusKm(),
+  };
+}
+
+function refreshAfterWatchlistChange() {
+  if (
+    window.WINDMATE_DEBUG_WATCHLIST === true ||
+    window.localStorage?.getItem('windmate.debugWatchlist') === '1'
+  ) {
+    console.debug('[watchlist app] refreshAfterWatchlistChange', WindmateWatchlist.getDebugSnapshot?.());
+  }
+  WindmateLocalUserState.scheduleCapture();
+  enrichWatchlistGeneration += 1;
+  clearTimeout(enrichWatchlistTimer);
+  enrichWatchlistTimer = null;
+  WindmateDeparture.cancelWatchDepartures();
+
+  if (els.rideabilityMatrix && rideabilityData) {
+    for (const card of els.rideabilityMatrix.querySelectorAll('[data-spot-id]')) {
+      syncSpotActionButtons(card.dataset.spotId);
+    }
+  }
+
+  if (!els.watchlistStrip) return;
+  const watchStripOpts = buildWatchStripOpts();
+  if (!watchStripOpts) {
+    if (!WindmateWatchlist.getSessions().length) {
+      els.watchlistStrip.innerHTML = '';
+      els.watchlistStrip.classList.add('hidden');
+    }
+    return;
+  }
+  WindmateWatchlist.renderStrip(els.watchlistStrip, watchStripOpts);
+  const sessions = WindmateWatchlist.getSessions();
+  if (
+    sessions.length &&
+    observationsData &&
+    userLocation.lat != null &&
+    userLocation.lng != null
+  ) {
+    window.requestAnimationFrame(() => {
+      refreshWatchlistDepartures(watchStripOpts.observationsBySpot);
+    });
+  }
+}
+
+function initMatrixWatchToggles() {
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.watch-btn[data-watch-spot]');
+    if (!btn || !els.rideabilityMatrix?.contains(btn)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const spotId = btn.dataset.watchSpot;
+    const sessionDate = btn.dataset.watchDate;
+    const sport = btn.dataset.watchSport ?? activeSport;
+    if (!spotId || !sessionDate || !sport) return;
+    if (
+      window.WINDMATE_DEBUG_WATCHLIST === true ||
+      window.localStorage?.getItem('windmate.debugWatchlist') === '1'
+    ) {
+      console.debug('[watchlist app] matrix click', {
+        spotId,
+        sessionDate,
+        sport,
+        before: WindmateWatchlist.isWatched(spotId, sessionDate, sport),
+        snapshot: WindmateWatchlist.getDebugSnapshot?.(),
+      });
+    }
+    const matrixCard = btn.closest('[data-spot-id]');
+    const spotName = matrixCard?.querySelector('.spot-name')?.textContent?.trim() || undefined;
+    void WindmateWatchlist.toggle(spotId, sessionDate, sport, { spotName }).catch((err) => {
+      console.error(err);
+      showAppToast(err.message ?? WindmateCopy.settings.saveFailed);
+      syncSpotActionButtons(spotId);
+    });
+    WindmateWatchlist.patchWatchButtonEl(
+      btn,
+      WindmateWatchlist.isWatched(spotId, sessionDate, sport)
+    );
   });
 }
 
@@ -2140,11 +2323,19 @@ function selectDay(dateStr, { scroll = 'top', spotId = null } = {}) {
 
 async function goToWatchedSession({ spotId, sessionDate, sport }) {
   if (!spotId || !sessionDate) return;
-  selectedDayDate = sessionDate;
-  if (sport && sport !== activeSport) {
-    await switchActiveSport(sport);
+  if (watchedNavInFlight) return watchedNavInFlight;
+  watchedNavInFlight = (async () => {
+    selectedDayDate = sessionDate;
+    if (sport && sport !== activeSport) {
+      await switchActiveSport(sport);
+    }
+    selectDay(sessionDate, { scroll: 'spot', spotId });
+  })();
+  try {
+    await watchedNavInFlight;
+  } finally {
+    watchedNavInFlight = null;
   }
-  selectDay(sessionDate, { scroll: 'spot', spotId });
 }
 
 function renderHorizonPlanner(data) {
@@ -3098,8 +3289,7 @@ function renderRideabilityMatrix(data, observations) {
               <span class="spot-title">
                 <span class="spot-name">${spot.name}</span>
                 ${outsideRadiusBadge}
-                ${favoriteBtn}
-                ${watchBtn}
+                <span class="spot-card-actions">${favoriteBtn}${watchBtn}</span>
               </span>
               ${rankBanners}
             </h3>
@@ -3143,8 +3333,6 @@ function renderRideabilityMatrix(data, observations) {
     warningsBySpot,
     rideEntryBySpot
   );
-  WindmateWatchlist.bindWatchButtons(els.rideabilityMatrix, data.preferences.sport);
-
   const spotIds = rankedSpots.map((row) => row.entry.spot.id);
   const matrixPrefs = prefsForRanking(data.preferences);
   const sessionVerdictBySpot = new Map(
@@ -3212,18 +3400,23 @@ function showAppToast(message) {
     api,
     applyFullPreferences,
     setPlanningOrigin,
-    refreshDashboard: (opts) => refreshDashboard({ silent: true, pending: true, ...opts }),
+    refreshDashboard: (opts) => refreshDashboard({ silent: true, pending: false, ...opts }),
     showToast: showAppToast,
   });
   WindmateSpotIntel.init();
   initSpotMapPicker();
   initSpotSearch();
   initFavoriteToggles();
+  initMatrixWatchToggles();
   initPlannerFullDayToggle();
   WindmateSportSelector.init(els.sportSelector, { onSwitch: switchActiveSport });
+  WindmateWatchlist.bindStripInteractions(els.watchlistStrip);
+  WindmateWatchlist.setOnStripError((err) => {
+    showAppToast(err.message ?? WindmateCopy.settings.saveFailed);
+  });
   WindmateWatchlist.setOnChange(() => {
-    WindmateLocalUserState.scheduleCapture();
-    refreshDashboard({ silent: true, pending: true, includeHorizonSummary: false });
+    refreshAfterWatchlistChange();
+    scheduleEnrichWatchlistStrip();
   });
   WindmateWatchlist.setOnNavigate(goToWatchedSession);
   WindmateObservations.setAutoRefreshCallback(() => refreshLiveObservations());
@@ -3237,7 +3430,7 @@ function showAppToast(message) {
     await loadPreferences();
   }
   await Promise.all([
-    WindmateWatchlist.load(),
+    WindmateWatchlist.load({ light: true }),
     WindmateLocalUserState.captureFromServer().catch(() => {}),
   ]);
   const origin = WindmatePlanningLocations.getActiveCoords();
@@ -3246,7 +3439,16 @@ function showAppToast(message) {
   } else {
     els.locationStatus.textContent = WindmateCopy.geo.defaultMontreal;
   }
-  await refreshDashboard({ includeHorizonSummary: false });
+  try {
+    await refreshDashboard({ silent: true, includeHorizonSummary: false });
+  } catch (err) {
+    const msg = WindmateCopy.errors.loadFailed(err.message);
+    els.horizonPlanner.innerHTML = `<p class="col-span-full text-red-400">${msg}</p>`;
+    els.rideabilityMatrix.innerHTML = `<p class="text-red-400">${msg}</p>`;
+  } finally {
+    setDashboardPending(false);
+    restoreDashboardFromCacheIfNeeded();
+  }
   void refreshHorizonSummaryInBackground();
   initHourlyDashboardRefresh();
   WindmatePlanningLocations.tryLaunchGpsSnap();

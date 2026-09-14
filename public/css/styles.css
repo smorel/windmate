@@ -65,6 +65,12 @@ body.refresh-countdown-active .horizon-planner-sticky {
   background: #0b0f19;
   border-bottom: 1px solid #1a2235;
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.45);
+  /* Let matrix card actions receive clicks when content scrolls beneath the bar */
+  pointer-events: none;
+}
+
+.horizon-planner-sticky > * {
+  pointer-events: auto;
 }
 
 /* Two-column day cards can exceed viewport height; sticky would hide the matrix. */
@@ -330,6 +336,7 @@ body.refresh-countdown-active .horizon-planner-sticky {
 
 .session-excitement-sticker {
   --session-excitement-chip-bg: rgba(15, 20, 34, 0.94);
+  pointer-events: none;
   display: block;
   box-sizing: border-box;
   padding: 0.2rem 0.5rem;
@@ -1393,6 +1400,15 @@ body.modal-open {
   align-items: center;
   gap: 0.375rem;
   min-width: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.spot-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  flex-shrink: 0;
 }
 
 .spot-name {
@@ -1871,9 +1887,8 @@ body.modal-open {
   display: none;
 }
 
-/* Dashboard refresh — block stale interactive UI while loading */
-body.dashboard-pending .dashboard-planner,
-body.dashboard-pending .watchlist-strip {
+/* Dashboard refresh — block stale planner UI while loading; keep watch strip interactive */
+body.dashboard-pending .dashboard-planner {
   pointer-events: none;
   user-select: none;
 }
@@ -1997,6 +2012,13 @@ body.dashboard-pending .dashboard-planner {
 .session-verdict-banner--unknown {
   background: rgba(100, 116, 139, 0.12);
   color: #94a3b8;
+}
+.watchlist-remove-btn {
+  position: relative;
+  z-index: 4;
+  flex-shrink: 0;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
 }
 .watchlist-card--today { border-color: rgba(16, 185, 129, 0.35); }
 .watchlist-card--clickable {

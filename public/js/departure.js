@@ -953,8 +953,17 @@ const WindmateDeparture = (() => {
       .join('|');
   }
 
+  function cancelWatchDepartures() {
+    watchDepartureGeneration += 1;
+    watchDepartureInFlight = null;
+    clearSessionDayRefresh();
+  }
+
   async function loadForWatchlist(container, sessions, lat, lng, verdictForSession, curveSyncContext) {
-    if (!container || !sessions?.length || lat == null || lng == null) return;
+    if (!container || !sessions?.length || lat == null || lng == null) {
+      cancelWatchDepartures();
+      return;
+    }
 
     const signature = watchDepartureSignature(sessions);
     if (watchDepartureInFlight?.signature === signature) {
@@ -1034,5 +1043,6 @@ const WindmateDeparture = (() => {
     cachedPlannerRange,
     hydrateWatchlistDepartures,
     hydrateMatrixDeparturesSync,
+    cancelWatchDepartures,
   };
 })();

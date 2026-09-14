@@ -261,7 +261,13 @@ const WindmateObservations = (() => {
   }
 
   function renderLiveStrip(spot, obsEntry, rideEntry, prefs, options = {}) {
-    const spotId = spot.id;
+    const spotId = spot?.id;
+    if (!spotId) {
+      return `
+        <div class="live-strip live-strip--empty mb-3 p-3 rounded-lg bg-base border border-base-border">
+          <div class="text-xs text-slate-500">${WindmateCopy.observations.noCurrent}</div>
+        </div>`;
+    }
     const curveKey = options.curveKey ?? `spot:${spotId}`;
     const curveExpanded = expanded.has(curveKey);
     const current = obsEntry?.current;

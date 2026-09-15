@@ -45,6 +45,7 @@ Forecast-only rideability cannot answer these. They require **community signals*
 - **Spot metadata** for stable facts: parking type, official hours URL, access bulletin URL
 - **Mate-tone explanations** on rank badges — e.g. "Main lot closed until May 15 — check the city page"
 - **Google Images/Videos link-out** — sport-aware search URLs per spot (no inline thumbnails yet)
+- **`intel_sources` on every curated spot** — Facebook groups, forums, Reddit, guides, municipal pages as **clickable links** in the intel drawer (and on spot payloads) even when there is no automated summary yet
 
 ### In scope (v2 — automated ingestion)
 
@@ -54,6 +55,7 @@ Forecast-only rideability cannot answer these. They require **community signals*
 - **Live cam** — per [Session Watchlist — Webcam block](./2026-09-08-session-watchlist-design.md#webcam-block-v2)
 - **Photo/video thumbnails** in intel panel when embeddable (link out when not)
 - **Spot media gallery** — Google Images & Videos results for the spot, biased toward the user's selected sport (see [Spot media](#spot-media-google-images--videos))
+- **Source discovery assist (admin)** — LLM + web search suggests links per spot; human validates before `verification: verified` (see [Community source links](#community-source-links-discovery--summaries))
 
 ### In scope (v3 — session-day freshness)
 
@@ -82,17 +84,34 @@ Forecast-only rideability cannot answer these. They require **community signals*
 | `webcam_url` | TEXT | nullable — shared with watchlist spec |
 | `windy_webcam_id` | TEXT | nullable |
 
-`intel_sources` examples:
+`intel_sources` examples (v1 may use the slim `{ type, url, label }` shape; v2+ aligns with [`IntelSourceLink`](./2026-09-14-spot-intel-gemini-provenance-design.md#spotsintel_sources--specialized-community--reference-links)):
 
 ```json
 [
-  { "type": "facebook_group", "url": "https://facebook.com/groups/hudsonwing", "label": "Hudson wing group" },
-  { "type": "instagram_hashtag", "url": "https://instagram.com/explore/tags/lacstlouis", "label": "#lacstlouis" },
-  { "type": "municipal", "url": "https://ville.oka.qc.ca/...", "label": "Ville d'Oka — plage" },
-  { "type": "reddit_search", "url": "https://reddit.com/search/?q=oka+beach+kite", "label": "Reddit" },
-  { "type": "google_media", "url": "https://www.google.com/search?tbm=isch&q=Plage+d%27Oka+wingfoil", "label": "Spot photos" }
+  {
+    "type": "facebook_group",
+    "url": "https://facebook.com/groups/hudsonwing",
+    "label": "Hudson wing group",
+    "fetchable": false,
+    "verification": "verified"
+  },
+  { "type": "instagram_hashtag", "url": "https://instagram.com/explore/tags/lacstlouis", "label": "#lacstlouis", "fetchable": false, "verification": "verified" },
+  { "type": "municipal", "url": "https://ville.oka.qc.ca/...", "label": "Ville d'Oka — plage", "fetchable": true, "verification": "verified" },
+  { "type": "reddit_search", "url": "https://reddit.com/search/?q=oka+beach+kite", "label": "Reddit — Oka kite", "fetchable": true, "verification": "verified" },
+  { "type": "community_guide", "url": "https://example-kite-shop.com/spots/oka", "label": "Local shop spot guide", "fetchable": true, "verification": "verified" },
+  { "type": "google_media", "url": "https://www.google.com/search?tbm=isch&q=Plage+d%27Oka+wingfoil", "label": "Spot photos", "fetchable": false, "verification": "verified" }
 ]
 ```
+
+| `type` | Typical use | Fetcher (v2+) |
+|--------|-------------|----------------|
+| `facebook_group` / `facebook_page` | Same-day access, parking, water chatter | Link-out only (private groups common) |
+| `instagram_hashtag` | Photos, conditions | Link-out / oEmbed where permitted |
+| `reddit_subreddit` / `reddit_search` | Structured public posts | Reddit JSON API when `fetchable: true` |
+| `forum` | Regional wind forums | HTML allowlist parser if added |
+| `community_guide` | Shop spot pages, kiteforce-style | HTML excerpt → Gemini parser |
+| `municipal` | Hours, closures | `official.js` parser |
+| `google_media` | Sport-aware image/video search | Custom Search or link-out |
 
 ### `spot_intel_cache`
 
@@ -166,6 +185,42 @@ Prefer **thumbnail + link** over full embeds. Video: poster frame + "Watch" link
 | **Gemini structured extract** | Unified mate-tone summaries | Cost, latency, needs allowlist |
 
 **Recommendation:** v1 **curated links + manual `spot_intel_cache`** for 5–8 seed spots. v2 **official municipal pages + Reddit** for Montreal region. v3 **Gemini parser** on allowlisted HTML and Reddit JSON; Instagram/Facebook as **link + optional oEmbed thumbnail** where permitted.
+
+## Community source links — discovery & summaries
+
+Riders need two layers:
+
+1. **Quick check (always ship first)** — verified `intel_sources` URLs in the intel drawer and on `GET /api/spots` / `GET /api/spots/:id/intel`, every link opening in a new tab. No scraping required.
+2. **Summaries (when possible)** — same URLs drive fetchers; Gemini fills **today** (`community_today`), **last month**, and **all-time** (`spot_intel_profile.community`) with `FieldProvenance` per [Gemini provenance spec](./2026-09-14-spot-intel-gemini-provenance-design.md). If a source is not fetchable, the UI still shows the link and honest empty copy for that time window — no fabricated posts.
+
+### Can an LLM find links for a spot?
+
+**Yes, if it is coupled to live search** — Gemini with Google Search grounding, or an agent with Tavily / Programmable Search / similar. A model **without** web access will hallucinate URLs and must not be used for discovery.
+
+Recommended product flow (matches your admin-assist idea):
+
+```text
+[ Spot name + pin ]
+       → Prompt 1b (Search-backed) OR admin "Find links"
+       → staging candidates (verification: pending)
+       → admin "Validate links"
+       → spots.intel_sources (verification: verified)
+       → optional: fetchers + profile/day Gemini
+```
+
+**Limits (unchanged):** private Facebook groups remain link-only; bulk discovery needs rate limits and per-spot query caps; ranking must not rely on unverified or search-only paraphrases.
+
+### UI — "Community & guides" block
+
+Place **above or beside** "Latest from the spot" so users can tap out before reading a summary:
+
+```
+🔗 Community & guides · quick check
+[Facebook — Hudson wing]  [Reddit]  [Ville d'Oka — plage]  [Spot photos ↗]
+```
+
+- Icons or short labels per `type`; full `label` on wrap or tooltip.
+- If `intel_sources` is empty: mate empty state + optional admin-only "Suggest links" (future).
 
 ### Search keywords per spot
 
@@ -397,8 +452,12 @@ Re-rank order in `rank_criteria_order` UI: user may deprioritize proximity over 
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/api/spots/:spotId/intel` | Cached intel + sources + cam URL + `media_gallery` (sport query param optional) |
+| GET | `/api/spots` | Include `intel_sources` (verified only in prod) on each spot in list payloads |
+| GET | `/api/spots/:spotId` | Spot row + `intel_sources` + parking/access URL columns |
+| GET | `/api/spots/:spotId/intel` | Cached intel + **`intel_sources`** + cam URL + `media_gallery` (sport + `date` query params) |
 | GET | `/api/rideability` | Extend payload: `intel.headline`, `intel.badges`, factor weights |
+| POST | `/api/admin/spots/:spotId/intel-sources/discover` | (v2) Run source discovery → staging |
+| POST | `/api/admin/spots/:spotId/intel-sources/approve` | (v2) Merge selected staging links into `intel_sources` |
 
 Optional: `POST /api/intel/refresh/:spotId` (admin/dev) to force fetch.
 
@@ -427,8 +486,11 @@ LOCAL INTEL · updated 12 min ago
 💧 Water — Algae watch                            (i)
 📷 Live cam / wind graph                          (i)
 💬 Riders say — today · last month                (i)
+🔗 Community & guides — [FB] [Reddit] [City] …   (tap = open link)
 🖼️ Spot photos & videos · wingfoil [strip]
 ```
+
+Summaries in "Riders say" may be empty while **Community & guides** still lists links — that is the intended v1 fallback.
 
 ### Watched session day
 
@@ -443,6 +505,7 @@ Intel drawer **open by default** when any `caution` or `closed` signal exists fo
 | `src/services/intelSources/reddit.js` | Keyword search, normalize posts |
 | `src/services/intelSources/social.js` | oEmbed thumbnails, link metadata |
 | `src/services/intelSources/googleMedia.js` | Sport-aware query build; Custom Search fetch + cache (v2) |
+| `src/services/intelSources/discover.js` | Search-backed link discovery (Gemini 1b or search API); writes staging |
 | `src/services/intelParser.js` | Gemini structured extraction (v2) |
 | `src/cron/intelRefresh.js` | TTL refresh per spot; faster for watched session days |
 
@@ -461,8 +524,8 @@ Intel drawer **open by default** when any `caution` or `closed` signal exists fo
 
 | Phase | Deliverable |
 |---|---|
-| **v1** | `spot_intel_cache` manual seed for 5–8 spots; intel panel; rank penalties; parking/access metadata columns; Google Images/Videos link-out (sport-aware) |
-| **v2** | Official URL parsers (2–3 cities); Reddit search; webcam embed; merge water quality; Google Custom Search inline thumbnails |
+| **v1** | `spot_intel_cache` manual seed for 5–8 spots; **`intel_sources` on seed spots** + drawer link strip; intel panel; rank penalties; parking/access metadata columns; Google Images/Videos link-out (sport-aware) |
+| **v2** | Official URL parsers (2–3 cities); Reddit search; admin source discovery + approve; webcam embed; merge water quality; Google Custom Search inline thumbnails |
 | **v3** | Gemini parser; social thumbnails; session-day media refresh for watched spots + optional email line in watchlist mail |
 
 ## Testing checklist
@@ -477,10 +540,13 @@ Intel drawer **open by default** when any `caution` or `closed` signal exists fo
 - [ ] Google media links include user's sport terms; switching sport rebuilds query
 - [ ] v2: thumbnail grid loads async; API quota failure falls back to link-out only
 - [ ] Video tiles show duration when available; all tiles open source in new tab
+- [ ] `intel_sources` links render in drawer and open in new tab; spot list/detail include same array
+- [ ] Discovery does not publish URLs without admin verify (or seed/manual)
+- [ ] Zero fetcher posts: community today empty copy + links still visible
 
 ## Open questions
 
-1. **Facebook groups** — link-only vs user-supplied group URL with public preview?
+1. **Facebook groups** — link-only vs user-supplied group URL with public preview? **Spec default:** link-only + `fetchable: false` until user supplies a public preview strategy.
 2. **Corroboration** — how many social posts before `access: closed` without official source?
 3. **Bilingual official pages** — parse FR/EN; summarize in user's locale?
 4. **iGetwind spots worldwide** — intel only for curated seed spots until source templates exist?

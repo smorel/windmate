@@ -14,6 +14,8 @@
 
 Later: **social/API fetchers** supply raw posts for “today”; Gemini **classifies and summarizes** (not open-ended search) into the day brief.
 
+**Community source links:** Every spot should expose **clickable URLs** to specialized discussion channels (Facebook groups/pages, forums, Reddit, spot guides) so riders can verify conditions quickly. When fetchers cannot read a source (private group, no API), links alone are the **minimum viable** deliverable. When allowlisted fetchers succeed, the same URLs feed the day brief and `community` profile fields with full provenance.
+
 ## Non-goals
 
 - Auto-moving spot pins from Gemini coordinates without admin review  
@@ -28,6 +30,12 @@ Later: **social/API fetchers** supply raw posts for “today”; Gemini **classi
                     ┌─────────────────────┐
                     │ Prompt 1: Catalog   │  admin / rare cron
                     │ Search (+ Maps)     │  → staging → dedupe → spots
+                    └──────────┬──────────┘
+                               │ per approved spot
+                               ▼
+                    ┌─────────────────────┐
+                    │ Source discovery    │  Search-backed LLM OR admin
+                    │ → staging links     │  → validate → intel_sources
                     └─────────────────────┘
 
 ┌──────────────┐    ┌─────────────────────┐    ┌──────────────────────┐
@@ -48,10 +56,13 @@ Later: **social/API fetchers** supply raw posts for “today”; Gemini **classi
 | Job | Trigger | Cache | Ranking |
 |-----|---------|-------|---------|
 | Catalog | Script / admin | Staging JSON | No |
+| **Source links** | After spot approve; on new spot in admin | `spots.intel_sources` (+ optional `source_discovery_staging`) | No |
 | Profile | After spot approve; refresh monthly | `spot_intel_profile` | Soft (launch depth copy) |
 | Day brief | Drawer expand + `date` | `spot_intel_day_cache` | Yes via `signals` |
 
-**Search grounding:** Use on catalog and on day brief **only when fetchers return no posts**. When `fetched_posts[]` is non-empty, Gemini must cite those URLs in provenance.
+**Search grounding:** Use on catalog, **source discovery**, and on day brief **only when fetchers return no posts**. When `fetched_posts[]` is non-empty, Gemini must cite those URLs in provenance.
+
+**LLM without web search must not invent URLs.** Source discovery runs only with **Google Search grounding** (Gemini), a **search API** (Programmable Search, Tavily, etc.), or **human/admin** curation. Parsed output is validated (HTTP HEAD or allowlist rules) before persisting as `verified`.
 
 ---
 
@@ -80,6 +91,52 @@ Later: **social/API fetchers** supply raw posts for “today”; Gemini **classi
 | PK | | `(spot_id, session_date)` |
 
 Keep **`spot_intel_cache.media_gallery`** as today (or move media to profile later). Do not overload a single `valid_for_date` row for all planner days.
+
+### `spots.intel_sources` — specialized community & reference links
+
+Canonical store for **outbound links** riders use when intel is thin or they want ground truth. Same array as [Spot Local Intel — `intel_sources`](./2026-09-09-spot-local-intel-design.md#spots-extension); profile and API **must** echo it (or merge with profile-derived guide URLs) so list/detail/intel responses always include clickable sources.
+
+#### `IntelSourceLink` shape
+
+```json
+{
+  "type": "facebook_group",
+  "url": "https://www.facebook.com/groups/example",
+  "label": "Wing Hudson — Lac Saint-Louis",
+  "platform": "facebook",
+  "fetchable": false,
+  "verification": "verified",
+  "discovered_at": "2026-09-14T12:00:00Z",
+  "discovered_by": "gemini_search",
+  "provenance": {
+    "source_kind": "gemini_search",
+    "citations": [{ "url": "https://...", "title": "Search result snippet" }],
+    "confidence": "medium",
+    "fetched_at": "2026-09-14T12:00:00Z"
+  }
+}
+```
+
+| Field | Notes |
+|-------|--------|
+| `type` | `facebook_group` · `facebook_page` · `instagram_hashtag` · `reddit_subreddit` · `reddit_search` · `forum` · `community_guide` · `municipal` · `google_media` · `wind_reference` · `other` |
+| `fetchable` | `true` only when an allowlisted fetcher can read public content (e.g. Reddit JSON, municipal HTML). Private FB → `false`, link-out only. |
+| `verification` | `pending` · `verified` · `rejected` · `broken` — only `verified` links shown in production UI by default; admin sees all. |
+| `discovered_by` | `manual` · `seed` · `gemini_search` · `admin_assist` |
+
+**Merge rule:** Deduplicate by normalized URL (strip trailing `/`, lowercase host). Prefer `verified` over `pending`; never auto-delete `manual` links when discovery runs again.
+
+#### Optional staging table `spot_intel_source_staging`
+
+For admin “suggest links” workflow before commit to `spots.intel_sources`:
+
+| Column | Type |
+|--------|------|
+| `spot_id` | TEXT |
+| `candidates` | TEXT — JSON `IntelSourceLink[]` with `verification: pending` |
+| `fetched_at` | INTEGER |
+
+Admin UI: **Validate links** → moves selected rows to `intel_sources` with `verification: verified`.
 
 ### `FieldProvenance` (required on every UI field)
 
@@ -196,7 +253,7 @@ Maps from Gemini example payload:
 | `parking` | `summary`, `type` | `type`: free · paid · mixed · street · unknown |
 | `water` | `quality_summary`, `algae_and_hazards`, `level` | Merge with `spot_quality_cache` for rank |
 | `media` | `has_live_water_view`, `webcam_url`, `wind_reference` | `wind_reference.type`, `url` — spot-specific URL required |
-| `community` | `all_time`, `last_month` | Each attributed |
+| `community` | `all_time`, `last_month`, `sources` | `all_time` / `last_month` attributed summaries; `sources` mirrors or subsets `intel_sources` for drawer “quick check” strip |
 | `wind_hints` | See [Wind direction — complementing iGetwind](#wind-direction--complementing-igetwind) | Community / guide sectors; not auto-ranked until merged |
 
 ### `SpotIntelDayBrief`
@@ -402,11 +459,61 @@ Enable **Google Maps grounding** when available — pass the same `latitude`/`lo
 
 Output: `{ "candidates": [...] }` with coordinates, `source_urls[]`, `confidence`. No profile prose. Human/script dedupe vs iGetwind + DB.
 
+Each catalog candidate may include **`suggested_intel_sources[]`** (`IntelSourceLink` without `verification`) when Search finds an obvious group or guide — still subject to admin validation before `verified`.
+
+### Prompt 1b — Community source discovery (per spot)
+
+**When:** After spot pin is approved (or admin clicks “Find community links”).
+
+**Requires:** `WindmateAgentContext` with **spot pin** + **Search grounding** (or server passes top-N search API hits into the prompt — never URL-only generation).
+
+**System rules:**
+
+```text
+Find public discussion and reference pages for THIS launch (coordinates + name).
+Do NOT invent URLs. Every url must come from search grounding metadata or
+provided search_results[].
+
+Target:
+- Active Facebook groups/pages for wing/kite/windsurf at this spot
+- Regional forums or Reddit (subreddit or saved search URL)
+- Reputable spot guides (shop / kiteforce-style pages)
+- Official park/municipal pages if not already in intel_sources
+
+Exclude: generic weather sites, unrelated homonyms, marinas with no wind-sport use.
+For each link set fetchable: true only if you believe content is public without login.
+```
+
+**Output (JSON only):**
+
+```json
+{
+  "spot_id": "...",
+  "suggested_intel_sources": [
+    {
+      "type": "facebook_group",
+      "url": "https://...",
+      "label": "...",
+      "platform": "facebook",
+      "fetchable": false,
+      "provenance": { "source_kind": "gemini_search", "citations": [...], "confidence": "medium" }
+    }
+  ],
+  "search_queries_used": ["site:facebook.com wingfoil Hudson Quebec"]
+}
+```
+
+Server: normalize URLs → `spot_intel_source_staging` or merge into profile `community.sources` as `pending` until admin verifies.
+
+**Cost control:** Batch discovery only for new/updated spots; cap queries per spot (e.g. 3–5); do not run 500 spots in one job without rate limits.
+
 ### Prompt 2 — Profile enrichment (optional third call)
 
 **Input:** full `WindmateAgentContext` with **spot pin** required.
 
 Output: full `SpotIntelProfile` with **every** `value` wrapped in `AttributedField` or section-level `provenance`. Depth/hazard copy should mention implications for `active_sport` where relevant. Include **`wind_hints`** per [Wind direction — complementing iGetwind](#wind-direction--complementing-igetwind); pass current `ideal_directions`, `direction_inference`, and `igetwind` URLs in the prompt.
+
+Pass **`intel_sources`** (verified) into Prompt 2 and 3 so summaries cite the same URLs riders see in the link strip. For **`community.all_time`** and **`community.last_month`**: prefer text extracted from fetchers hitting those URLs; if fetchers return nothing, Search may paraphrase **only** with `gemini_search` + `derivation` — never present as high-confidence community consensus.
 
 ### Prompt 3 — Day brief (expand + date)
 
@@ -417,8 +524,9 @@ Output: full `SpotIntelProfile` with **every** `value` wrapped in `AttributedFie
   "windmate": { /* WindmateAgentContext — spot.lat/lng required */ },
   "session_date": "2026-09-14",
   "static_profile": { /* SpotIntelProfile or subset */ },
+  "intel_sources": [ /* verified IntelSourceLink[] — drives fetcher targets */ ],
   "fetched_posts": [
-    { "platform": "reddit", "text", "url", "published_at", "media": [] }
+    { "platform": "reddit", "text", "url", "published_at", "media": [], "intel_source_id": "optional index into intel_sources" }
   ],
   "official_snippets": [],
   "windmate_context": { "hydro_level_m", "obs_summary" }
@@ -456,6 +564,7 @@ Response:
   "spot_id": "...",
   "session_date": "2026-09-14",
   "fetched_at": 123,
+  "intel_sources": [ /* verified IntelSourceLink[] — always returned when present on spot */ ],
   "profile": { /* SpotIntelProfile | null */ },
   "day": { /* SpotIntelDayBrief | null */ },
   "signals": [],
@@ -464,6 +573,8 @@ Response:
   "media_gallery": { }
 }
 ```
+
+**Spot list/detail:** `GET /api/spots` and `GET /api/spots/:id` should include the same `intel_sources` array (or a slim `{ type, url, label }` projection) so matrix and map flows expose links without opening the intel drawer.
 
 Provenance objects are returned **verbatim** for the client popover. Do not strip URLs.
 
@@ -517,9 +628,10 @@ Sections (each with own provenance):
 4. Parking  
 5. Water quality & hazards  
 6. Live (cam / wind graph)  
-7. Riders say (all-time / last month)  
-8. Wind reference (community vs map wedges)  
-9. Photos & videos (existing strip — provenance: `wikimedia_commons` / `google_cse` / link-out)
+7. Riders say (all-time / last month / **today** when day brief present)  
+8. **Community sources** — dedicated block: list every verified `intel_sources` entry as **clickable** `<a target="_blank" rel="noopener">` (icon per `type` + `label`). Shown even when summaries are empty (“No automated summary yet — check the group”).  
+9. Wind reference (community vs map wedges)  
+10. Photos & videos (existing strip — provenance: `wikimedia_commons` / `google_cse` / link-out)
 
 Matrix row: optional small (i) next to intel badge linking to same popover for that badge’s signal provenance.
 
@@ -533,6 +645,10 @@ Matrix row: optional small (i) next to intel badge linking to same popover for t
 - `spotIntel.sourceUnverified` — low confidence warning  
 - `spotIntel.sourceKind.*` — labels per `source_kind`  
 - `spotIntel.sourceStepKind.*` — labels per `derivation.steps[].kind`
+- `spotIntel.communitySourcesTitle` — "Community & guides"
+- `spotIntel.communitySourcesEmpty` — "No links on file yet — we're still collecting sources."
+- `spotIntel.communitySourcesQuickCheck` — "Quick check"
+- `spotIntel.sourceType.*` — labels per `intel_sources[].type`
 
 ---
 
@@ -540,10 +656,12 @@ Matrix row: optional small (i) next to intel badge linking to same popover for t
 
 | Phase | Deliverable |
 |-------|-------------|
-| **A** | Spec + seed JSON (Montreal examples) with full provenance |
+| **A** | Spec + seed JSON (Montreal examples) with full provenance **and** `intel_sources` on each seed spot |
+| **A′** | **Links-only MVP:** `intel_sources` on spots + API + drawer “Community sources” strip (no LLM summaries required) |
 | **B** | DB tables + API returns profile/day stubs; drawer sections + (i) popover |
-| **C** | Gemini profile + day (Search bridge); **wind_hints** for iGetwind pins missing sectors |
-| **D** | Reddit/official fetchers → day context pack → `gemini_parser` |
+| **B′** | Admin source discovery (Prompt 1b) → staging → validate → `intel_sources` |
+| **C** | Gemini profile + day (Search bridge); **wind_hints** for iGetwind pins missing sectors; `community.*` summaries when Search/fetchers allow |
+| **D** | Reddit/official fetchers bound to `intel_sources` where `fetchable: true` → day context pack → `gemini_parser` |
 | **E** | Admin merge `suggested_merge` → `ideal_directions` when agreement rules pass |
 
 ---
@@ -563,9 +681,15 @@ Matrix row: optional small (i) next to intel badge linking to same popover for t
 - [ ] Day cache keyed by `(spot_id, session_date)` — switching planner day refetches or serves correct row  
 - [ ] `community_today` with 0 posts shows honest empty copy, no fabricated provenance  
 - [ ] Gemini ingest rejects ranking signals without `source_url` (unless windmate)
+- [ ] `intel_sources` returned on spot list, spot detail, and intel endpoints; every `url` is a live link in UI
+- [ ] Source discovery never persists URLs without grounding citation or admin approval
+- [ ] Private Facebook groups: `fetchable: false`, link still shown; day brief does not claim post content from that URL
+- [ ] Empty `community_today` still shows community source links for manual check
 
 ## Open questions
 
 1. Popover vs full-width bottom sheet on narrow phones?  
 2. Show `model` name to users or only in admin debug?  
-3. Bilingual provenance: store FR source pages with EN UI labels only?
+3. Bilingual provenance: store FR source pages with EN UI labels only?  
+4. Default search backend for Prompt 1b: Gemini grounding only vs shared Tavily/Programmable Search wrapper?  
+5. Auto-promote `suggested_intel_sources` from catalog Prompt 1 to staging without separate 1b call?
